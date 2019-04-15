@@ -209,8 +209,6 @@ player.destroy()
 
 我们感谢社区提供错误修正和改进。
 
-### Development
-
 ```sh
 # 开发测试
 npm run test

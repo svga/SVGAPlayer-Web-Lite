@@ -202,8 +202,6 @@ player.destroy()
 
 We are grateful to the community for contributing bugfixes and improvements.
 
-### Development
-
 ```sh
 # Development & Test
 npm run test
