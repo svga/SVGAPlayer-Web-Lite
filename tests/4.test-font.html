@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>font</title>
+  <script src="svga.lite.min.js"></script>
+</head>
+<body>
+  <canvas id="font"></canvas>
+  <canvas id="canvas"></canvas>
+  <script>
+    (async () => {
+      const text = 'hello gg'
+      const fontCanvas = document.getElementById('font')
+      const fontContext = fontCanvas.getContext('2d');
+      fontCanvas.height = 30
+      fontContext.font = '30px Arial'
+      fontContext.textAlign = 'center'
+      fontContext.textBaseline = 'middle'
+      fontContext.fillStyle = '#000'
+      fontContext.fillText(text, fontCanvas.clientWidth / 2, fontCanvas.clientHeight / 2)
+
+      const { Downloader, Parser, Player } = SVGA
+
+      const downloader = new Downloader()
+
+      const svgaFile = './svga/kingset.svga'
+
+      const fileData = await downloader.get(svgaFile)
+
+      const parser = new Parser()
+
+      const svgaData = await parser.do(fileData)
+
+      console.log('SVGA Data', svgaData)
+
+      svgaData.dynamicElements['banner'] = fontCanvas
+
+      const player = new Player('#canvas')
+
+      await player.mount(svgaData)
+
+      player.start()
+    })()
+  </script>
+</body>
+</html>

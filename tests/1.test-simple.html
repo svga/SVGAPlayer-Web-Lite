@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>simple</title>
+  <meta name="viewport" content="maximum-scale=1, width=device-width, initial-scale=1, user-scalable=0">
+  <script src="svga.lite.min.js"></script>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    var downloader = new window.SVGA.Downloader()
+    var parser = new window.SVGA.Parser()
+    var player = new window.SVGA.Player('#canvas')
+
+    downloader.get('./svga/angel.svga').then(function (fileData) {
+      parser.do(fileData).then(function (svgaData) {
+        player.mount(svgaData).then(function () {
+          player.start()
+        })
+      })
+    })
+  </script>
+</body>
+</html>

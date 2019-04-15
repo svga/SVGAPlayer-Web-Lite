@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "outDir": "./dist",
+    "target": "es5",
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "lib": [ "es2015", "dom", "webworker" ],
+    "skipLibCheck": true
+  },
+  "include": [
+    "core/*.ts",
+    "core/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

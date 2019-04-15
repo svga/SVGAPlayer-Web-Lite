@@ -1,0 +1,39 @@
+{
+  "name": "svga.lite",
+  "version": "1.2.1",
+  "description": "Lightweight SVGA Web Player",
+  "main": "svga.lite.min.js",
+  "scripts": {
+    "test": "node ./scripts/test.js",
+    "benchmark": "node ./scripts/benchmark.js",
+    "build": "node ./scripts/build.js",
+    "prepublish": "npm run build"
+  },
+  "author": "YY.UED<ued-tech@yy.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/cli": "^7.1.0",
+    "@babel/core": "^7.1.0",
+    "@babel/plugin-proposal-class-properties": "^7.1.0",
+    "@babel/plugin-proposal-decorators": "^7.1.0",
+    "@babel/plugin-transform-runtime": "^7.1.0",
+    "@babel/preset-env": "^7.1.0",
+    "@babel/runtime-corejs2": "^7.0.0",
+    "@types/protobufjs": "^6.0.0",
+    "babel-loader": "^8.0.4",
+    "browser-sync": "^2.26.0",
+    "del": "^3.0.0",
+    "fork-ts-checker-webpack-plugin": "^0.4.10",
+    "fs-extra": "^7.0.1",
+    "moment": "^2.22.2",
+    "ts-loader": "^5.2.1",
+    "typescript": "^3.1.1",
+    "webpack": "^4.20.2",
+    "webpack-cli": "^3.1.2",
+    "webpack-dev-server": "^3.1.9",
+    "jszip": "3.2.1",
+    "protobufjs": "git+https://github.com/lijialiang/protobuf.js.git",
+    "raw-loader": "^2.0.0",
+    "zlibjs": "git+https://github.com/lijialiang/zlib.js.git"
+  }
+}
