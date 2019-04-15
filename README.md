@@ -1,4 +1,4 @@
-# SVGA.Lite
+# SVGAPlayer-Web-Lite
 
 This is a SVGA player on the Web, and its goal is to be lighter and more efficient, But at the same time it also gave up compatibility support for some older browsers.
 
@@ -39,7 +39,9 @@ npm i svga.lite
 <script src="https://cdn.jsdelivr.net/npm/svga.lite/svga.lite.min.js"></script>
 ```
 
-## Simple Use
+## Use
+
+### Simple Use
 
 ```html
 <canvas id="canvas"></canvas>
@@ -79,7 +81,7 @@ const player = new Player('#canvas') // #canvas is HTMLCanvasElement
 })()
 ```
 
-## Support v1.x of SVGA (v1.2.0+)
+### Support v1.x of SVGA (v1.2.0+)
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -104,7 +106,7 @@ await player.mount(svgaData)
 player.start()
 ```
 
-## Replace Element
+### Replace Element
 
 You can change the elements of the `svga data` corresponding to the key values.
 
@@ -129,7 +131,7 @@ const player = new Player('#canvas')
 })()
 ```
 
-## Dynamic Element
+### Dynamic Element
 
 You can insert some dynamic elements with `svga data`.
 
@@ -162,7 +164,7 @@ await player.mount(svgaData)
 player.start()
 ```
 
-## Reusable instantiated Downloader & Parser
+### Reusable instantiated Downloader & Parser
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -186,7 +188,7 @@ player1.start()
 player2.start()
 ```
 
-## Destroy Instance (v1.2.0+)
+### Destroy Instance (v1.2.0+)
 
 ```js
 const parser = new Parser()
@@ -194,6 +196,23 @@ parser.destroy()
 
 const player = new Player('#canvas')
 player.destroy()
+```
+
+## Contributing
+
+We are grateful to the community for contributing bugfixes and improvements.
+
+### Development
+
+```sh
+# Development & Test
+npm run test
+
+# Build
+npm run build
+
+# Publish
+npm publish
 ```
 
 ## LICENSE

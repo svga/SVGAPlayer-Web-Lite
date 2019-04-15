@@ -1,4 +1,4 @@
-# SVGA.Lite
+# SVGAPlayer-Web-Lite
 
 这是一个 SVGA 在 Web 上的播放器，它的目标是更轻量级、更高效，但同时它也放弃了对一些旧版本浏览器的兼容性支持。
 
@@ -37,7 +37,9 @@ npm i svga.lite
 <script src="https://cdn.jsdelivr.net/npm/svga.lite/svga.lite.min.js"></script>
 ```
 
-## 简单使用
+## 使用
+
+### 简单使用
 
 ```html
 <canvas id="canvas"></canvas>
@@ -77,7 +79,7 @@ const player = new Player('#canvas') // #canvas 是 HTMLCanvasElement
 })()
 ```
 
-## Player.set({ 参数 })
+### Player.set({ 参数 })
 
 属性名 |  说明 | 类型 | 默认值 | 备注
 -|-|-|-|-
@@ -87,7 +89,7 @@ playMode | 播放模式 | `forwards` `fallbacks` | `forwards` |
 startFrame | 开始播放帧 | `number` | `0` |
 endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA 文件最后一帧
 
-## 支持 1.x 版本 SVGA (v1.2.0+)
+### 支持 1.x 版本 SVGA (v1.2.0+)
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -111,7 +113,7 @@ await player.mount(svgaData)
 player.start()
 ```
 
-## 替换元素
+### 替换元素
 
 你能够通过改变 `svga data` 对应键值的元素
 
@@ -136,7 +138,7 @@ const player = new Player('#canvas')
 })()
 ```
 
-## 动态元素
+### 动态元素
 
 你可以通过 `svga data` 插入一些动态元素
 
@@ -169,7 +171,7 @@ await player.mount(svgaData)
 player.start()
 ```
 
-## 可复用实例化 Downloader & Parser
+### 可复用实例化 Downloader & Parser
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -193,7 +195,7 @@ player1.start()
 player2.start()
 ```
 
-## 销毁实例 (v1.2.0+)
+### 销毁实例 (v1.2.0+)
 
 ```js
 const parser = new Parser()
@@ -201,6 +203,23 @@ parser.destroy()
 
 const player = new Player('#canvas')
 player.destroy()
+```
+
+## 贡献
+
+我们感谢社区提供错误修正和改进。
+
+### Development
+
+```sh
+# 开发测试
+npm run test
+
+# 构建
+npm run build
+
+# 发布
+npm publish
 ```
 
 ## LICENSE
