@@ -3722,9 +3722,27 @@ promise-inflight@^1.0.1:
   version "1.0.1"
   resolved "https://registry.yarnpkg.com/promise-inflight/-/promise-inflight-1.0.1.tgz#98472870bf228132fcbdd868129bad12c3c029e3"
 
-protobufjs@*, "protobufjs@git+https://github.com/lilijialiang/protobuf.js.git":
+protobufjs@*:
   version "6.8.8"
   resolved "git+https://github.com/lilijialiang/protobuf.js.git#4f513433abca1c834d1357af127c104ebcd1c306"
+  dependencies:
+    "@protobufjs/aspromise" "^1.1.2"
+    "@protobufjs/base64" "^1.1.2"
+    "@protobufjs/codegen" "^2.0.4"
+    "@protobufjs/eventemitter" "^1.1.0"
+    "@protobufjs/fetch" "^1.1.0"
+    "@protobufjs/float" "^1.0.2"
+    "@protobufjs/inquire" "^1.1.0"
+    "@protobufjs/path" "^1.1.2"
+    "@protobufjs/pool" "^1.1.0"
+    "@protobufjs/utf8" "^1.1.0"
+    "@types/long" "^4.0.0"
+    "@types/node" "^10.1.0"
+    long "^4.0.0"
+
+"protobufjs@git+https://github.com/lijialiang/protobuf.js.git":
+  version "6.8.8"
+  resolved "git+https://github.com/lijialiang/protobuf.js.git#b84b9b2d55ce07a0c9f28519054ce6b15ab092ca"
   dependencies:
     "@protobufjs/aspromise" "^1.1.2"
     "@protobufjs/base64" "^1.1.2"
@@ -5024,6 +5042,6 @@ yeast@0.1.2:
   version "0.1.2"
   resolved "https://registry.yarnpkg.com/yeast/-/yeast-0.1.2.tgz#008e06d8094320c372dbc2f8ed76a0ca6c8ac419"
 
-"zlibjs@git+https://github.com/lilijialiang/zlib.js.git":
+"zlibjs@git+https://github.com/lijialiang/zlib.js.git":
   version "0.3.1"
-  resolved "git+https://github.com/lilijialiang/zlib.js.git#1814e5e8226286f33c04056094cc2c5cab96133b"
+  resolved "git+https://github.com/lijialiang/zlib.js.git#1814e5e8226286f33c04056094cc2c5cab96133b"

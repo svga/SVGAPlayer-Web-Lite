@@ -23,9 +23,10 @@
 
       // const svgaFile = './svga/loading.svga'
       // const svgaFile = './svga/loading-1.svga'
-      const svgaFile = './svga/TwitterHeart.svga'
+      // const svgaFile = './svga/TwitterHeart.svga'
       // const svgaFile = './svga/angel.svga'
       // const svgaFile = './svga/kingset.svga'
+      const svgaFile = './svga/story.svga'
 
       let fileData
       try {
@@ -36,7 +37,7 @@
 
       console.log('File Data', fileData)
 
-      const parser = new Parser({ disableWorker: true })
+      const parser = new Parser()
       // const parser = new Parser()
 
       const svgaData = await parser.do(fileData)
@@ -49,9 +50,10 @@
 
       const player = new Player('#canvas')
 
-      player
+      // player
       //   .$on('start', () => {
-      //     console.log('event start')
+      //     // console.log('event start')
+      //     console.time('time')
       //   })
       //   .$on('pause', () => {
       //     console.log('event pause')
@@ -59,9 +61,10 @@
       //   .$on('stop', () => {
       //     console.log('event stop')
       //   })
-      //   .$on('end', () => {
-      //     console.log('event end')
-      //   })
+        // .$on('end', () => {
+        //   // console.log('event end')
+        //   console.timeEnd('time')
+        // })
       //   .$on('clear', () => {
       //     console.log('event clear')
       //   })

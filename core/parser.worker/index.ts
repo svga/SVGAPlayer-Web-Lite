@@ -26,6 +26,12 @@ const proto = Root.fromJSON(svgaFileDataDescriptor)
 const message = proto.lookupType('com.opensource.svga.MovieEntity')
 
 worker.onmessage = function (event: any) {
+  // 自检 worker 环境
+  if (typeof event.data === 'string' && event.data === 'check') {
+    !self.btoa ? worker.postMessage(1) : worker.postMessage(void 0)
+    return void 0
+  }
+
   const inflateData: Uint8Array = (new Zlib.Inflate(new Uint8Array(event.data))).decompress()
 
   const movie: any = message.decode(inflateData)
