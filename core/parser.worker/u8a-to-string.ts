@@ -1,4 +1,4 @@
-export default (u8a: Uint8Array): string => {
+export default (u8a: any): string => {
   const CHUNK_SZ = 0x8000
 
   const changeArray = []
