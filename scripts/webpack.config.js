@@ -8,7 +8,7 @@ const banner =
 `[name]
 
 Version: ${version}
-Document: https://github.com/yyued/SVGAPlayer-Web/tree/lite
+Document: https://github.com/svga/SVGAPlayer-Web-Lite
 (c) 2019 YY.SVGA
 Released under the MIT License.`
 
