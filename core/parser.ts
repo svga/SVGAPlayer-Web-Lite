@@ -6,26 +6,12 @@ export default class Parser implements Parser {
   public worker?: any
 
   constructor ({ disableWorker } = { disableWorker: false }) {
-    const evalWorker = () => {
+    if (!disableWorker) {
+      this.worker = new Worker(window.URL.createObjectURL(new Blob([WORKER])))
+    } else {
       /* eslint-disable */
       eval(WORKER)
       this.worker = (<any>window).SVGAParserMockWorker
-    }
-
-    if (!disableWorker) {
-      const worker = new Worker(window.URL.createObjectURL(new Blob([WORKER])))
-      worker.onmessage = ({ data }) => {
-        if (!data) {
-          console.warn('[SVGA] Lack of WebWorker Environment, disable WebWorker')
-          worker.terminate()
-          evalWorker()
-        }
-      }
-      worker.postMessage('check')
-
-      this.worker = new Worker(window.URL.createObjectURL(new Blob([WORKER])))
-    } else {
-      evalWorker()
     }
   }
 
