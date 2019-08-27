@@ -4,7 +4,7 @@ This is a SVGA player on the Web, and its goal is to be lighter and more efficie
 
 [简体中文](./README.zh-CN.md)
 
-## 1.3.0 Change
+## v1.3.0+ Change
 
 Unbound Promise object compatibility code, core library size reduced to 55kb (gzip = 18kb)
 
