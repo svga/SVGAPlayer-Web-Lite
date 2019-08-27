@@ -144,5 +144,22 @@ module.exports = [
       new webpack.BannerPlugin(banner)
     ],
     ...defaultConfig
+  },
+  {
+    entry: {
+      'db': './core/db.ts'
+    },
+    output: {
+      path: outputPath,
+      filename: '[name].js',
+      libraryTarget: 'umd',
+      library: 'SVGADB',
+      libraryExport: 'default'
+    },
+    plugins: [
+      ForkTsCheckerWebpackPluginConfig,
+      new webpack.BannerPlugin(banner)
+    ],
+    ...defaultConfig
   }
 ]

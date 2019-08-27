@@ -205,6 +205,46 @@ const player = new Player('#canvas')
 player.destroy()
 ```
 
+### DB (v1.3.0+)
+
+已下载并解析的数据利用 WebSQL 进行持久化缓存，下次可避免重复消耗资源对统一 SVGA 下载和解析
+
+```js
+import { Downloader, Parser, Player } from 'svga.lite'
+import DB from 'svga.lite/db'
+
+const svgaFile = 'test.svga'
+let data = void 0
+let db = void 0
+
+try {
+  db = new SVGADB()
+} catch (error) {
+  console.error(error)
+}
+
+if (db) {
+  const record = (await db.find(svgaFile))[0]
+  record && (data = JSON.parse(record.data))
+}
+
+if (!data) {
+  const downloader = new Downloader()
+  const fileData = await downloader.get(svgaFile)
+  const parser = new Parser()
+
+  data = await parser.do(fileData)
+
+  // 插入数据
+  db && (await db.insert(svgaFile, JSON.stringify(data)))
+}
+
+const player = new Player('#canvas')
+await player.mount(data)
+
+player.start()
+```
+
 ## 贡献
 
 我们感谢社区提供错误修正和改进。

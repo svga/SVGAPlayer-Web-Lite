@@ -190,12 +190,52 @@ player2.start()
 
 ### Destroy Instance (v1.2.0+)
 
+The downloaded and parsed data is persisted and cached using WebSQL, and the next time you can avoid reusing resources for unified SVGA download and parsing
+
 ```js
 const parser = new Parser()
 parser.destroy()
 
 const player = new Player('#canvas')
 player.destroy()
+```
+
+### DB (v1.3.0+)
+
+```js
+import { Downloader, Parser, Player } from 'svga.lite'
+import DB from 'svga.lite/db'
+
+const svgaFile = 'test.svga'
+let data = void 0
+let db = void 0
+
+try {
+  db = new SVGADB()
+} catch (error) {
+  console.error(error)
+}
+
+if (db) {
+  const record = (await db.find(svgaFile))[0]
+  record && (data = JSON.parse(record.data))
+}
+
+if (!data) {
+  const downloader = new Downloader()
+  const fileData = await downloader.get(svgaFile)
+  const parser = new Parser()
+
+  data = await parser.do(fileData)
+
+  // insert data to db
+  db && (await db.insert(svgaFile, JSON.stringify(data)))
+}
+
+const player = new Player('#canvas')
+await player.mount(data)
+
+player.start()
 ```
 
 ## Contributing

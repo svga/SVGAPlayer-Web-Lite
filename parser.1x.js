@@ -1,8 +1,8 @@
 /*!
  * parser.1x
  * 
- * Version: 1.2.1
- * Time: 2019-08-26 16:03
+ * Version: 1.3.0-1
+ * Time: 2019-08-27 10:52
  * Document: https://github.com/yyued/SVGAPlayer-Web/tree/lite
  * (c) 2019 YY.SVGA
  * Released under the MIT License.
