@@ -2,6 +2,16 @@
 
 这是一个 SVGA 在 Web 上的播放器，它的目标是更轻量级、更高效，但同时它也放弃了对一些旧版本浏览器的兼容性支持。
 
+## 1.3.0 改变
+
+不捆绑 Promise 对象兼容代码，核心库体积减少到 55kb (gzip = 18kb)
+
+若出现 `Promise is not a constructor` 等问题，外链 polyfill 或配置 babel 进行兼容
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script>
+```
+
 ## 目标未来
 
 - [x] 体积 = 80k (gzip = 27kb)

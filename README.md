@@ -4,6 +4,16 @@ This is a SVGA player on the Web, and its goal is to be lighter and more efficie
 
 [简体中文](./README.zh-CN.md)
 
+## 1.3.0 Change
+
+Unbound Promise object compatibility code, core library size reduced to 55kb (gzip = 18kb)
+
+If there is a problem such as `Promise is not a constructor`, the outer chain polyfill or the configuration babel is compatible
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script>
+```
+
 ## Target Future
 
 - [x] Size = 80kb (gzip = 27kb)

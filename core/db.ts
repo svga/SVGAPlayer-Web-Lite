@@ -6,9 +6,9 @@ export default class DB {
       this.db = window.openDatabase(name, version, desc, size)
       this.db.transaction((tx: any) => {
         tx.executeSql('CREATE TABLE IF NOT EXISTS SVGA (id unique, data, time)')
-     })
+      })
     } else {
-      throw new Error('[SVGA.Lite.DB openDatabase undefined]')
+      throw new Error('[SVGA.Lite.DB] openDatabase undefined')
     }
   }
 

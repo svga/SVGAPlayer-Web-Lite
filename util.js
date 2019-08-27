@@ -2,7 +2,7 @@
  * util
  * 
  * Version: 1.3.0-1
- * Time: 2019-08-27 10:52
+ * Time: 2019-08-27 17:00
  * Document: https://github.com/yyued/SVGAPlayer-Web/tree/lite
  * (c) 2019 YY.SVGA
  * Released under the MIT License.
