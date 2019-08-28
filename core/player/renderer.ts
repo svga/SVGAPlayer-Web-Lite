@@ -156,7 +156,7 @@ export default class Renderer {
       const d = obj._d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
 
       d.split('|||').forEach((segment: any) => {
-        if (segment.length == 0) { return void0 }
+        if (segment.length == 0) { return void 0 }
 
         const firstLetter = segment.substr(0, 1)
 
