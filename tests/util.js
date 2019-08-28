@@ -1,8 +1,8 @@
 /*!
  * util
  * 
- * Version: 1.3.0-2
- * Document: https://github.com/yyued/SVGAPlayer-Web/tree/lite
+ * Version: 1.3.0-3
+ * Document: https://github.com/svga/SVGAPlayer-Web-Lite
  * (c) 2019 YY.SVGA
  * Released under the MIT License.
  */

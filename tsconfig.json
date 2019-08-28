@@ -11,7 +11,6 @@
     "skipLibCheck": true
   },
   "include": [
-    "core/*.ts",
     "core/**/*.ts"
   ],
   "exclude": [

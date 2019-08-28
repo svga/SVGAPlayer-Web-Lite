@@ -1,5 +1,5 @@
-export default class Downloader implements Downloader {
-  get (svgaResourceLink: string) {
+export default class Downloader {
+  get (svgaResourceLink: string): Promise<ArrayBuffer> {
     if (!svgaResourceLink) {
       throw new Error('download link undefined')
     }
@@ -18,6 +18,7 @@ export default class Downloader implements Downloader {
           reject(request)
         }
       }
+
       request.onerror = () => reject(request.response)
 
       request.send()

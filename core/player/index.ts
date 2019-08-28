@@ -1,6 +1,23 @@
 import Renderer from './renderer'
 import Animator from './animator'
 
+enum EVENT_TYPES {
+  START = 'start',
+  PROCESS = 'process',
+  PAUSE = 'pause',
+  STOP = 'stop',
+  END = 'end',
+  CLEAR = 'clear'
+}
+
+interface options {
+  loop: number | Boolean
+  fillMode: FILL_MODE
+  playMode: PLAY_MODE
+  startFrame: number
+  endFrame: number
+}
+
 enum FILL_MODE {
   FORWARDS = 'forwards',
   BACKWARDS = 'backwards'
@@ -11,7 +28,7 @@ enum PLAY_MODE {
   FALLBACKS = 'fallbacks'
 }
 
-export default class Player implements Player {
+export default class Player {
   public container: HTMLCanvasElement
   public loop: number | Boolean = true
   public fillMode: FILL_MODE = FILL_MODE.FORWARDS
@@ -142,7 +159,6 @@ export default class Player implements Player {
 
       this.currentFrame = value
 
-      // FIXME: progress 不连续
       this.progress = parseFloat((value + 1).toString()) / parseFloat(this.videoItem.frames.toString()) * 100
 
       this._renderer.drawFrame(this.currentFrame)

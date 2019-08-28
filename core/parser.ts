@@ -2,8 +2,14 @@
 
 const WORKER = '#INLINE_PARSER_WROKER#'
 
-export default class Parser implements Parser {
-  public worker?: any
+interface mockWebWorker {
+  disableWorker: Boolean
+  onmessage: (data: any) => void
+  onmessageCallback: (data: any) => void
+}
+
+export default class Parser {
+  public worker?: mockWebWorker | Worker
 
   constructor ({ disableWorker } = { disableWorker: false }) {
     if (!disableWorker) {
@@ -15,7 +21,7 @@ export default class Parser implements Parser {
     }
   }
 
-  do (data: ArrayBuffer): void | Promise<Object> {
+  do (data: ArrayBuffer): Promise<Object> {
     const dataHeader = new Uint8Array(data, 0, 4)
 
     if (dataHeader[0] == 80 && dataHeader[1] == 75 && dataHeader[2] == 3 && dataHeader[3] == 4) {
@@ -31,16 +37,20 @@ export default class Parser implements Parser {
     }
 
     return new Promise((resolve, reject) => {
-      if (this.worker.disableWorker) {
-        this.worker.onmessageCallback = (data: VideoEntity) => {
+      if ((this.worker as mockWebWorker).disableWorker) {
+        const worker = (this.worker as mockWebWorker)
+
+        worker.onmessageCallback = (data: VideoEntity) => {
           resolve(data)
         }
 
-        this.worker.onmessage({ data })
+        worker.onmessage({ data })
       } else {
-         this.worker.postMessage(data)
+        const worker = (this.worker as Worker)
 
-        this.worker.onmessage = ({ data }: { data: VideoEntity }) => {
+        worker.postMessage(data)
+
+        worker.onmessage = ({ data }: { data: VideoEntity }) => {
           resolve(data)
         }
       }
@@ -48,6 +58,8 @@ export default class Parser implements Parser {
   }
 
   destroy () {
-    this.worker.terminate && this.worker.terminate()
+    const worker = this.worker! as Worker
+
+    worker.terminate && worker.terminate()
   }
 }

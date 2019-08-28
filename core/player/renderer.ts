@@ -1,5 +1,4 @@
-/// <reference path="../../types/player.d.ts" />
-
+import Player from '../player/index'
 import BezierPath from '../common/bezier-path'
 import EllipsePath from '../common/ellipse-path'
 import RectPath from '../common/rect-path'
@@ -35,7 +34,7 @@ export default class Renderer {
         for (let imageKey in this._player.videoItem.images) {
           const src = this._player.videoItem.images[imageKey]
 
-          if (typeof src === 'string' && (src.indexOf('iVBO') === 0 || src.indexOf('/9j/2w') === 0)) {
+          if (typeof src === 'string' && (src.indexOf('iVBO') ===0|| src.indexOf('/9j/2w') === 0)) {
             totalCount++
 
             const img = document.createElement('img')
@@ -118,7 +117,7 @@ export default class Renderer {
       }
 
       if (styles && styles.stroke) {
-        context.strokeStyle = `rgba(${parseInt((styles.stroke[ 0 ] * 255).toString())}, ${parseInt((styles.stroke[ 1 ] * 255).toString())}, ${parseInt((styles.stroke[ 2 ] * 255).toString())}, ${styles.stroke[ 3 ]})`
+        context.strokeStyle = `rgba(${parseInt((styles.stroke[0] * 255).toString())}, ${parseInt((styles.stroke[1] * 255).toString())}, ${parseInt((styles.stroke[2] * 255).toString())}, ${styles.stroke[3]})`
       } else {
         context.strokeStyle = 'transparent'
       }
@@ -131,7 +130,7 @@ export default class Renderer {
       }
 
       if (styles && styles.fill) {
-        context.fillStyle = `rgba(${parseInt((styles.fill[ 0 ] * 255).toString())}, ${parseInt((styles.fill[ 1 ] * 255).toString())}, ${parseInt((styles.fill[ 2 ] * 255).toString())}, ${styles.fill[ 3 ]})`
+        context.fillStyle = `rgba(${parseInt((styles.fill[0] * 255).toString())}, ${parseInt((styles.fill[1] * 255).toString())}, ${parseInt((styles.fill[2] * 255).toString())}, ${styles.fill[3]})`
       } else {
         context.fillStyle = 'transparent'
       }
@@ -157,7 +156,7 @@ export default class Renderer {
       const d = obj._d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
 
       d.split('|||').forEach((segment: any) => {
-        if (segment.length == 0) { return void 0 }
+        if (segment.length == 0) { return void0 }
 
         const firstLetter = segment.substr(0, 1)
 
@@ -182,55 +181,55 @@ export default class Renderer {
 
       switch (method) {
         case 'M':
-          currentPoint.x = Number(args[ 0 ])
-          currentPoint.y = Number(args[ 1 ])
+          currentPoint.x = Number(args[0])
+          currentPoint.y = Number(args[1])
           context.moveTo(currentPoint.x, currentPoint.y)
           break
         case 'm':
-          currentPoint.x += Number(args[ 0 ])
-          currentPoint.y += Number(args[ 1 ])
+          currentPoint.x += Number(args[0])
+          currentPoint.y += Number(args[1])
           context.moveTo(currentPoint.x, currentPoint.y)
           break
         case 'L':
-          currentPoint.x = Number(args[ 0 ])
-          currentPoint.y = Number(args[ 1 ])
+          currentPoint.x = Number(args[0])
+          currentPoint.y = Number(args[1])
           context.lineTo(currentPoint.x, currentPoint.y)
           break
         case 'l':
-          currentPoint.x += Number(args[ 0 ])
-          currentPoint.y += Number(args[ 1 ])
+          currentPoint.x += Number(args[0])
+          currentPoint.y += Number(args[1])
           context.lineTo(currentPoint.x, currentPoint.y)
           break
         case 'H':
-          currentPoint.x = Number(args[ 0 ])
+          currentPoint.x = Number(args[0])
           context.lineTo(currentPoint.x, currentPoint.y)
           break
         case 'h':
-          currentPoint.x += Number(args[ 0 ])
+          currentPoint.x += Number(args[0])
           context.lineTo(currentPoint.x, currentPoint.y)
           break
         case 'V':
-          currentPoint.y = Number(args[ 0 ])
+          currentPoint.y = Number(args[0])
           context.lineTo(currentPoint.x, currentPoint.y)
           break
         case 'v':
-          currentPoint.y += Number(args[ 0 ])
+          currentPoint.y += Number(args[0])
           context.lineTo(currentPoint.x, currentPoint.y)
           break
         case 'C':
-          currentPoint.x1 = Number(args[ 0 ])
-          currentPoint.y1 = Number(args[ 1 ])
-          currentPoint.x2 = Number(args[ 2 ])
-          currentPoint.y2 = Number(args[ 3 ])
+          currentPoint.x1 = Number(args[0])
+          currentPoint.y1 = Number(args[1])
+          currentPoint.x2 = Number(args[2])
+          currentPoint.y2 = Number(args[3])
           currentPoint.x = Number(args[ 4 ])
           currentPoint.y = Number(args[ 5 ])
           context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
           break
         case 'c':
-          currentPoint.x1 = currentPoint.x + Number(args[ 0 ])
-          currentPoint.y1 = currentPoint.y + Number(args[ 1 ])
-          currentPoint.x2 = currentPoint.x + Number(args[ 2 ])
-          currentPoint.y2 = currentPoint.y + Number(args[ 3 ])
+          currentPoint.x1 = currentPoint.x + Number(args[0])
+          currentPoint.y1 = currentPoint.y + Number(args[1])
+          currentPoint.x2 = currentPoint.x + Number(args[2])
+          currentPoint.y2 = currentPoint.y + Number(args[3])
           currentPoint.x += Number(args[ 4 ])
           currentPoint.y += Number(args[ 5 ])
           context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
@@ -262,25 +261,25 @@ export default class Renderer {
             currentPoint.y += Number(args[3])
             context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
           } else {
-            currentPoint.x1 = currentPoint.x + Number(args[ 0 ])
-            currentPoint.y1 = currentPoint.y + Number(args[ 1 ])
-            currentPoint.x += Number(args[ 2 ])
-            currentPoint.y += Number(args[ 3 ])
+            currentPoint.x1 = currentPoint.x + Number(args[0])
+            currentPoint.y1 = currentPoint.y + Number(args[1])
+            currentPoint.x += Number(args[2])
+            currentPoint.y += Number(args[3])
             context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
           }
           break
         case 'Q':
-          currentPoint.x1 = Number(args[ 0 ])
-          currentPoint.y1 = Number(args[ 1 ])
-          currentPoint.x = Number(args[ 2 ])
-          currentPoint.y = Number(args[ 3 ])
+          currentPoint.x1 = Number(args[0])
+          currentPoint.y1 = Number(args[1])
+          currentPoint.x = Number(args[2])
+          currentPoint.y = Number(args[3])
           context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
           break
         case 'q':
-          currentPoint.x1 = currentPoint.x + Number(args[ 0 ])
-          currentPoint.y1 = currentPoint.y + Number(args[ 1 ])
-          currentPoint.x += Number(args[ 2 ])
-          currentPoint.y += Number(args[ 3 ])
+          currentPoint.x1 = currentPoint.x + Number(args[0])
+          currentPoint.y1 = currentPoint.y + Number(args[1])
+          currentPoint.x += Number(args[2])
+          currentPoint.y += Number(args[3])
           context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
           break
         case 'A':
