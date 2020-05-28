@@ -24,9 +24,9 @@
       // const svgaFile = './svga/loading.svga'
       // const svgaFile = './svga/loading-1.svga'
       // const svgaFile = './svga/TwitterHeart.svga'
-      // const svgaFile = './svga/angel.svga'
+      const svgaFile = './svga/angel.svga'
       // const svgaFile = './svga/kingset.svga'
-      const svgaFile = './svga/story.svga'
+      // const svgaFile = './svga/story.svga'
 
       let fileData
       try {
@@ -50,7 +50,7 @@
 
       const player = new Player('#canvas')
 
-      // player
+      player
       //   .$on('start', () => {
       //     // console.log('event start')
       //     console.time('time')
@@ -58,13 +58,14 @@
       //   .$on('pause', () => {
       //     console.log('event pause')
       //   })
-      //   .$on('stop', () => {
-      //     console.log('event stop')
-      //   })
-        // .$on('end', () => {
-        //   // console.log('event end')
-        //   console.timeEnd('time')
-        // })
+        .$on('stop', () => {
+          console.log('event stop')
+        })
+        .$on('end', () => {
+          console.log('event end')
+          player.start()
+          // console.timeEnd('time')
+        })
       //   .$on('clear', () => {
       //     console.log('event clear')
       //   })
@@ -98,7 +99,7 @@
 
       // setTimeout(() => {
       //   player.stop()
-      // }, 5000)
+      // }, 1000)
 
       // setTimeout(() => {
       //   player.clear()

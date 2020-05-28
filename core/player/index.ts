@@ -143,6 +143,11 @@ export default class Player {
   private _startAnimation () {
     const { playMode, totalFramesCount, startFrame, endFrame } = this
 
+    // 如果开始动画的当前帧是最后一帧，重置为第 0 帧
+    if (this.currentFrame === totalFramesCount) {
+      this.currentFrame = 0
+    }
+
     this._animator.startValue = playMode === 'fallbacks' ? (endFrame || totalFramesCount) : (startFrame || 0)
     this._animator.endValue = playMode === 'fallbacks' ? (startFrame || 0) : (endFrame || totalFramesCount)
 
