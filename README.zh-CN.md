@@ -255,6 +255,24 @@ await player.mount(data)
 player.start()
 ```
 
+## Downloader Cancel (v1.4.0+)
+
+你可以取消下载中的 SVGA 文件请求
+
+```js
+import { Downloader } from 'svga.lite'
+
+downloader.get('test.svga').then((fileData) => {
+  console.log('下载完成')
+}).catch(error => {
+  console.log('catch', error)
+})
+
+setTimeout(() => {
+  downloader.cancel()
+}, 1000)
+```
+
 ## 贡献
 
 我们感谢社区提供错误修正和改进。

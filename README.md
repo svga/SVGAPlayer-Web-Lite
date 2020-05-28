@@ -248,6 +248,24 @@ await player.mount(data)
 player.start()
 ```
 
+## Downloader Cancel (v1.4.0+)
+
+You can cancel the SVGA file request in the download
+
+```js
+import { Downloader } from 'svga.lite'
+
+downloader.get('test.svga').then((fileData) => {
+  console.log('download complete')
+}).catch(error => {
+  console.log('catch', error)
+})
+
+setTimeout(() => {
+  downloader.cancel()
+}, 1000)
+```
+
 ## Contributing
 
 We are grateful to the community for contributing bugfixes and improvements.
