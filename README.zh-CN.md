@@ -208,6 +208,9 @@ player2.start()
 ### 销毁实例 (v1.2.0+)
 
 ```js
+const downloader = new Downloader()
+downloader.destroy()
+
 const parser = new Parser()
 parser.destroy()
 
@@ -260,8 +263,6 @@ player.start()
 你可以取消下载中的 SVGA 文件请求
 
 ```js
-import { Downloader } from 'svga.lite'
-
 downloader.get('test.svga').then((fileData) => {
   console.log('下载完成')
 }).catch(error => {
@@ -269,7 +270,7 @@ downloader.get('test.svga').then((fileData) => {
 })
 
 setTimeout(() => {
-  downloader.cancel()
+  downloader.cancel() // 或者 downloader.destroy()
 }, 1000)
 ```
 

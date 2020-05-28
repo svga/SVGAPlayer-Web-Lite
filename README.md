@@ -203,6 +203,9 @@ player2.start()
 The downloaded and parsed data is persisted and cached using WebSQL, and the next time you can avoid reusing resources for unified SVGA download and parsing
 
 ```js
+const downloader = new Downloader()
+downloader.destroy()
+
 const parser = new Parser()
 parser.destroy()
 
@@ -253,8 +256,6 @@ player.start()
 You can cancel the SVGA file request in the download
 
 ```js
-import { Downloader } from 'svga.lite'
-
 downloader.get('test.svga').then((fileData) => {
   console.log('download complete')
 }).catch(error => {
@@ -262,7 +263,7 @@ downloader.get('test.svga').then((fileData) => {
 })
 
 setTimeout(() => {
-  downloader.cancel()
+  downloader.cancel() // or downloader.destroy()
 }, 1000)
 ```
 
