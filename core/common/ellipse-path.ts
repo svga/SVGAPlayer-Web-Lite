@@ -3,6 +3,8 @@ import BezierPath from './bezier-path'
 export default class EllipsePath extends BezierPath {
   _x?: Number
   _y?: Number
+  _transform?: any
+  _styles?: any
   _radiusX?: Number
   _radiusY?: Number
 

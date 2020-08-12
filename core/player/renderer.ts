@@ -64,16 +64,22 @@ export default class Renderer {
       const context = this._canvasContext
 
       this._player.videoItem.sprites.forEach((sprite: any) => {
-        let frameItem = sprite.frames[this._player.currentFrame]
+        const frameItem = sprite.frames[this._player.currentFrame]
 
         if (frameItem.alpha < 0.05) {
-          return void 0
+          return
         }
 
         context.save()
-
         context.globalAlpha = frameItem.alpha
-        context.transform(frameItem.transform.a, frameItem.transform.b, frameItem.transform.c, frameItem.transform.d, frameItem.transform.tx, frameItem.transform.ty)
+        context.transform(
+          frameItem.transform.a || 1,
+          frameItem.transform.b || 0,
+          frameItem.transform.c || 0,
+          frameItem.transform.d || 1,
+          frameItem.transform.tx || 0,
+          frameItem.transform.ty || 0
+        )
 
         const img = this._bitmapCache[sprite.imageKey]
 
@@ -95,11 +101,35 @@ export default class Renderer {
 
         frameItem.shapes && frameItem.shapes.forEach((shape: any) => {
           if (shape.type === 'shape' && shape.pathArgs && shape.pathArgs.d) {
-            this.drawBezier(new BezierPath(shape.pathArgs.d, shape.transform, shape.styles))
+            this.drawBezier(
+              new BezierPath(
+                shape.pathArgs.d,
+                shape.transform,
+                shape.styles
+              )
+            )
           } else if (shape.type === 'ellipse' && shape.pathArgs) {
-            this._drawEllipse(new EllipsePath(parseFloat(shape.pathArgs.x) || 0.0, parseFloat(shape.pathArgs.y) || 0.0, parseFloat(shape.pathArgs.radiusX) || 0.0, parseFloat(shape.pathArgs.radiusY) || 0.0, shape.transform, shape.styles))
+            this._drawEllipse(
+              new EllipsePath(
+                parseFloat(shape.pathArgs.x) || 0.0,
+                parseFloat(shape.pathArgs.y) || 0.0,
+                parseFloat(shape.pathArgs.radiusX) || 0.0,
+                parseFloat(shape.pathArgs.radiusY) || 0.0,
+                shape.transform,
+                shape.styles
+              )
+            )
           } else if (shape.type === 'rect' && shape.pathArgs) {
-            this._drawRect(new RectPath(parseFloat(shape.pathArgs.x) || 0.0, parseFloat(shape.pathArgs.y) || 0.0, parseFloat(shape.pathArgs.width) || 0.0, parseFloat(shape.pathArgs.height) || 0.0, parseFloat(shape.pathArgs.cornerRadius) || 0.0, shape.transform, shape.styles))
+            this._drawRect(
+              new RectPath(
+                parseFloat(shape.pathArgs.x) || 0.0,
+                parseFloat(shape.pathArgs.y) || 0.0,
+                parseFloat(shape.pathArgs.width) || 0.0,
+                parseFloat(shape.pathArgs.height) || 0.0,
+                parseFloat(shape.pathArgs.cornerRadius) || 0.0,
+                shape.transform, shape.styles
+              )
+            )
           }
         })
 
@@ -146,7 +176,14 @@ export default class Renderer {
       this._resetShapeStyles(obj)
 
       if (obj._transform !== undefined && obj._transform !== null) {
-        context.transform(obj._transform.a, obj._transform.b, obj._transform.c, obj._transform.d, obj._transform.tx, obj._transform.ty)
+        context.transform(
+          obj._transform.a || 1.0,
+          obj._transform.b || 0,
+          obj._transform.c || 0,
+          obj._transform.d || 1.0,
+          obj._transform.tx || 0,
+          obj._transform.ty || 0
+        )
       }
 
       let currentPoint = { x: 0, y: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
@@ -303,7 +340,14 @@ export default class Renderer {
       this._resetShapeStyles(obj)
 
       if (obj._transform !== undefined && obj._transform !== null) {
-        context.transform(obj._transform.a, obj._transform.b, obj._transform.c, obj._transform.d, obj._transform.tx, obj._transform.ty)
+        context.transform(
+          obj._transform.a || 1.0,
+          obj._transform.b || 0,
+          obj._transform.c || 0,
+          obj._transform.d || 1.0,
+          obj._transform.tx || 0,
+          obj._transform.ty || 0
+        )
       }
 
       let x = obj._x - obj._radiusX
@@ -346,7 +390,14 @@ export default class Renderer {
       this._resetShapeStyles(obj)
 
       if (obj._transform !== undefined && obj._transform !== null) {
-        context.transform(obj._transform.a, obj._transform.b, obj._transform.c, obj._transform.d, obj._transform.tx, obj._transform.ty)
+        context.transform(
+          obj._transform.a || 1.0,
+          obj._transform.b || 0,
+          obj._transform.c || 0,
+          obj._transform.d || 1.0,
+          obj._transform.tx || 0,
+          obj._transform.ty || 0
+        )
       }
 
       let x = obj._x
