@@ -3,6 +3,7 @@
   "version": "1.4.0",
   "description": "Lightweight SVGA Web Player",
   "main": "svga.lite.min.js",
+  "types": "index.d.ts",
   "scripts": {
     "test": "node ./scripts/test.js",
     "benchmark": "node ./scripts/benchmark.js",
