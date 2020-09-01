@@ -200,8 +200,6 @@ player2.start()
 
 ### Destroy Instance (v1.2.0+)
 
-The downloaded and parsed data is persisted and cached using WebSQL, and the next time you can avoid reusing resources for unified SVGA download and parsing
-
 ```js
 const downloader = new Downloader()
 downloader.destroy()
@@ -215,6 +213,8 @@ player.destroy()
 
 ### DB (v1.3.0+)
 
+The downloaded and parsed data is persisted and cached using WebSQL, and the next time you can avoid reusing resources for unified SVGA download and parsing
+
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
 import DB from 'svga.lite/db'
@@ -224,7 +224,7 @@ let data = void 0
 let db = void 0
 
 try {
-  db = new SVGADB()
+  db = new DB()
 } catch (error) {
   console.error(error)
 }

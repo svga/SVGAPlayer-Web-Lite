@@ -11,7 +11,7 @@
   <title>simple</title>
   <meta name="viewport" content="maximum-scale=1, width=device-width, initial-scale=1, user-scalable=0">
   <!-- <script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script> -->
-  <script src="svga.lite.min.js"></script>
+  <!-- <script src="svga.lite.min.js"></script> -->
 </head>
 <body>
   <canvas id="canvas"></canvas>
@@ -31,7 +31,6 @@
 
     downloader.get('./svga/kaola.svga').then(function (fileData) {
       parser.do(fileData).then(function (svgaData) {
-        console.log(svgaData)
         player.mount(svgaData).then(function () {
           player.start()
         })

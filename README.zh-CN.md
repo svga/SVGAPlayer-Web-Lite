@@ -231,7 +231,7 @@ let data = void 0
 let db = void 0
 
 try {
-  db = new SVGADB()
+  db = new DB()
 } catch (error) {
   console.error(error)
 }
