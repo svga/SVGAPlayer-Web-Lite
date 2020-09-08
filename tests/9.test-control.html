@@ -1,0 +1,34 @@
+<button onclick="playerStart()">开始播放</button>
+<button onclick="playerPause()">暂停</button>
+<button onclick="playerStop()">停止</button>
+<button onclick="playerClear()">清空画布</button>
+
+<canvas id="canvas"></canvas>
+
+<script src="svga.lite.min.js"></script>
+<script>
+  let player
+  ;(async () => {
+    const { Downloader, Parser, Player } = SVGA
+    const downloader = new Downloader()
+    const svgaFile = './svga/angel.svga'
+    const fileData = await downloader.get(svgaFile)
+    const parser = new Parser()
+    const svgaData = await parser.do(fileData)
+    player = new Player('#canvas')
+    await player.mount(svgaData)
+  })()
+
+  function playerStart() {
+    player.start()
+  }
+  function playerPause() {
+    player.pause()
+  }
+  function playerStop() {
+    player.stop()
+  }
+  function playerClear() {
+    player.clear()
+  }
+</script>

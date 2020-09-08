@@ -7,11 +7,6 @@ export default class Animator {
     return performance.now()
   }
 
-  public _requestAnimationFrame: (callback: () => void) => any = (callback) => {
-    callback && (this.timer = <any>setTimeout(callback, 16))
-  }
-
-  public timer: number = 0
   public startValue: number = 0
   public endValue: number = 0
   public duration: number = 0
@@ -59,7 +54,7 @@ export default class Animator {
       this._doDeltaTime(this._currentTimeMillsecond() - this._mStartTime)
 
       if (this._isRunning) {
-        this._requestAnimationFrame(this._doFrame.bind(this))
+        window.requestAnimationFrame(this._doFrame.bind(this))
       }
     }
   }
@@ -75,7 +70,6 @@ export default class Animator {
     this.onUpdate(this.animatedValue)
 
     if (this._isRunning === false) {
-      this.timer && clearTimeout(this.timer)
       this.onEnd()
     }
   }

@@ -1,0 +1,26 @@
+<body>
+<script src="svga.lite.min.js"></script>
+<script>
+  ;(async () => {
+    const svgaArray = []
+
+    for (let i = 0; i < 30; i++) {
+      svgaArray.push('./svga/dragon.svga')
+    }
+
+    for (const item of svgaArray) {
+      const canvas = document.createElement('canvas')
+      document.body.appendChild(canvas)
+
+      const downloader = new window.SVGA.Downloader()
+      const parser = new window.SVGA.Parser()
+      const player = new window.SVGA.Player(canvas)
+
+      const fileData = await downloader.get(item)
+      const svgaData = await parser.do(fileData)
+      await player.mount(svgaData)
+      player.start()
+    }
+  })()
+</script>
+</body>
