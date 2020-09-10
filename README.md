@@ -17,9 +17,10 @@ If there is a problem such as `Promise is not a constructor`, the outer chain po
 ## Target Future
 
 - [x] Size = 80kb (gzip = 27kb)
-- [x] Compatible Android 4+ / iOS 9+
+- [x] Compatible Android 4.4+ / iOS 9+
 - [x] Better Asynchronous Operation
 - [x] Multi-threaded (WebWorker) parsing file data
+- [x] OffscreenCanvas
 
 ## Experimental
 

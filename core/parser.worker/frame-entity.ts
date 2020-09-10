@@ -42,7 +42,7 @@ export default class FrameEntity implements FrameEntity {
 
     if (spec.shapes) {
       if (spec.shapes instanceof Array) {
-        spec.shapes.forEach((shape: any) => {
+        spec.shapes.forEach(shape => {
           shape.pathArgs = shape.args
 
           switch (shape.type) {

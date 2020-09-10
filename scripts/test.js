@@ -29,6 +29,7 @@ const BrowserSyncOptions = {
 
 webpack(config, (error, stats) => {
   if (error || stats.hasErrors()) {
+    console.log(stats.toString())
     console.error(error)
   } else {
     inlineWorker(process.env.NODE_ENV)

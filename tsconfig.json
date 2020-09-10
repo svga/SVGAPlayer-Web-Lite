@@ -3,7 +3,7 @@
     "outDir": "./dist",
     "target": "es5",
     "strict": true,
-    "noImplicitAny": true,
+    "noImplicitAny": false,
     "strictNullChecks": true,
     "noImplicitThis": true,
     "alwaysStrict": true,

@@ -1,11 +1,14 @@
 <body>
+<style type="text/css">
+canvas { width: 200px; height: 200px; }
+</style>
 <script src="svga.lite.min.js"></script>
 <script>
   ;(async () => {
-    const svgaArray = []
+    let svgaArray = []
 
-    for (let i = 0; i < 30; i++) {
-      svgaArray.push('./svga/dragon.svga')
+    for (let i = 0; i < 5; i++) {
+      svgaArray = svgaArray.concat(['svga/1.svga', 'svga/2.svga', 'svga/3.svga'])
     }
 
     for (const item of svgaArray) {
@@ -15,11 +18,20 @@
       const downloader = new window.SVGA.Downloader()
       const parser = new window.SVGA.Parser()
       const player = new window.SVGA.Player(canvas)
+      player.set({
+        cacheFrames: true,
+        intersectionObserverRender: true
+      })
 
-      const fileData = await downloader.get(item)
-      const svgaData = await parser.do(fileData)
-      await player.mount(svgaData)
-      player.start()
+      downloader.get(item).then(fileData => {
+        parser.do(fileData).then(svgaData => {
+          player.mount(svgaData).then(() => {
+            player.start()
+            downloader.destroy()
+            parser.destroy()
+          })
+        })
+      })
     }
   })()
 </script>

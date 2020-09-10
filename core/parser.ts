@@ -1,9 +1,11 @@
 /// <reference path="../types/svga.d.ts" />
 
+import arrayBufferToString from './common/arraybuffer-to-string'
+
 const WORKER = '#INLINE_PARSER_WROKER#'
 
 interface mockWebWorker {
-  disableWorker: Boolean
+  disableWorker: boolean
   onmessage: (data: any) => void
   onmessageCallback: (data: any) => void
 }
@@ -39,17 +41,13 @@ export default class Parser {
     return new Promise((resolve, reject) => {
       if ((this.worker as mockWebWorker).disableWorker) {
         const worker = (this.worker as mockWebWorker)
-
         worker.onmessageCallback = (data: VideoEntity) => {
           resolve(data)
         }
-
         worker.onmessage({ data })
       } else {
         const worker = (this.worker as Worker)
-
         worker.postMessage(data)
-
         worker.onmessage = ({ data }: { data: VideoEntity }) => {
           resolve(data)
         }

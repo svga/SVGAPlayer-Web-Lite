@@ -31,7 +31,7 @@ interface Rect {
   width: number
   height: number
 }
-  
+
 interface Transform {
   a: number;
   b: number;
@@ -55,12 +55,12 @@ interface FrameEntity {
   maskPath: any
   shapes: Array<any>
 }
-  
+
 interface SpriteEntity {
   imageKey: string
   frames: FrameEntity[]
 }
-  
+
 interface VideoEntity {
   version: SVGA_VERSION
   videoSize: VideoSize
@@ -83,17 +83,19 @@ export class Parser {
 }
 
 interface options {
-  loop?: number | Boolean
+  loop?: number | boolean
   fillMode?: FILL_MODE
   playMode?: PLAY_MODE
   startFrame?: number
   endFrame?: number
+  cacheFrames: boolean
+  intersectionObserverRender: boolean
 }
 
 export class Player {
   constructor(element: string | HTMLCanvasElement, videoItem?: VideoEntity, options?: options)
   container: HTMLCanvasElement
-  loop: number | Boolean
+  loop: number | boolean
   fillMode: FILL_MODE
   playMode: PLAY_MODE
   progress: number

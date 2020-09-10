@@ -11,11 +11,13 @@ enum EVENT_TYPES {
 }
 
 interface options {
-  loop: number | Boolean
+  loop: number | boolean
   fillMode: FILL_MODE
   playMode: PLAY_MODE
   startFrame: number
   endFrame: number
+  cacheFrames: boolean
+  intersectionObserverRender: boolean
 }
 
 enum FILL_MODE {
@@ -30,7 +32,7 @@ enum PLAY_MODE {
 
 export default class Player {
   public container: HTMLCanvasElement
-  public loop: number | Boolean = true
+  public loop: number | boolean = true
   public fillMode: FILL_MODE = FILL_MODE.FORWARDS
   public playMode: PLAY_MODE = PLAY_MODE.FORWARDS
   public progress: number = 0
@@ -38,7 +40,10 @@ export default class Player {
   public totalFramesCount: number = 0
   public startFrame: number = 0
   public endFrame: number = 0
-
+  public cacheFrames = false
+  public intersectionObserverRender = false
+  public intersectionObserverRenderShow = true
+  private _intersectionObserver: IntersectionObserver | null = null
   private _renderer: any
   private _animator: any
 
@@ -64,6 +69,29 @@ export default class Player {
     options.playMode && (this.playMode = options.playMode)
     options.startFrame && (this.startFrame = options.startFrame)
     options.endFrame && (this.endFrame = options.endFrame)
+    options.cacheFrames !== undefined && (this.cacheFrames = options.cacheFrames)
+
+    // 监听容器是否处于浏览器视窗内
+    options.intersectionObserverRender !== undefined && (this.intersectionObserverRender = options.intersectionObserverRender)
+    if (IntersectionObserver && this.intersectionObserverRender) {
+      this._intersectionObserver = new IntersectionObserver(entries => {
+        if (entries[0].intersectionRatio <= 0) {
+          this.intersectionObserverRenderShow && (this.intersectionObserverRenderShow = false)
+        } else {
+          !this.intersectionObserverRenderShow && (this.intersectionObserverRenderShow = true)
+        }
+      }, {
+        rootMargin: '0px',
+        threshold: [0, 0.5, 1]
+      })
+      this._intersectionObserver.observe(this.container)
+    } else {
+      if (this._intersectionObserver) {
+        this._intersectionObserver.disconnect()
+      }
+      this.intersectionObserverRender = false
+      this.intersectionObserverRenderShow = true
+    }
   }
 
   public mount (videoItem: VideoEntity) {

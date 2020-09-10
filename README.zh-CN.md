@@ -15,9 +15,10 @@
 ## 目标未来
 
 - [x] 体积 = 80k (gzip = 27kb)
-- [x] 兼容 Android 4+ / iOS 9+
+- [x] 兼容 Android 4.4+ / iOS 9+
 - [x] 更好的异步操作
 - [x] 多线程 (WebWorker) 解析文件数据
+- [x] OffscreenCanvas
 
 ## 实验性
 
@@ -59,7 +60,8 @@ npm i svga.lite
 import { Downloader, Parser, Player } from 'svga.lite'
 
 const downloader = new Downloader()
-// 默认调用 WebWorker 解析，可配置 new Parser({ disableWorker: true }) 禁止
+// 默认调用 WebWorker 线程解析
+// 可配置 new Parser({ disableWorker: true }) 禁止
 const parser = new Parser()
 const player = new Player('#canvas') // #canvas 是 HTMLCanvasElement
 
@@ -82,9 +84,16 @@ const player = new Player('#canvas') // #canvas 是 HTMLCanvasElement
     .$on('clear', () => console.log('event clear'))
     .$on('process', () => console.log('event process', player.progress))
 
+  // 开始播放动画
   player.start()
+
+  // 暂停播放东湖
   // player.pause()
+
+  // 停止播放动画
   // player.stop()
+
+  // 清空动画
   // player.clear()
 })()
 ```
@@ -98,6 +107,8 @@ fillMode | 最后停留的目标模式 | `forwards` `backwards` | `forwards` | �
 playMode | 播放模式 | `forwards` `fallbacks` | `forwards` |
 startFrame | 开始播放帧 | `number` | `0` |
 endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA 文件最后一帧
+cacheFrames | 是否缓存帧 | `boolean` | `false` | 开启后对已绘制的帧进行缓存，提升重复播放动画性能（v2.5+）
+intersectionObserverRender | 是否开启动画容器视窗检测 | `boolean` | `false` | 开启后利用 Intersection Observer API 检测动画容器是否处于视窗内，若处于视窗外，避免渲染帧造成资源消耗（v2.5+）
 
 ### 支持 1.x 版本 SVGA (v1.2.0+)
 
@@ -111,7 +122,8 @@ const downloader = new Downloader()
 const svgaFile = './svga/show.svga'
 
 const fileData = await downloader.get(svgaFile)
-// Parser1x 默认调用 WebWorker 解析，可配置 new Parser1x({ disableWorker: true }) 禁止
+// Parser1x 默认调用 WebWorker 线程解析
+// 可配置 new Parser1x({ disableWorker: true }) 禁止
 const parser = util.version(fileData) === 1 ? new Parser1x() : new Parser()
 
 const svgaData = await parser.do(fileData)

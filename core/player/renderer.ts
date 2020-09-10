@@ -1,19 +1,19 @@
 import Player from '../player/index'
-import BezierPath from '../common/bezier-path'
-import EllipsePath from '../common/ellipse-path'
-import RectPath from '../common/rect-path'
-
-const validMethods = 'MLHVCSQRZmlhvcsqrz'
+import render from './offscreen.canvas.render'
 
 export default class Renderer {
     private _player: Player
-    private _canvasContext: CanvasRenderingContext2D
     private _bitmapCache: {[key: string]: HTMLImageElement} = {}
     private _dynamicElements: {[key: string]: any} = {}
+    // ImageData
+    // private _frames: {[key: string]: ImageData} = {}
+    private _frames: {[key: string]: HTMLImageElement | ImageBitmap} = {}
+    private _ofsCanvas: HTMLCanvasElement | OffscreenCanvas
 
     constructor (player: Player) {
       this._player = player
-      this._canvasContext = <CanvasRenderingContext2D> this._player.container.getContext('2d')
+      const container = this._player.container
+      this._ofsCanvas = OffscreenCanvas ? new OffscreenCanvas(container.width, container.height) : document.createElement('canvas')
     }
 
     public prepare () {
@@ -22,11 +22,12 @@ export default class Renderer {
 
         if (!this._player.videoItem.images || Object.keys(this._player.videoItem.images).length == 0) {
           resolve()
-
           return void 0
         }
 
-        this._dynamicElements = this._player.videoItem.dynamicElements
+        if (this._player.videoItem.dynamicElements) {
+          this._dynamicElements = this._player.videoItem.dynamicElements
+        }
 
         let totalCount = 0
         let loadedCount = 0
@@ -55,380 +56,58 @@ export default class Renderer {
     }
 
     public clear () {
-      this._canvasContext.clearRect(0, 0, this._player.container.width, this._player.container.height)
+      this._player.container.width = this._player.container.width
     }
 
     public drawFrame (frame: number) {
+      const player = this._player
+      if (player.intersectionObserverRender && !player.intersectionObserverRenderShow) {
+        return
+      }
+
       this.clear()
 
-      const context = this._canvasContext
+      const context2d = player.container.getContext('2d')!!
 
-      this._player.videoItem.sprites.forEach((sprite: any) => {
-        const frameItem = sprite.frames[this._player.currentFrame]
+      if (this._player.cacheFrames && this._frames[frame]) {
+        const ofsFrame = this._frames[frame]
+        // ImageData
+        // context.putImageData(ofsFrame, 0, 0)
+        context2d.drawImage(ofsFrame, 0, 0, ofsFrame.width, ofsFrame.height, 0, 0, ofsFrame.width, ofsFrame.height)
+        return
+      }
 
-        if (frameItem.alpha < 0.05) {
-          return
+      const ofsCanvas = this._ofsCanvas
+
+      ofsCanvas.width = this._player.container.width
+      ofsCanvas.height = this._player.container.height
+
+      render(
+        ofsCanvas,
+        this._bitmapCache,
+        this._dynamicElements,
+        this._player.videoItem,
+        this._player.currentFrame
+      )
+
+      context2d.drawImage(
+        ofsCanvas,
+        0, 0, ofsCanvas.width, ofsCanvas.height,
+        0, 0, ofsCanvas.width, ofsCanvas.height
+      )
+
+      if (this._player.cacheFrames) {
+        // ImageData
+        // const imageData = (ofsCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D).getImageData(0, 0, ofsCanvas.width, ofsCanvas.height)
+        // this._frames[frame] = imageData
+        if ('toDataURL' in ofsCanvas) {
+          const ofsImageBase64 = ofsCanvas.toDataURL()
+          const ofsImage = new Image()
+          ofsImage.src = ofsImageBase64
+          this._frames[frame] = ofsImage
+        } else {
+          this._frames[frame] = ofsCanvas.transferToImageBitmap()
         }
-
-        context.save()
-        context.globalAlpha = frameItem.alpha
-        context.transform(
-          frameItem.transform.a || 1,
-          frameItem.transform.b || 0,
-          frameItem.transform.c || 0,
-          frameItem.transform.d || 1,
-          frameItem.transform.tx || 0,
-          frameItem.transform.ty || 0
-        )
-
-        const img = this._bitmapCache[sprite.imageKey]
-
-        if (img) {
-          if (frameItem.maskPath !== undefined && frameItem.maskPath !== null) {
-            frameItem.maskPath._styles = undefined
-            this.drawBezier(frameItem.maskPath)
-            context.clip()
-          }
-
-          context.drawImage(img, 0, 0)
-        }
-
-        const dynamicElements = this._dynamicElements[sprite.imageKey]
-
-        if (dynamicElements) {
-          context.drawImage(dynamicElements, (frameItem.layout.width - dynamicElements.width) / 2, (frameItem.layout.height - dynamicElements.height) / 2)
-        }
-
-        frameItem.shapes && frameItem.shapes.forEach((shape: any) => {
-          if (shape.type === 'shape' && shape.pathArgs && shape.pathArgs.d) {
-            this.drawBezier(
-              new BezierPath(
-                shape.pathArgs.d,
-                shape.transform,
-                shape.styles
-              )
-            )
-          } else if (shape.type === 'ellipse' && shape.pathArgs) {
-            this._drawEllipse(
-              new EllipsePath(
-                parseFloat(shape.pathArgs.x) || 0.0,
-                parseFloat(shape.pathArgs.y) || 0.0,
-                parseFloat(shape.pathArgs.radiusX) || 0.0,
-                parseFloat(shape.pathArgs.radiusY) || 0.0,
-                shape.transform,
-                shape.styles
-              )
-            )
-          } else if (shape.type === 'rect' && shape.pathArgs) {
-            this._drawRect(
-              new RectPath(
-                parseFloat(shape.pathArgs.x) || 0.0,
-                parseFloat(shape.pathArgs.y) || 0.0,
-                parseFloat(shape.pathArgs.width) || 0.0,
-                parseFloat(shape.pathArgs.height) || 0.0,
-                parseFloat(shape.pathArgs.cornerRadius) || 0.0,
-                shape.transform, shape.styles
-              )
-            )
-          }
-        })
-
-        context.restore()
-      })
-    }
-
-    private _resetShapeStyles (obj: any) {
-      const context = this._canvasContext
-
-      const styles = obj._styles
-
-      if (styles === undefined) {
-        return void 0
       }
-
-      if (styles && styles.stroke) {
-        context.strokeStyle = `rgba(${parseInt((styles.stroke[0] * 255).toString())}, ${parseInt((styles.stroke[1] * 255).toString())}, ${parseInt((styles.stroke[2] * 255).toString())}, ${styles.stroke[3]})`
-      } else {
-        context.strokeStyle = 'transparent'
-      }
-
-      if (styles) {
-        context.lineWidth = styles.strokeWidth || undefined
-        context.lineCap = styles.lineCap || undefined
-        context.lineJoin = styles.lineJoin || undefined
-        context.miterLimit = styles.miterLimit || undefined
-      }
-
-      if (styles && styles.fill) {
-        context.fillStyle = `rgba(${parseInt((styles.fill[0] * 255).toString())}, ${parseInt((styles.fill[1] * 255).toString())}, ${parseInt((styles.fill[2] * 255).toString())}, ${styles.fill[3]})`
-      } else {
-        context.fillStyle = 'transparent'
-      }
-
-      styles && styles.lineDash && context.setLineDash(styles.lineDash)
-    }
-
-    private drawBezier (obj: any) {
-      const context = this._canvasContext
-
-      context.save()
-
-      this._resetShapeStyles(obj)
-
-      if (obj._transform !== undefined && obj._transform !== null) {
-        context.transform(
-          obj._transform.a || 1.0,
-          obj._transform.b || 0,
-          obj._transform.c || 0,
-          obj._transform.d || 1.0,
-          obj._transform.tx || 0,
-          obj._transform.ty || 0
-        )
-      }
-
-      let currentPoint = { x: 0, y: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
-
-      context.beginPath()
-
-      const d = obj._d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
-
-      d.split('|||').forEach((segment: any) => {
-        if (segment.length == 0) { return void 0 }
-
-        const firstLetter = segment.substr(0, 1)
-
-        if (validMethods.indexOf(firstLetter) >= 0) {
-          const args = segment.substr(1).trim().split(' ')
-
-          this._drawBezierElement(currentPoint, firstLetter, args)
-        }
-      })
-
-      if (obj._styles && obj._styles.fill) {
-        context.fill()
-      } else if (obj._styles && obj._styles.stroke) {
-        context.stroke()
-      }
-
-      context.restore()
-    }
-
-    private _drawBezierElement (currentPoint: any, method: any, args: any) {
-      const context = this._canvasContext
-
-      switch (method) {
-        case 'M':
-          currentPoint.x = Number(args[0])
-          currentPoint.y = Number(args[1])
-          context.moveTo(currentPoint.x, currentPoint.y)
-          break
-        case 'm':
-          currentPoint.x += Number(args[0])
-          currentPoint.y += Number(args[1])
-          context.moveTo(currentPoint.x, currentPoint.y)
-          break
-        case 'L':
-          currentPoint.x = Number(args[0])
-          currentPoint.y = Number(args[1])
-          context.lineTo(currentPoint.x, currentPoint.y)
-          break
-        case 'l':
-          currentPoint.x += Number(args[0])
-          currentPoint.y += Number(args[1])
-          context.lineTo(currentPoint.x, currentPoint.y)
-          break
-        case 'H':
-          currentPoint.x = Number(args[0])
-          context.lineTo(currentPoint.x, currentPoint.y)
-          break
-        case 'h':
-          currentPoint.x += Number(args[0])
-          context.lineTo(currentPoint.x, currentPoint.y)
-          break
-        case 'V':
-          currentPoint.y = Number(args[0])
-          context.lineTo(currentPoint.x, currentPoint.y)
-          break
-        case 'v':
-          currentPoint.y += Number(args[0])
-          context.lineTo(currentPoint.x, currentPoint.y)
-          break
-        case 'C':
-          currentPoint.x1 = Number(args[0])
-          currentPoint.y1 = Number(args[1])
-          currentPoint.x2 = Number(args[2])
-          currentPoint.y2 = Number(args[3])
-          currentPoint.x = Number(args[ 4 ])
-          currentPoint.y = Number(args[ 5 ])
-          context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-          break
-        case 'c':
-          currentPoint.x1 = currentPoint.x + Number(args[0])
-          currentPoint.y1 = currentPoint.y + Number(args[1])
-          currentPoint.x2 = currentPoint.x + Number(args[2])
-          currentPoint.y2 = currentPoint.y + Number(args[3])
-          currentPoint.x += Number(args[ 4 ])
-          currentPoint.y += Number(args[ 5 ])
-          context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-          break
-        case 'S':
-          if (currentPoint.x1 && currentPoint.y1 && currentPoint.x2 && currentPoint.y2) {
-            currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-            currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-            currentPoint.x2 = Number(args[0])
-            currentPoint.y2 = Number(args[1])
-            currentPoint.x = Number(args[2])
-            currentPoint.y = Number(args[3])
-            context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-          } else {
-            currentPoint.x1 = Number(args[0])
-            currentPoint.y1 = Number(args[1])
-            currentPoint.x = Number(args[2])
-            currentPoint.y = Number(args[3])
-            context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-          }
-          break
-        case 's':
-          if (currentPoint.x1 && currentPoint.y1 && currentPoint.x2 && currentPoint.y2) {
-            currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-            currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-            currentPoint.x2 = currentPoint.x + Number(args[0])
-            currentPoint.y2 = currentPoint.y + Number(args[1])
-            currentPoint.x += Number(args[2])
-            currentPoint.y += Number(args[3])
-            context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-          } else {
-            currentPoint.x1 = currentPoint.x + Number(args[0])
-            currentPoint.y1 = currentPoint.y + Number(args[1])
-            currentPoint.x += Number(args[2])
-            currentPoint.y += Number(args[3])
-            context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-          }
-          break
-        case 'Q':
-          currentPoint.x1 = Number(args[0])
-          currentPoint.y1 = Number(args[1])
-          currentPoint.x = Number(args[2])
-          currentPoint.y = Number(args[3])
-          context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-          break
-        case 'q':
-          currentPoint.x1 = currentPoint.x + Number(args[0])
-          currentPoint.y1 = currentPoint.y + Number(args[1])
-          currentPoint.x += Number(args[2])
-          currentPoint.y += Number(args[3])
-          context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-          break
-        case 'A':
-          break
-        case 'a':
-          break
-        case 'Z':
-        case 'z':
-          context.closePath()
-          break
-        default:
-          break
-      }
-    }
-
-    private _drawEllipse (obj: any) {
-      const context = this._canvasContext
-
-      context.save()
-
-      this._resetShapeStyles(obj)
-
-      if (obj._transform !== undefined && obj._transform !== null) {
-        context.transform(
-          obj._transform.a || 1.0,
-          obj._transform.b || 0,
-          obj._transform.c || 0,
-          obj._transform.d || 1.0,
-          obj._transform.tx || 0,
-          obj._transform.ty || 0
-        )
-      }
-
-      let x = obj._x - obj._radiusX
-      let y = obj._y - obj._radiusY
-      let w = obj._radiusX * 2
-      let h = obj._radiusY * 2
-
-      const kappa = 0.5522848
-
-      const ox = (w / 2) * kappa
-      const oy = (h / 2) * kappa
-
-      const xe = x + w
-      const ye = y + h
-
-      const xm = x + w / 2
-      const ym = y + h / 2
-
-      context.beginPath()
-      context.moveTo(x, ym)
-      context.bezierCurveTo(x, ym - oy, xm - ox, y, xm, y)
-      context.bezierCurveTo(xm + ox, y, xe, ym - oy, xe, ym)
-      context.bezierCurveTo(xe, ym + oy, xm + ox, ye, xm, ye)
-      context.bezierCurveTo(xm - ox, ye, x, ym + oy, x, ym)
-
-      if (obj._styles && obj._styles.fill) {
-        context.fill()
-      } else if (obj._styles && obj._styles.stroke) {
-        context.stroke()
-      }
-
-      context.restore()
-    }
-
-    private _drawRect (obj: any) {
-      const context = this._canvasContext
-
-      context.save()
-
-      this._resetShapeStyles(obj)
-
-      if (obj._transform !== undefined && obj._transform !== null) {
-        context.transform(
-          obj._transform.a || 1.0,
-          obj._transform.b || 0,
-          obj._transform.c || 0,
-          obj._transform.d || 1.0,
-          obj._transform.tx || 0,
-          obj._transform.ty || 0
-        )
-      }
-
-      let x = obj._x
-      let y = obj._y
-      let width = obj._width
-      let height = obj._height
-      let radius = obj._cornerRadius
-
-      if (width < 2 * radius) {
-        radius = width / 2
-      }
-
-      if (height < 2 * radius) {
-        radius = height / 2
-      }
-
-      context.beginPath()
-      context.moveTo(x + radius, y)
-      context.arcTo(x + width, y, x + width, y + height, radius)
-      context.arcTo(x + width, y + height, x, y + height, radius)
-      context.arcTo(x, y + height, x, y, radius)
-      context.arcTo(x, y, x + width, y, radius)
-
-      context.closePath()
-
-      if (obj._styles && obj._styles.fill) {
-        context.fill()
-      } else if (obj._styles && obj._styles.stroke) {
-        context.stroke()
-      }
-
-      context.restore()
     }
 }

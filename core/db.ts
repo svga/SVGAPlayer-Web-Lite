@@ -4,7 +4,7 @@ export default class DB {
   constructor ({ name, version, desc, size } = { name: 'SVGA.Lite.DB', version: '1.0', desc: '', size: 3 * 1024 * 1024 }) {
     if (window.openDatabase) {
       this.db = window.openDatabase(name, version, desc, size)
-      this.db.transaction((tx: any) => {
+      this.db.transaction(tx => {
         tx.executeSql('CREATE TABLE IF NOT EXISTS SVGA (id unique, data, time)')
       })
     } else {
@@ -14,8 +14,8 @@ export default class DB {
 
   find (id: string) {
     return new Promise((resolve, reject) => {
-      this.db.transaction((tx: any) => {
-        tx.executeSql('SELECT * FROM SVGA WHERE id = ?', [id], (tx: any, results: any) => {
+      this.db.transaction(tx => {
+        tx.executeSql('SELECT * FROM SVGA WHERE id = ?', [id], (tx, results) => {
           if (results.rows.length === 0) {
             resolve([])
           } else {
@@ -28,7 +28,7 @@ export default class DB {
 
   insert (id: string, data: string) {
     return new Promise((resolve, reject) => {
-      this.db.transaction((tx: any) => {
+      this.db.transaction(tx => {
         tx.executeSql('INSERT INTO SVGA (id, data, time) VALUES (?, ?, ?)', [id, data, new Date().getTime().toString()])
         resolve()
       })
@@ -37,7 +37,7 @@ export default class DB {
 
   delete (id: string) {
     return new Promise((resolve, reject) => {
-      this.db.transaction((tx: any) => {
+      this.db.transaction(tx => {
         tx.executeSql('DELETE FROM SVGA WHERE id = ?', [id])
         resolve()
       })
