@@ -19,8 +19,7 @@
 
     if (db) {
       // await db.delete('test')
-      const record = (await db.find('test'))[0]
-      record && (data = JSON.parse(record.data))
+      data = await db.find('test')
     }
 
     if (!data) {
@@ -30,7 +29,7 @@
       data = await parser.do(fileData)
 
       // 存入本地数据库
-      db && (await db.insert('test', JSON.stringify(data)))
+      db && (await db.insert('test', data))
     }
 
     console.timeEnd('test')

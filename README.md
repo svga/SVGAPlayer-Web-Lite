@@ -232,7 +232,7 @@ player.destroy()
 
 ### DB (v1.3.0+)
 
-已下载并解析的数据利用 WebSQL 进行持久化缓存，下次可避免重复消耗资源对统一 SVGA 下载和解析
+已下载并解析的数据利用 IndexedDB 进行持久化缓存，下次可避免重复消耗资源对统一 SVGA 下载和解析
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -249,8 +249,7 @@ try {
 }
 
 if (db) {
-  const record = (await db.find(svgaFile))[0]
-  record && (data = JSON.parse(record.data))
+  data = await db.find(svgaFile)
 }
 
 if (!data) {
@@ -261,7 +260,7 @@ if (!data) {
   data = await parser.do(fileData)
 
   // 插入数据
-  db && (await db.insert(svgaFile, JSON.stringify(data)))
+  db && (await db.insert(svgaFile, data))
 }
 
 const player = new Player('#canvas')
