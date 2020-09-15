@@ -266,14 +266,14 @@ setTimeout(() => {
 We are grateful to the community for contributing bugfixes and improvements.
 
 ```sh
+# Installation dependencies
+yarn install
+
 # Development & Test
-npm run test
+yarn test
 
 # Build
-npm run build
-
-# Publish
-npm publish
+yarn build
 ```
 
 ## LICENSE

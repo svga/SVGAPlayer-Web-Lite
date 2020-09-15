@@ -290,14 +290,14 @@ setTimeout(() => {
 我们感谢社区提供错误修正和改进。
 
 ```sh
+# 安装依赖
+yarn install
+
 # 开发测试
-npm run test
+yarn test
 
 # 构建
-npm run build
-
-# 发布
-npm publish
+yarn build
 ```
 
 ## LICENSE
