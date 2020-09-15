@@ -67,14 +67,9 @@ export default class Player {
     typeof options.loop !== 'undefined' && (this.loop = options.loop)
     options.fillMode && (this.fillMode = options.fillMode)
     options.playMode && (this.playMode = options.playMode)
-    if (options.startFrame && options.endFrame && options.startFrame < options.endFrame) {
-      this.startFrame = options.startFrame
-      this.endFrame = options.endFrame
-    } else {
-      this.startFrame = 0
-      this.endFrame = 0
-    }
     options.cacheFrames !== undefined && (this.cacheFrames = options.cacheFrames)
+    this.startFrame = options.startFrame ? options.startFrame : this.startFrame
+    this.endFrame = options.endFrame ? options.endFrame : this.endFrame
 
     // 监听容器是否处于浏览器视窗内
     options.intersectionObserverRender !== undefined && (this.intersectionObserverRender = options.intersectionObserverRender)
@@ -174,22 +169,25 @@ export default class Player {
   }
 
   private _startAnimation () {
-    const { playMode, totalFramesCount, startFrame, endFrame } = this
+    const { playMode, totalFramesCount, startFrame, endFrame, videoItem } = this
 
     // 如果开始动画的当前帧是最后一帧，重置为第 0 帧
     if (this.currentFrame === totalFramesCount) {
-      this.currentFrame = 0
+      this.currentFrame = startFrame || 0
     }
 
     this._animator.startValue = playMode === 'fallbacks' ? (endFrame || totalFramesCount) : (startFrame || 0)
     this._animator.endValue = playMode === 'fallbacks' ? (startFrame || 0) : (endFrame || totalFramesCount)
 
-    let frames = this.videoItem.frames
-    if (this.startFrame && this.endFrame) {
-      frames = this.endFrame - this.startFrame
+    let frames = videoItem.frames
+
+    if (endFrame > 0 && endFrame > startFrame) {
+      frames = endFrame - startFrame
+    } else if (endFrame <= 0 && startFrame > 0) {
+      frames = videoItem.frames - startFrame
     }
 
-    this._animator.duration = frames * (1.0 / this.videoItem.FPS) * 1000
+    this._animator.duration = frames * (1.0 / videoItem.FPS) * 1000
     this._animator.loop = this.loop === true || this.loop <= 0 ? Infinity : (this.loop === false ? 1 : this.loop)
     this._animator.fillRule = this.fillMode === 'backwards' ? 1 : 0
 
@@ -202,7 +200,7 @@ export default class Player {
 
       this.currentFrame = value
 
-      this.progress = parseFloat((value + 1).toString()) / parseFloat(this.videoItem.frames.toString()) * 100
+      this.progress = parseFloat((value + 1).toString()) / parseFloat(videoItem.frames.toString()) * 100
 
       this._renderer.drawFrame(this.currentFrame)
 
