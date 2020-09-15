@@ -22,8 +22,8 @@
 
 ## 实验性
 
-- [ ] 使用 WebAssembly 替代 WebWorker
 - [ ] 渲染引擎模拟运行在 WebWorker
+- [ ] 使用 WebAssembly 替代 WebWorker
 - [ ] GPU 加速运算
 
 ## 差异
@@ -114,7 +114,7 @@ endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA
 cacheFrames（v1.5+）| 是否缓存帧 | `boolean` | `false` | 开启后对已绘制的帧进行缓存，提升重复播放动画性能
 intersectionObserverRender（v1.5+）| 是否开启动画容器视窗检测 | `boolean` | `false` | 开启后利用 [Intersection Observer API](https://developer.mozilla.org/zh-CN/docs/Web/API/Intersection_Observer_API) 检测动画容器是否处于视窗内，若处于视窗外，停止描绘渲染帧避免造成资源消耗
 
-### 支持 1.x 版本 SVGA (v1.2.0+)
+### 支持 1.x 版本 SVGA
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -217,7 +217,7 @@ player1.start()
 player2.start()
 ```
 
-### 销毁实例 (v1.2.0+)
+### 销毁实例
 
 ```js
 const downloader = new Downloader()
@@ -230,7 +230,7 @@ const player = new Player('#canvas')
 player.destroy()
 ```
 
-### DB (v1.3.0+)
+### DB (v1.5+)
 
 已下载并解析的数据利用 IndexedDB 进行持久化缓存，下次可避免重复消耗资源对统一 SVGA 下载和解析
 

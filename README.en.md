@@ -20,8 +20,8 @@ If there is a problem such as `Promise is not a constructor`, the outer chain po
 
 ## Experimental
 
-- [ ] Use WebAssembly instead of WebWorker
 - [ ] Rendering engine simulation runs in the WebWorker
+- [ ] Use WebAssembly instead of WebWorker
 - [ ] GPU accelerated operation
 
 ## Diff
@@ -89,7 +89,7 @@ const player = new Player('#canvas') // #canvas is HTMLCanvasElement
 })()
 ```
 
-### Support v1.x of SVGA (v1.2.0+)
+### Support v1.x of SVGA
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -193,7 +193,7 @@ player1.start()
 player2.start()
 ```
 
-### Destroy Instance (v1.2.0+)
+### Destroy Instance
 
 ```js
 const downloader = new Downloader()
@@ -206,7 +206,7 @@ const player = new Player('#canvas')
 player.destroy()
 ```
 
-### DB (v1.3.0+)
+### DB (v1.5+)
 
 The downloaded and parsed data is persisted and cached using IndexedDB, and the next time you can avoid reusing resources for unified SVGA download and parsing
 
@@ -245,7 +245,7 @@ await player.mount(data)
 player.start()
 ```
 
-## Downloader Cancel (v1.4.0+)
+## Downloader Cancel
 
 You can cancel the SVGA file request in the download
 
