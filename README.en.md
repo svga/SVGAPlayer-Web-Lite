@@ -208,7 +208,7 @@ player.destroy()
 
 ### DB (v1.3.0+)
 
-The downloaded and parsed data is persisted and cached using WebSQL, and the next time you can avoid reusing resources for unified SVGA download and parsing
+The downloaded and parsed data is persisted and cached using IndexedDB, and the next time you can avoid reusing resources for unified SVGA download and parsing
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -225,8 +225,7 @@ try {
 }
 
 if (db) {
-  const record = (await db.find(svgaFile))[0]
-  record && (data = JSON.parse(record.data))
+  data = await db.find(svgaFile)
 }
 
 if (!data) {
@@ -237,7 +236,7 @@ if (!data) {
   data = await parser.do(fileData)
 
   // insert data to db
-  db && (await db.insert(svgaFile, JSON.stringify(data)))
+  db && (await db.insert(svgaFile, data))
 }
 
 const player = new Player('#canvas')
