@@ -67,8 +67,13 @@ export default class Player {
     typeof options.loop !== 'undefined' && (this.loop = options.loop)
     options.fillMode && (this.fillMode = options.fillMode)
     options.playMode && (this.playMode = options.playMode)
-    options.startFrame && (this.startFrame = options.startFrame)
-    options.endFrame && (this.endFrame = options.endFrame)
+    if (options.startFrame && options.endFrame && options.startFrame < options.endFrame) {
+      this.startFrame = options.startFrame
+      this.endFrame = options.endFrame
+    } else {
+      this.startFrame = 0
+      this.endFrame = 0
+    }
     options.cacheFrames !== undefined && (this.cacheFrames = options.cacheFrames)
 
     // 监听容器是否处于浏览器视窗内
@@ -179,7 +184,12 @@ export default class Player {
     this._animator.startValue = playMode === 'fallbacks' ? (endFrame || totalFramesCount) : (startFrame || 0)
     this._animator.endValue = playMode === 'fallbacks' ? (startFrame || 0) : (endFrame || totalFramesCount)
 
-    this._animator.duration = this.videoItem.frames * (1.0 / this.videoItem.FPS) * 1000
+    let frames = this.videoItem.frames
+    if (this.startFrame && this.endFrame) {
+      frames = this.endFrame - this.startFrame
+    }
+
+    this._animator.duration = frames * (1.0 / this.videoItem.FPS) * 1000
     this._animator.loop = this.loop === true || this.loop <= 0 ? Infinity : (this.loop === false ? 1 : this.loop)
     this._animator.fillRule = this.fillMode === 'backwards' ? 1 : 0
 

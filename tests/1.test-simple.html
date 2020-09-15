@@ -20,6 +20,11 @@
   var parser = new window.SVGA.Parser()
   var player = new window.SVGA.Player('#canvas')
 
+  player.set({
+    startFrame: 10,
+    endFrame: 30
+  })
+
   downloader.get('./svga/4.svga').then(function (fileData) {
     parser.do(fileData).then(function (svgaData) {
       player.mount(svgaData).then(function () {
