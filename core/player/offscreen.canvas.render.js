@@ -134,14 +134,11 @@ function drawBezier (context, obj) {
   const d = obj._d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
 
   d.split('|||').forEach(segment => {
-    if (segment.length == 0) { return void 0 }
-
+    if (segment.length == 0) return
     const firstLetter = segment.substr(0, 1)
-
     if (validMethods.indexOf(firstLetter) >= 0) {
       const args = segment.substr(1).trim().split(' ')
-
-      drawBezierElement(currentPoint, firstLetter, args)
+      drawBezierElement(context, currentPoint, firstLetter, args)
     }
   })
 

@@ -25,7 +25,7 @@
   //   endFrame: 20
   // })
 
-  downloader.get('./svga/4.svga').then(function (fileData) {
+  downloader.get('./svga/soundwave.svga').then(function (fileData) {
     parser.do(fileData).then(function (svgaData) {
       player.mount(svgaData).then(function () {
         player.start()
