@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <title>test of no execution delay</title>
+  <meta name="viewport" content="maximum-scale=1, width=750, initial-scale=1, user-scalable=0">
+  <script src="svga.lite.min.js"></script>
+  <style type="text/css">
+    html {
+      font-size: 12px;
+    }
+
+    body {
+      padding: 10vh 10vw 0;
+    }
+
+    canvas {
+      width: 200px;
+      height: 200px;
+      background-color: black;
+    }
+  </style>
+  <script src="svga.lite.min.js"></script>
+</head>
+<body>
+<h1>
+  switch to other tabs, or try to make this window invisible.
+  Thus trigger the svga to start, try come back seconds later.
+</h1>
+<div style="display: flex;justify-content: center">
+
+  <div>
+    <h2>normal</h2>
+    <canvas id="normal"></canvas>
+    <div id="normalBox"></div>
+  </div>
+
+  <div style="flex: 0.5"></div>
+
+  <div>
+    <h2>no execution delay</h2>
+    <canvas id="noDelay"></canvas>
+    <div id="noDelayBox"></div>
+  </div>
+
+</div>
+<script>
+  (async () => {
+
+    const downloader = new window.SVGA.Downloader()
+    const parser = new window.SVGA.Parser()
+    const fileData = await downloader.get('./svga/angel.svga')
+    const videoItem = await parser.do(fileData)
+    const normalBox = document.getElementById('normalBox')
+    const noDelayBox = document.getElementById('noDelayBox')
+    const normalPlayer = new window.SVGA.Player('#normal', videoItem, {loop: 1})
+    const noDelayPlayer = new window.SVGA.Player('#noDelay', videoItem, {noExecutionDelay: true, loop: 1})
+
+    normalPlayer.$on('process', () => {
+      document.title = `normal: ${normalPlayer.currentFrame}`
+      const p = document.createElement('p')
+      p.innerHTML = `frame ${normalPlayer.currentFrame}<br>`
+      normalBox.append(p)
+    })
+    normalPlayer.$on('end', function() {
+      document.title = 'normal done'
+    })
+
+    noDelayPlayer.$on('process', () => {
+      document.title = `no delay: ${noDelayPlayer.currentFrame}`
+      const p = document.createElement('p')
+      p.innerHTML = `frame ${noDelayPlayer.currentFrame}<br>`
+      noDelayBox.append(p)
+    })
+    noDelayPlayer.$on('end', function() {
+      document.title = 'no delay done'
+    })
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        normalPlayer.start()
+        noDelayPlayer.start()
+      }
+    })
+
+  })()
+</script>
+</body>
+</html>
