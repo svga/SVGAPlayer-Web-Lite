@@ -9,6 +9,7 @@ export enum SVGA_VERSION {
 export enum EVENT_TYPES {
   START = 'start',
   PROCESS = 'process',
+  RESUME = 'resume',
   PAUSE = 'pause',
   STOP = 'stop',
   END = 'end',
@@ -106,6 +107,7 @@ export class Player {
   set(options: options): void
   mount(videoItem: VideoEntity): Promise<undefined>
   start(): void
+  resume(): void
   pause(): void
   stop(): void
   clear(): void
