@@ -1,42 +1,41 @@
 # SVGAPlayer-Web-Lite
 
-这是一个 SVGA 在 Web 上的播放器，它的目标是更轻量级、更高效，但同时它也放弃了对一些旧版本浏览器的兼容性支持。
+This is a SVGA player on the Web, and its goal is to be **lighter** and more **efficient**, But at the same time it also gave up compatibility support for some older browsers.
 
-## v1.3.0+ 改变
+## Depend on Promise
 
-不捆绑 Promise 对象兼容代码，核心库体积减少到 55kb (gzip = 18kb)
-
-若出现 `Promise is not a constructor` 等问题，外链 polyfill 或配置 babel 进行兼容
+If there is a problem such as `Promise is not a constructor`, the outer chain polyfill or the configuration babel is compatible
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script>
 ```
 
-## 目标未来
+## Target Future
 
-- [x] 体积 = 80k (gzip = 27kb)
-- [x] 兼容 Android 4+ / iOS 9+
-- [x] 更好的异步操作
-- [x] 多线程 (WebWorker) 解析文件数据
+- [x] Size = 80kb (gzip = 27kb)
+- [x] Compatible Android 4.4+ / iOS 9+
+- [x] Better Asynchronous Operation
+- [x] Multi-threaded (WebWorker) parsing file data
+- [x] OffscreenCanvas
 
-## 实验性
+## Experimental
 
-- [ ] 使用 WebAssembly 替代 WebWorker
-- [ ] 渲染引擎模拟运行在 WebWorker
-- [ ] GPU 加速运算
+- [ ] Rendering engine simulation runs in the WebWorker
+- [ ] Use WebAssembly instead of WebWorker
+- [ ] GPU accelerated operation
 
-## 差异
+## Diff
 
-* 不支持声音播放
+* not support play sound
 
-## 安装
+## Install
 
 ### NPM
 
 ```sh
 yarn add svga.lite
 
-# 或者
+# or
 
 npm i svga.lite
 ```
@@ -47,9 +46,9 @@ npm i svga.lite
 <script src="https://cdn.jsdelivr.net/npm/svga.lite/svga.lite.min.js"></script>
 ```
 
-## 使用
+## Use
 
-### 简单使用
+### Simple Use
 
 ```html
 <canvas id="canvas"></canvas>
@@ -59,9 +58,10 @@ npm i svga.lite
 import { Downloader, Parser, Player } from 'svga.lite'
 
 const downloader = new Downloader()
-// 默认调用 WebWorker 解析，可配置 new Parser({ disableWorker: true }) 禁止
+// calls WebWorker parsing by default
+// configurable `new Parser({ disableWorker: true })`
 const parser = new Parser()
-const player = new Player('#canvas') // #canvas 是 HTMLCanvasElement
+const player = new Player('#canvas') // #canvas is HTMLCanvasElement
 
 ;(async () => {
   const fileData = await downloader.get('./xxx.svga')
@@ -89,17 +89,7 @@ const player = new Player('#canvas') // #canvas 是 HTMLCanvasElement
 })()
 ```
 
-### Player.set({ 参数 })
-
-属性名 |  说明 | 类型 | 默认值 | 备注
--|-|-|-|-
-loop | 循环次数 | `number` | `0` | 设置为 `0` 时，循环播放
-fillMode | 最后停留的目标模式 | `forwards` `backwards` | `forwards` | 类似于 [css animation-fill-mode](https://developer.mozilla.org/zh-CN/docs/Web/CSS/animation-fill-mode)
-playMode | 播放模式 | `forwards` `fallbacks` | `forwards` |
-startFrame | 开始播放帧 | `number` | `0` |
-endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA 文件最后一帧
-
-### 支持 1.x 版本 SVGA (v1.2.0+)
+### Support v1.x of SVGA
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -107,25 +97,23 @@ import Parser1x from 'svga.lite/parser.1x'
 import util from 'svga.lite/util'
 
 const downloader = new Downloader()
-
 const svgaFile = './svga/show.svga'
-
 const fileData = await downloader.get(svgaFile)
-// Parser1x 默认调用 WebWorker 解析，可配置 new Parser1x({ disableWorker: true }) 禁止
-const parser = util.version(fileData) === 1 ? new Parser1x() : new Parser()
 
+// Parser1x calls WebWorker parsing by default
+// configurable `new Parser1x({ disableWorker: true })`
+const parser = util.version(fileData) === 1 ? new Parser1x() : new Parser()
 const svgaData = await parser.do(fileData)
 
 const player = new Player('#canvas')
-
 await player.mount(svgaData)
 
 player.start()
 ```
 
-### 替换元素
+### Replace Element
 
-你能够通过改变 `svga data` 对应键值的元素
+You can change the elements of the `svga data` corresponding to the key values.
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -148,9 +136,9 @@ const player = new Player('#canvas')
 })()
 ```
 
-### 动态元素
+### Dynamic Element
 
-你可以通过 `svga data` 插入一些动态元素
+You can insert some dynamic elements with `svga data`.
 
 ```js
 const text = 'hello gg'
@@ -181,7 +169,7 @@ await player.mount(svgaData)
 player.start()
 ```
 
-### 可复用实例化 Downloader & Parser
+### Reusable instantiated Downloader & Parser
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -205,7 +193,7 @@ player1.start()
 player2.start()
 ```
 
-### 销毁实例 (v1.2.0+)
+### Destroy Instance
 
 ```js
 const downloader = new Downloader()
@@ -218,9 +206,9 @@ const player = new Player('#canvas')
 player.destroy()
 ```
 
-### DB (v1.3.0+)
+### DB (v1.5+)
 
-已下载并解析的数据利用 WebSQL 进行持久化缓存，下次可避免重复消耗资源对统一 SVGA 下载和解析
+The downloaded and parsed data is persisted and cached using IndexedDB, and the next time you can avoid reusing resources for unified SVGA download and parsing
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
@@ -231,14 +219,13 @@ let data = void 0
 let db = void 0
 
 try {
-  db = new SVGADB()
+  db = new DB()
 } catch (error) {
   console.error(error)
 }
 
 if (db) {
-  const record = (await db.find(svgaFile))[0]
-  record && (data = JSON.parse(record.data))
+  data = await db.find(svgaFile)
 }
 
 if (!data) {
@@ -248,8 +235,8 @@ if (!data) {
 
   data = await parser.do(fileData)
 
-  // 插入数据
-  db && (await db.insert(svgaFile, JSON.stringify(data)))
+  // insert data to db
+  db && (await db.insert(svgaFile, data))
 }
 
 const player = new Player('#canvas')
@@ -258,35 +245,35 @@ await player.mount(data)
 player.start()
 ```
 
-## Downloader Cancel (v1.4.0+)
+## Downloader Cancel
 
-你可以取消下载中的 SVGA 文件请求
+You can cancel the SVGA file request in the download
 
 ```js
 downloader.get('test.svga').then((fileData) => {
-  console.log('下载完成')
+  console.log('download complete')
 }).catch(error => {
   console.log('catch', error)
 })
 
 setTimeout(() => {
-  downloader.cancel() // 或者 downloader.destroy()
+  downloader.cancel() // or downloader.destroy()
 }, 1000)
 ```
 
-## 贡献
+## Contributing
 
-我们感谢社区提供错误修正和改进。
+We are grateful to the community for contributing bugfixes and improvements.
 
 ```sh
-# 开发测试
-npm run test
+# Installation dependencies
+yarn install
 
-# 构建
-npm run build
+# Development & Test
+yarn test
 
-# 发布
-npm publish
+# Build
+yarn build
 ```
 
 ## LICENSE

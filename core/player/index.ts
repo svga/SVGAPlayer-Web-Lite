@@ -11,11 +11,13 @@ enum EVENT_TYPES {
 }
 
 interface options {
-  loop: number | Boolean
+  loop: number | boolean
   fillMode: FILL_MODE
   playMode: PLAY_MODE
   startFrame: number
   endFrame: number
+  cacheFrames: boolean
+  intersectionObserverRender: boolean
 }
 
 enum FILL_MODE {
@@ -30,7 +32,7 @@ enum PLAY_MODE {
 
 export default class Player {
   public container: HTMLCanvasElement
-  public loop: number | Boolean = true
+  public loop: number | boolean = true
   public fillMode: FILL_MODE = FILL_MODE.FORWARDS
   public playMode: PLAY_MODE = PLAY_MODE.FORWARDS
   public progress: number = 0
@@ -38,7 +40,10 @@ export default class Player {
   public totalFramesCount: number = 0
   public startFrame: number = 0
   public endFrame: number = 0
-
+  public cacheFrames = false
+  public intersectionObserverRender = false
+  public intersectionObserverRenderShow = true
+  private _intersectionObserver: IntersectionObserver | null = null
   private _renderer: any
   private _animator: any
 
@@ -62,8 +67,31 @@ export default class Player {
     typeof options.loop !== 'undefined' && (this.loop = options.loop)
     options.fillMode && (this.fillMode = options.fillMode)
     options.playMode && (this.playMode = options.playMode)
-    options.startFrame && (this.startFrame = options.startFrame)
-    options.endFrame && (this.endFrame = options.endFrame)
+    options.cacheFrames !== undefined && (this.cacheFrames = options.cacheFrames)
+    this.startFrame = options.startFrame ? options.startFrame : this.startFrame
+    this.endFrame = options.endFrame ? options.endFrame : this.endFrame
+
+    // 监听容器是否处于浏览器视窗内
+    options.intersectionObserverRender !== undefined && (this.intersectionObserverRender = options.intersectionObserverRender)
+    if (IntersectionObserver && this.intersectionObserverRender) {
+      this._intersectionObserver = new IntersectionObserver(entries => {
+        if (entries[0].intersectionRatio <= 0) {
+          this.intersectionObserverRenderShow && (this.intersectionObserverRenderShow = false)
+        } else {
+          !this.intersectionObserverRenderShow && (this.intersectionObserverRenderShow = true)
+        }
+      }, {
+        rootMargin: '0px',
+        threshold: [0, 0.5, 1]
+      })
+      this._intersectionObserver.observe(this.container)
+    } else {
+      if (this._intersectionObserver) {
+        this._intersectionObserver.disconnect()
+      }
+      this.intersectionObserverRender = false
+      this.intersectionObserverRenderShow = true
+    }
   }
 
   public mount (videoItem: VideoEntity) {
@@ -141,17 +169,25 @@ export default class Player {
   }
 
   private _startAnimation () {
-    const { playMode, totalFramesCount, startFrame, endFrame } = this
+    const { playMode, totalFramesCount, startFrame, endFrame, videoItem } = this
 
     // 如果开始动画的当前帧是最后一帧，重置为第 0 帧
     if (this.currentFrame === totalFramesCount) {
-      this.currentFrame = 0
+      this.currentFrame = startFrame || 0
     }
 
     this._animator.startValue = playMode === 'fallbacks' ? (endFrame || totalFramesCount) : (startFrame || 0)
     this._animator.endValue = playMode === 'fallbacks' ? (startFrame || 0) : (endFrame || totalFramesCount)
 
-    this._animator.duration = this.videoItem.frames * (1.0 / this.videoItem.FPS) * 1000
+    let frames = videoItem.frames
+
+    if (endFrame > 0 && endFrame > startFrame) {
+      frames = endFrame - startFrame
+    } else if (endFrame <= 0 && startFrame > 0) {
+      frames = videoItem.frames - startFrame
+    }
+
+    this._animator.duration = frames * (1.0 / videoItem.FPS) * 1000
     this._animator.loop = this.loop === true || this.loop <= 0 ? Infinity : (this.loop === false ? 1 : this.loop)
     this._animator.fillRule = this.fillMode === 'backwards' ? 1 : 0
 
@@ -164,7 +200,7 @@ export default class Player {
 
       this.currentFrame = value
 
-      this.progress = parseFloat((value + 1).toString()) / parseFloat(this.videoItem.frames.toString()) * 100
+      this.progress = parseFloat((value + 1).toString()) / parseFloat(videoItem.frames.toString()) * 100
 
       this._renderer.drawFrame(this.currentFrame)
 

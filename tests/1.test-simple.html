@@ -1,33 +1,35 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <script src="https://cdn.bootcss.com/vConsole/3.3.0/vconsole.min.js"></script>
-  <script>
-    // new VConsole()
-    // window.Promise = undefined
-  </script>
-  <meta charset="utf-8" />
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>simple</title>
-  <meta name="viewport" content="maximum-scale=1, width=device-width, initial-scale=1, user-scalable=0">
-  <!-- <script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script> -->
-  <script src="svga.lite.min.js"></script>
-</head>
-<body>
-  <canvas id="canvas"></canvas>
+<header><meta name="viewport" content="maximum-scale=1, width=750, initial-scale=1, user-scalable=0"></header>
+<script src="https://cdn.bootcss.com/vConsole/3.3.0/vconsole.min.js"></script>
+<script>
+// new VConsole()
+</script>
+<!-- <script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script> -->
+<script src="svga.lite.min.js"></script>
+<canvas id="canvas"></canvas>
 
-  <script>
-    var downloader = new window.SVGA.Downloader()
-    var parser = new window.SVGA.Parser()
-    var player = new window.SVGA.Player('#canvas')
+<style>
+  #canvas {
+    background-color: black;
+    transform: scale(0.5);
+    transform-origin: 0 0;
+  }
+</style>
 
-    downloader.get('./svga/angel.svga').then(function (fileData) {
-      parser.do(fileData).then(function (svgaData) {
-        player.mount(svgaData).then(function () {
-          player.start()
-        })
+<script>
+  var downloader = new window.SVGA.Downloader()
+  var parser = new window.SVGA.Parser()
+  var player = new window.SVGA.Player('#canvas')
+
+  // player.set({
+  //   // startFrame: 50
+  //   endFrame: 20
+  // })
+
+  downloader.get('./svga/4.svga').then(function (fileData) {
+    parser.do(fileData).then(function (svgaData) {
+      player.mount(svgaData).then(function () {
+        player.start()
       })
     })
-  </script>
-</body>
-</html>
+  })
+</script>

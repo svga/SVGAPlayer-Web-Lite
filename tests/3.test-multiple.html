@@ -1,67 +1,55 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>multiple</title>
-  <meta name="viewport" content="maximum-scale=1, width=device-width, initial-scale=1, user-scalable=0">
-  <script src="svga.lite.min.js"></script>
-  <style type="text/css">
-    html, body {
-      width: 100%;
-      height: 100%;
-      padding: 0;
-      margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-wrap: nowrap
-    }
-    canvas {
-      max-width: 300px;
-      border: 1px solid #ccc;
-      margin: 0 10px;
-    }
-  </style>
-</head>
-<body>
-  <canvas id="canvas1"></canvas>
-  <canvas id="canvas2"></canvas>
-  <canvas id="canvas3"></canvas>
+<script src="svga.lite.min.js"></script>
+<style type="text/css">
+  html, body {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: nowrap
+  }
+  canvas {
+    max-width: 300px;
+    border: 1px solid #ccc;
+    margin: 0 10px;
+  }
+</style>
+<canvas id="canvas1"></canvas>
+<canvas id="canvas2"></canvas>
+<canvas id="canvas3"></canvas>
 
-  <script>
-    // can use Rxjs to Race Conditions
-    (async () => {
-      const { Downloader, Parser, Player } = SVGA
+<script>
+  (async () => {
+    const { Downloader, Parser, Player } = SVGA
 
-      const downloader = new Downloader()
-      const parser = new Parser()
-      const player1 = new Player('#canvas1')
-      const player2 = new Player('#canvas2')
-      const player3 = new Player('#canvas3')
+    const downloader = new Downloader()
+    const parser = new Parser()
+    const player1 = new Player('#canvas1')
+    const player2 = new Player('#canvas2')
+    const player3 = new Player('#canvas3')
 
-      const [ fileData1, fileData2, fileData3 ] = await Promise.all([
-        downloader.get('./svga/TwitterHeart.svga'),
-        downloader.get('./svga/angel.svga'),
-        downloader.get('./svga/kingset.svga')
-      ])
+    const [ fileData1, fileData2, fileData3 ] = await Promise.all([
+      downloader.get('./svga/TwitterHeart.svga'),
+      downloader.get('./svga/angel.svga'),
+      downloader.get('./svga/kingset.svga')
+    ])
 
-      const [ svgaData1, svgaData2, svgaData3 ] = await Promise.all([
-        await parser.do(fileData1),
-        await parser.do(fileData2),
-        await parser.do(fileData3)
-      ])
+    const [ svgaData1, svgaData2, svgaData3 ] = await Promise.all([
+      await parser.do(fileData1),
+      await parser.do(fileData2),
+      await parser.do(fileData3)
+    ])
 
-      await Promise.all([
-        await player1.mount(svgaData1),
-        await player2.mount(svgaData2),
-        await player3.mount(svgaData3)
-      ])
+    await Promise.all([
+      await player1.mount(svgaData1),
+      await player2.mount(svgaData2),
+      await player3.mount(svgaData3)
+    ])
 
-      player1.start()
-      player2.start()
-      player3.start()
-    })()
-  </script>
-</body>
-</html>
+    player1.start()
+    player2.start()
+    player3.start()
+  })()
+</script>
