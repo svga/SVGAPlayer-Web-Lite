@@ -113,13 +113,14 @@ startFrame | 开始播放帧 | `number` | `0` |
 endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA 文件最后一帧
 cacheFrames（v1.5+）| 是否缓存帧 | `boolean` | `false` | 开启后对已绘制的帧进行缓存，提升重复播放动画性能
 intersectionObserverRender（v1.5+）| 是否开启动画容器视窗检测 | `boolean` | `false` | 开启后利用 [Intersection Observer API](https://developer.mozilla.org/zh-CN/docs/Web/API/Intersection_Observer_API) 检测动画容器是否处于视窗内，若处于视窗外，停止描绘渲染帧避免造成资源消耗
+noExecutionDelay(v1.5+) | 是否避免执行延迟 | `boolean` | `false` | 开启后使用 `WebWorker` 确保动画按时执行（ [一些情况下浏览器会延迟或停止执行一些任务](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#Policies_in_place_to_aid_background_page_performance) ）
 
 ### 支持 1.x 版本 SVGA
 
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
 import Parser1x from 'svga.lite/parser.1x'
-import util from 'svga.lite/util'
+import * as util from 'svga.lite/util'
 
 const downloader = new Downloader()
 const svgaFile = './svga/show.svga'

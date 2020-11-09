@@ -94,7 +94,7 @@ const player = new Player('#canvas') // #canvas is HTMLCanvasElement
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
 import Parser1x from 'svga.lite/parser.1x'
-import util from 'svga.lite/util'
+import * as util from 'svga.lite/util'
 
 const downloader = new Downloader()
 const svgaFile = './svga/show.svga'
