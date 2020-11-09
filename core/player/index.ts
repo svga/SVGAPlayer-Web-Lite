@@ -18,6 +18,7 @@ interface options {
   endFrame: number
   cacheFrames: boolean
   intersectionObserverRender: boolean
+  noExecutionDelay: boolean
 }
 
 enum FILL_MODE {
@@ -61,6 +62,10 @@ export default class Player {
     this._renderer = new Renderer(this)
     this._animator = new Animator()
     this.videoItem && this.mount(videoItem)
+
+    if (options) {
+      this.set(options)
+    }
   }
 
   public set (options: options) {
@@ -92,6 +97,8 @@ export default class Player {
       this.intersectionObserverRender = false
       this.intersectionObserverRenderShow = true
     }
+
+    this._animator.noExecutionDelay = options.noExecutionDelay
   }
 
   public mount (videoItem: VideoEntity) {
