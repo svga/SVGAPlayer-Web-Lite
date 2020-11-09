@@ -120,7 +120,7 @@ noExecutionDelay(v1.5+) | 是否避免执行延迟 | `boolean` | `false` | 开�
 ```js
 import { Downloader, Parser, Player } from 'svga.lite'
 import Parser1x from 'svga.lite/parser.1x'
-import util from 'svga.lite/util'
+import * as util from 'svga.lite/util'
 
 const downloader = new Downloader()
 const svgaFile = './svga/show.svga'
