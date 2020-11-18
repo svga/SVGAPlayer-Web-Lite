@@ -62,7 +62,6 @@ const defaultConfig = {
 const outputPath = path.resolve(__dirname, `../${process.env.NODE_ENV === 'test' ? 'tests' : ''}`)
 
 const ForkTsCheckerWebpackPluginConfig = new ForkTsCheckerWebpackPlugin({
-  workers: 2,
   formatter: 'codeframe'
 })
 
@@ -123,7 +122,7 @@ module.exports = [
       filename: '[name].min.js'
     },
     plugins: [
-      ForkTsCheckerWebpackPluginConfig
+      // ForkTsCheckerWebpackPluginConfig
     ],
     ...defaultConfig
   },

@@ -5,7 +5,11 @@ const inlineWorker = require('./inline-worker')
 
 webpack(config, (error, stats) => {
   if (error || stats.hasErrors()) {
-    console.error(error)
+    error && console.error(error)
+    stats.hasErrors() && console.error(stats.toString({
+      chunks: false,
+      colors: true
+    }))
   } else {
     inlineWorker()
 
