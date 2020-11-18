@@ -1,8 +1,16 @@
 node_modules
 yarn-error.log
+
+# 基准测试
+benchmark
+
+# 测试构建文件
 tests/*.min.js
 tests/*.js
 tests/dist
-benchmark
+
+# 构建文件
 svga.lite.min.js
 util.js
+db.js
+parser.1x.js
