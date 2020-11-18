@@ -1,7 +1,7 @@
 /*!
  * parser.1x
  * 
- * Version: 1.5.0-beta.3
+ * Version: 1.5.0-beta.5
  * Document: https://github.com/svga/SVGAPlayer-Web-Lite
  * (c) 2019 YY.SVGA
  * Released under the MIT License.

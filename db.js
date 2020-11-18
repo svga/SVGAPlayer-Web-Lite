@@ -1,7 +1,7 @@
 /*!
  * db
  * 
- * Version: 1.5.0-beta.4
+ * Version: 1.5.0
  * Document: https://github.com/svga/SVGAPlayer-Web-Lite
  * (c) 2019 YY.SVGA
  * Released under the MIT License.
