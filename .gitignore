@@ -4,3 +4,5 @@ tests/*.min.js
 tests/*.js
 tests/dist
 benchmark
+svga.lite.min.js
+util.js
