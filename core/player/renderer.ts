@@ -13,7 +13,7 @@ export default class Renderer {
     constructor (player: Player) {
       this._player = player
       const container = this._player.container
-      this._ofsCanvas = OffscreenCanvas ? new OffscreenCanvas(container.width, container.height) : document.createElement('canvas')
+      this._ofsCanvas = window.OffscreenCanvas ? new window.OffscreenCanvas(container.width, container.height) : document.createElement('canvas')
     }
 
     public prepare () {
