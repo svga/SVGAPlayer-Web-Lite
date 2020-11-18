@@ -1,5 +1,5 @@
 declare interface Window {
-  OffscreenCanvas: any
+  OffscreenCanvas: null | OffscreenCanvas
 }
 
 declare module 'pako/lib/inflate' {

@@ -936,10 +936,22 @@
   resolved "https://registry.npmjs.org/@types/node/-/node-10.14.16.tgz#4d690c96cbb7b2728afea0e260d680501b3da5cf"
   integrity sha512-/opXIbfn0P+VLt+N8DE4l8Mn8rbhiJgabU96ZJ0p9mxOkIks5gh6RUnpHak7Yh0SFkyjO/ODbxsQQPV2bpMmyA==
 
+"@types/node@^14.14.8":
+  version "14.14.8"
+  resolved "https://npm-registry.yy.com/@types/node/download/@types/node-14.14.8.tgz#2127bd81949a95c8b7d3240f3254352d72563aec"
+  integrity sha1-ISe9gZSalci30yQPMlQ1LXJWOuw=
+
 "@types/normalize-package-data@^2.4.0":
   version "2.4.0"
   resolved "https://registry.npmjs.org/@types/normalize-package-data/-/normalize-package-data-2.4.0.tgz#e486d0d97396d79beedd0a6e33f4534ff6b4973e"
   integrity sha512-f5j5b/Gf71L+dbqxIpQ4Z2WlmI/mPJ0fOkGGmFgtb6sAu97EPczzbS3/tJKxmcYDj55OX6ssqwDAWOHIYDRDGA==
+
+"@types/offscreencanvas@^2019.6.2":
+  version "2019.6.2"
+  resolved "https://npm-registry.yy.com/@types/offscreencanvas/download/@types/offscreencanvas-2019.6.2.tgz#9bd6f5a9a70459ec0ce7ecedf45d63e38d744c86"
+  integrity sha1-m9b1qacEWewM5+zt9F1j4410TIY=
+  dependencies:
+    "@types/webgl2" "*"
 
 "@types/protobufjs@^6.0.0":
   version "6.0.0"
@@ -947,6 +959,11 @@
   integrity sha512-A27RDExpAf3rdDjIrHKiJK6x8kqqJ4CmoChwtipfhVAn1p7+wviQFFP7dppn8FslSbHtQeVPvi8wNKkDjSYjHw==
   dependencies:
     protobufjs "*"
+
+"@types/webgl2@*":
+  version "0.0.5"
+  resolved "https://npm-registry.yy.com/@types/webgl2/download/@types/webgl2-0.0.5.tgz#dd925e20ab8ace80eb4b1e46fda5b109c508fb0d"
+  integrity sha1-3ZJeIKuKzoDrSx5G/aWxCcUI+w0=
 
 "@types/websql@^0.0.27":
   version "0.0.27"
@@ -6874,10 +6891,10 @@ typescript-estree@18.0.0:
     lodash.unescape "4.0.1"
     semver "5.5.0"
 
-typescript@^3.1.1:
-  version "3.5.3"
-  resolved "https://registry.npmjs.org/typescript/-/typescript-3.5.3.tgz#c830f657f93f1ea846819e929092f5fe5983e977"
-  integrity sha512-ACzBtm/PhXBDId6a6sDJfroT2pOWt/oOnk4/dElG5G33ZL776N3Y6/6bKZJBFpd+b05F3Ct9qDjMeJmRWtE2/g==
+typescript@^4.0.0:
+  version "4.0.5"
+  resolved "https://npm-registry.yy.com/typescript/download/typescript-4.0.5.tgz#ae9dddfd1069f1cb5beb3ef3b2170dd7c1332389"
+  integrity sha1-rp3d/RBp8ctb6z7zshcN18EzI4k=
 
 ua-parser-js@0.7.17:
   version "0.7.17"
