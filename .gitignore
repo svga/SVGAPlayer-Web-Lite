@@ -1,5 +1,6 @@
 node_modules
 yarn-error.log
 tests/*.min.js
+tests/*.js
 tests/dist
 benchmark
