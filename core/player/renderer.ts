@@ -4,7 +4,7 @@ import render from './offscreen.canvas.render'
 export default class Renderer {
     private _player: Player
     private _bitmapCache: {[key: string]: HTMLImageElement} = {}
-    private _dynamicElements: {[key: string]: any} = {}
+    private _dynamicElements: {[key: string]: DynamicElement} = {}
     // ImageData
     // private _frames: {[key: string]: ImageData} = {}
     private _frames: {[key: string]: HTMLImageElement | ImageBitmap} = {}
@@ -17,7 +17,7 @@ export default class Renderer {
     }
 
     public prepare () {
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         this._bitmapCache = {}
 
         if (!this._player.videoItem.images || Object.keys(this._player.videoItem.images).length == 0) {

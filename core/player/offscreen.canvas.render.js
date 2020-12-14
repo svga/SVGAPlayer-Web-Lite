@@ -37,7 +37,37 @@ function render (canvas, bitmapCache, dynamicElements, videoItem, currentFrame) 
 
     const dynamicElement = dynamicElements[sprite.imageKey]
     if (dynamicElement) {
-      context.drawImage(dynamicElement, (frameItem.layout.width - dynamicElement.width) / 2, (frameItem.layout.height - dynamicElement.height) / 2)
+      const { source, fit } = 'fit' in dynamicElement ? dynamicElement : { source: dynamicElement, fit: 'none' }
+      const sourceWidth = source.naturalWidth || source.videoWidth || source.width
+      const sourceHeight = source.naturalHeight || source.videoHeight || source.height
+
+      switch (fit) {
+        case 'contain': {
+          const wRatio = frameItem.layout.width / sourceWidth
+          const hRatio = frameItem.layout.height / sourceHeight
+          const ratio = Math.min(wRatio, hRatio)
+          const width = ratio * sourceWidth
+          const height = ratio * sourceHeight
+          context.drawImage(source, (frameItem.layout.width - width) / 2, (frameItem.layout.height - height) / 2, width, height)
+          break
+        }
+        case 'cover': {
+          const wRatio = frameItem.layout.width / sourceWidth
+          const hRatio = frameItem.layout.height / sourceHeight
+          const ratio = Math.max(wRatio, hRatio)
+          const width = ratio * sourceWidth
+          const height = ratio * sourceHeight
+          context.drawImage(source, (frameItem.layout.width - width) / 2, (frameItem.layout.height - height) / 2, width, height)
+          break
+        }
+        case 'fill':
+          context.drawImage(source, 0, 0, frameItem.layout.width, frameItem.layout.height)
+          break
+        case 'none':
+        default:
+          context.drawImage(source, (frameItem.layout.width - sourceWidth) / 2, (frameItem.layout.height - sourceHeight) / 2)
+          break
+      }
     }
 
     frameItem.shapes && frameItem.shapes.forEach(shape => {

@@ -61,13 +61,18 @@ interface SpriteEntity {
   frames: FrameEntity[]
 }
 
+type DynamicElement = CanvasImageSource | {
+  source: CanvasImageSource,
+  fit: 'contain' | 'cover' | 'fill' | 'none'
+}
+
 interface VideoEntity {
   version: SVGA_VERSION
   videoSize: VideoSize
   FPS: number
   frames: number
   images: { [key: string]: any }
-  dynamicElements: { [key: string]: any }
+  dynamicElements: { [key: string]: DynamicElement }
   sprites: Array<SpriteEntity>
 }
 
