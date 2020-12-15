@@ -138,7 +138,7 @@ const player = new Player('#canvas')
 
 ### Dynamic Element
 
-You can insert some dynamic elements with `svga data`.
+You can insert some [dynamic elements](https://developer.mozilla.org/en/docs/Web/API/CanvasRenderingContext2D/drawImage) with `svga data`.
 
 ```js
 const text = 'hello gg'
@@ -163,6 +163,29 @@ const fileData = await downloader.get(svgaFile)
 const svgaData = await parser.do(fileData)
 
 svgaData.dynamicElements['banner'] = fontCanvas
+
+await player.mount(svgaData)
+
+player.start()
+```
+
+Set `fit` strategy of the dynamic element, check out [example](./tests/11.test-dynamicElement.html).
+
+```js
+const video = document.getElementById('video')
+const { Downloader, Parser, Player } = SVGA
+
+const downloader = new Downloader()
+const parser = new Parser()
+const player = new Player('#canvas')
+
+const svgaFile = './svga/kingset.svga'
+
+const fileData = await downloader.get(svgaFile)
+const svgaData = await parser.do(fileData)
+
+// fit: "fill", "cover", "contain", "none"
+svgaData.dynamicElements['99'] = {source: video, fit: "fill"}
 
 await player.mount(svgaData)
 

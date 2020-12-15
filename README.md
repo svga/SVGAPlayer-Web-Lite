@@ -163,7 +163,7 @@ const player = new Player('#canvas')
 
 ### 动态元素
 
-你可以通过 `svga data` 插入一些动态元素
+你可以通过 `svga data` 插入一些[动态元素](https://developer.mozilla.org/en/docs/Web/API/CanvasRenderingContext2D/drawImage)
 
 ```js
 const text = 'hello gg'
@@ -188,6 +188,29 @@ const fileData = await downloader.get(svgaFile)
 const svgaData = await parser.do(fileData)
 
 svgaData.dynamicElements['banner'] = fontCanvas
+
+await player.mount(svgaData)
+
+player.start()
+```
+
+为动态元素设置自适应参数 `fit`，参考[例子](./tests/11.test-dynamicElement.html).
+
+```js
+const video = document.getElementById('video')
+const { Downloader, Parser, Player } = SVGA
+
+const downloader = new Downloader()
+const parser = new Parser()
+const player = new Player('#canvas')
+
+const svgaFile = './svga/kingset.svga'
+
+const fileData = await downloader.get(svgaFile)
+const svgaData = await parser.do(fileData)
+
+// fit: "fill", "cover", "contain", "none"
+svgaData.dynamicElements['99'] = {source: video, fit: "fill"}
 
 await player.mount(svgaData)
 

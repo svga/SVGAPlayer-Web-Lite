@@ -1,0 +1,60 @@
+<script src="svga.lite.min.js"></script>
+<style>
+  video {
+    display: block;
+    width: 300px;
+  }
+  canvas {
+    width: 400px;
+  }
+</style>
+<video controls autoplay id="video" loop width="300px">
+  <source src="./flower.webm" type="video/webm"/>
+</video>
+<canvas id="canvasOriginal"></canvas>
+<canvas id="canvasFill"></canvas>
+<canvas id="canvasCover"></canvas>
+<canvas id="canvasContain"></canvas>
+<script>
+  function addFont(text) {
+    const fontCanvas = document.createElement('canvas')
+    const fontContext = fontCanvas.getContext('2d');
+    fontCanvas.height = 50
+    fontCanvas.width = 300
+    fontContext.font = '34px Arial bold'
+    fontContext.textAlign = 'center'
+    fontContext.textBaseline = 'middle'
+    fontContext.fillStyle = 'white'
+    fontContext.fillText(text, fontCanvas.width / 2, fontCanvas.height / 2)
+    return fontCanvas
+  }
+
+  (async () => {
+    const video = document.getElementById('video')
+
+    const {Downloader, Parser, Player} = SVGA
+
+    const downloader = new Downloader()
+    const svgaFile = './svga/kingset.svga'
+    const fileData = await downloader.get(svgaFile)
+
+    async function mount(id, fit) {
+      const parser = new Parser()
+      const svgaData = await parser.do(fileData)
+      svgaData.dynamicElements['banner'] = addFont(fit || 'origin')
+      if (fit) {
+        svgaData.dynamicElements['99'] = {source: video, fit: fit}
+      }
+      console.log('SVGA Data', svgaData)
+
+      const player = new Player(id)
+      await player.mount(svgaData)
+      player.start()
+    }
+
+    mount('#canvasOriginal')
+    mount('#canvasFill', 'fill')
+    mount('#canvasCover', 'cover')
+    mount('#canvasContain', 'contain')
+  })()
+</script>
