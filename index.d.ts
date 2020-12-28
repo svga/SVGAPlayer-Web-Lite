@@ -88,8 +88,8 @@ interface options {
   playMode?: PLAY_MODE
   startFrame?: number
   endFrame?: number
-  cacheFrames: boolean
-  intersectionObserverRender: boolean
+  cacheFrames?: boolean
+  intersectionObserverRender?: boolean
 }
 
 export class Player {
