@@ -3,6 +3,7 @@ import Animator from './animator'
 
 enum EVENT_TYPES {
   START = 'start',
+  RESUME = 'resume',
   PROCESS = 'process',
   PAUSE = 'pause',
   STOP = 'stop',
@@ -123,6 +124,14 @@ export default class Player {
     this.$onEvent.start()
   }
 
+  public resume () {
+    if (!this.videoItem) {
+      throw new Error('video item undefined.')
+    }
+    this._startAnimation()
+    this.$onEvent.resume()
+  }
+
   public pause () {
     this._animator && this._animator.stop()
     this.$onEvent.pause()
@@ -151,6 +160,7 @@ export default class Player {
 
   private $onEvent: {
     [EVENT_TYPES.START]: Function
+    [EVENT_TYPES.RESUME]: Function
     [EVENT_TYPES.PROCESS]: Function
     [EVENT_TYPES.PAUSE]: Function
     [EVENT_TYPES.STOP]: Function
@@ -158,6 +168,7 @@ export default class Player {
     [EVENT_TYPES.CLEAR]: Function
   } = {
     start: () => {},
+    resume: () => {},
     process: () => {},
     pause: () => {},
     stop: () => {},
