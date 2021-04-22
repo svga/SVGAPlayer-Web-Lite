@@ -79,6 +79,8 @@ const player = new Player('#canvas')
     .$on('start', () => console.log('event start'))
     // 暂停动画事件回调
     .$on('pause', () => console.log('event pause'))
+    // 继续播放动画事件回调
+    .$on('resume', () => console.log('event resume'))
     // 停止动画事件回调
     .$on('stop', () => console.log('event stop'))
     // 动画结束事件回调
@@ -91,8 +93,11 @@ const player = new Player('#canvas')
   // 开始播放动画
   player.start()
 
-  // 暂停播放东湖
+  // 暂停播放动画
   // player.pause()
+
+  // 继续播放动画
+  // player.resume()
 
   // 停止播放动画
   // player.stop()
