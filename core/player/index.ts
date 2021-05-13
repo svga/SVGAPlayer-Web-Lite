@@ -32,6 +32,9 @@ enum PLAY_MODE {
   FALLBACKS = 'fallbacks'
 }
 
+const inBrowser = typeof window !== 'undefined'
+const hasIntersectionObserver = inBrowser && 'IntersectionObserver' in window
+
 export default class Player {
   public container: HTMLCanvasElement
   public loop: number | boolean = true
@@ -79,7 +82,7 @@ export default class Player {
 
     // 监听容器是否处于浏览器视窗内
     options.intersectionObserverRender !== undefined && (this.intersectionObserverRender = options.intersectionObserverRender)
-    if (IntersectionObserver && this.intersectionObserverRender) {
+    if (hasIntersectionObserver && this.intersectionObserverRender) {
       this._intersectionObserver = new IntersectionObserver(entries => {
         if (entries[0].intersectionRatio <= 0) {
           this.intersectionObserverRenderShow && (this.intersectionObserverRenderShow = false)
