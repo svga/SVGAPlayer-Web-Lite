@@ -1,8 +1,8 @@
-# SVGAPlayer-Web-Lite
-
-这是一个 SVGA 在移动端 Web 上的播放器，它的目标是 **更轻量**、**更高效**，但它也放弃了对旧版本浏览器的兼容性支持。
+# SVGAPlayer-Web-Lite &middot; [![npm version](https://img.shields.io/npm/v/svga.lite.svg?style=flat)](https://www.npmjs.com/package/svga.lite) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://reactjs.org/docs/how-to-contribute.html#your-first-pull-request)
 
 [English](./README.en.md)
+
+这是一个 SVGA 在移动端 Web 上的播放器，它的目标是 **更轻量**、**更高效**，但它也放弃了对旧版本浏览器的兼容性支持。
 
 ## 依赖 Promise
 
@@ -118,7 +118,7 @@ startFrame | 开始播放帧 | `number` | `0` |
 endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA 文件最后一帧
 cacheFrames（v1.5+）| 是否缓存帧 | `boolean` | `false` | 开启后对已绘制的帧进行缓存，提升重复播放动画性能
 intersectionObserverRender（v1.5+）| 是否开启动画容器视窗检测 | `boolean` | `false` | 开启后利用 [Intersection Observer API](https://developer.mozilla.org/zh-CN/docs/Web/API/Intersection_Observer_API) 检测动画容器是否处于视窗内，若处于视窗外，停止描绘渲染帧避免造成资源消耗
-noExecutionDelay(v1.5+) | 是否避免执行延迟 | `boolean` | `false` | 开启后使用 `WebWorker` 确保动画按时执行（ [一些情况下浏览器会延迟或停止执行一些任务](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#Policies_in_place_to_aid_background_page_performance) ）
+noExecutionDelay（v1.5+） | 是否避免执行延迟 | `boolean` | `false` | 开启后使用 `WebWorker` 确保动画按时执行（ [一些情况下浏览器会延迟或停止执行一些任务](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#Policies_in_place_to_aid_background_page_performance) ）
 
 ### 支持 1.x 版本 SVGA
 
@@ -182,13 +182,10 @@ fontContext.fillStyle = '#000'
 fontContext.fillText(text, fontCanvas.clientWidth / 2, fontCanvas.clientHeight / 2)
 
 const { Downloader, Parser, Player } = SVGA
-
 const downloader = new Downloader()
 const parser = new Parser()
 const player = new Player('#canvas')
-
 const svgaFile = './svga/kingset.svga'
-
 const fileData = await downloader.get(svgaFile)
 const svgaData = await parser.do(fileData)
 
@@ -206,13 +203,10 @@ import { Downloader, Parser, Player } from 'svga.lite'
 
 const downloader = new Downloader()
 const parser = new Parser()
-
 const player1 = new Player('#canvas1')
 const player2 = new Player('#canvas2')
-
 const fileData1 = await downloader.get('./1.svga')
 const fileData2 = await downloader.get('./2.svga')
-
 const svgaData1 = await parser.do(fileData1)
 const svgaData2 = await parser.do(fileData2)
 
@@ -290,6 +284,10 @@ setTimeout(() => {
   downloader.cancel() // 或者 downloader.destroy()
 }, 1000)
 ```
+
+## [VSCode Plugin SVGA Preview](https://marketplace.visualstudio.com/items?itemName=svga-perview.svga-perview)
+
+在 VSCode 编辑器预览 SVGA 文件，感谢 [@ETTTTT](https://github.com/ETTTTT) 提供。
 
 ## 贡献
 

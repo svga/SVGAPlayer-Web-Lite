@@ -1,4 +1,4 @@
-# SVGAPlayer-Web-Lite
+# SVGAPlayer-Web-Lite &middot; [![npm version](https://img.shields.io/npm/v/svga.lite.svg?style=flat)](https://www.npmjs.com/package/svga.lite) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://reactjs.org/docs/how-to-contribute.html#your-first-pull-request)
 
 This is a SVGA player on the Web, and its goal is to be **lighter** and more **efficient**, But at the same time it also gave up compatibility support for some older browsers.
 
@@ -154,13 +154,10 @@ fontContext.fillStyle = '#000'
 fontContext.fillText(text, fontCanvas.clientWidth / 2, fontCanvas.clientHeight / 2)
 
 const { Downloader, Parser, Player } = SVGA
-
 const downloader = new Downloader()
 const parser = new Parser()
 const player = new Player('#canvas')
-
 const svgaFile = './svga/kingset.svga'
-
 const fileData = await downloader.get(svgaFile)
 const svgaData = await parser.do(fileData)
 
@@ -178,13 +175,10 @@ import { Downloader, Parser, Player } from 'svga.lite'
 
 const downloader = new Downloader()
 const parser = new Parser()
-
 const player1 = new Player('#canvas1')
 const player2 = new Player('#canvas2')
-
 const fileData1 = await downloader.get('./1.svga')
 const fileData2 = await downloader.get('./2.svga')
-
 const svgaData1 = await parser.do(fileData1)
 const svgaData2 = await parser.do(fileData2)
 
@@ -262,6 +256,10 @@ setTimeout(() => {
   downloader.cancel() // or downloader.destroy()
 }, 1000)
 ```
+
+## [VSCode Plugin SVGA Preview](https://marketplace.visualstudio.com/items?itemName=svga-perview.svga-perview)
+
+In the preview of the SVGA file in the VSCode editor, thank [@ETTTTT](https://github.com/ETTTTT).
 
 ## Contributing
 
