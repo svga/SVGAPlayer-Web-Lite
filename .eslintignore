@@ -1,3 +1,2 @@
 dist
-tests/*.min.js
-tests/dist
+__test__

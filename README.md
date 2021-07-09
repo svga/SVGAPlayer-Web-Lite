@@ -1,24 +1,14 @@
-# SVGAPlayer-Web-Lite &middot; [![npm version](https://img.shields.io/npm/v/svga.lite.svg?style=flat)](https://www.npmjs.com/package/svga.lite) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://reactjs.org/docs/how-to-contribute.html#your-first-pull-request)
+# SVGAPlayer-Web-Lite &middot; [![npm version](https://img.shields.io/npm/v/svga.svg?style=flat)](https://www.npmjs.com/package/svga) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://reactjs.org/docs/how-to-contribute.html#your-first-pull-request)
 
-[English](./README.en.md)
-
-这是一个 SVGA 在移动端 Web 上的播放器，它的目标是 **更轻量**、**更高效**，但它也放弃了对旧版本浏览器的兼容性支持。
-
-## 依赖 Promise
-
-若出现 `Promise is not a constructor` 等问题，外链 polyfill 或配置 babel 进行兼容
-
-```html
-<script src="https://cdn.jsdelivr.net/npm/es6-promise@4/dist/es6-promise.auto.min.js"></script>
-```
+这是一个 SVGA 在移动端 Web 上的播放器，它的目标是 **更轻量**、**更高效**
 
 ## 实现
 
-- [x] 体积 = 55kb (gzip = 18kb)
+- [x] 体积 < 60kb (gzip < 18kb)
 - [x] 兼容 Android 4.4+ / iOS 9+
 - [x] 更好的异步操作
 - [x] 多线程 (WebWorker) 解析文件数据
-- [x] OffscreenCanvas
+- [x] OffscreenCanvas / ImageBitmap
 
 ## 实验性
 
@@ -28,6 +18,7 @@
 
 ## 差异
 
+* 不支持播放 SVGA 1.x 格式
 * 不支持声音播放
 
 ## 安装
@@ -35,17 +26,15 @@
 ### NPM
 
 ```sh
-yarn add svga.lite
-
+yarn add svga
 # 或者
-
-npm i svga.lite
+npm i svga
 ```
 
 ### CDN
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/svga.lite/svga.lite.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svga/dist/index.min.js"></script>
 ```
 
 ## 使用
@@ -57,120 +46,115 @@ npm i svga.lite
 ```
 
 ```js
-import { Downloader, Parser, Player } from 'svga.lite'
+import { Parser, Player } from 'svga'
 
-const downloader = new Downloader()
-// 默认调用 WebWorker 线程解析
-// 可配置 new Parser({ disableWorker: true }) 禁止
 const parser = new Parser()
-// #canvas 是 HTMLCanvasElement
-const player = new Player('#canvas')
+const svga = await parser.load('xx.svga')
 
-;(async () => {
-  const fileData = await downloader.get('./xxx.svga')
-  const svgaData = await parser.do(fileData)
+const player = new Player(document.getElementById('canvas'))
+await player.mount(svga)
 
-  player.set({ loop: 1 })
+player.onStart = () => console.log('onStart')
+player.onResume = () => console.log('onResume')
+player.onPause = () => console.log('onPause')
+player.onStop = () => console.log('onStop')
+player.onProcess = () => console.log('onProcess', player.progress)
+player.onEnd = () => console.log('onEnd')
 
-  await player.mount(svgaData)
-
-  player
-    // 开始动画事件回调
-    .$on('start', () => console.log('event start'))
-    // 暂停动画事件回调
-    .$on('pause', () => console.log('event pause'))
-    // 继续播放动画事件回调
-    .$on('resume', () => console.log('event resume'))
-    // 停止动画事件回调
-    .$on('stop', () => console.log('event stop'))
-    // 动画结束事件回调
-    .$on('end', () => console.log('event end'))
-    // 清空动画事件回调
-    .$on('clear', () => console.log('event clear'))
-    // 动画播放中事件回调
-    .$on('process', () => console.log('event process', player.progress))
-
-  // 开始播放动画
-  player.start()
-
-  // 暂停播放动画
-  // player.pause()
-
-  // 继续播放动画
-  // player.resume()
-
-  // 停止播放动画
-  // player.stop()
-
-  // 清空动画
-  // player.clear()
-})()
-```
-
-### Player.set({ 参数 })
-
-属性名 |  说明 | 类型 | 默认值 | 备注
--|-|-|-|-
-loop | 循环次数 | `number` | `0` | 设置为 `0` 时，循环播放
-fillMode | 最后停留的目标模式 | `forwards` `backwards` | `forwards` | 类似于 [css animation-fill-mode](https://developer.mozilla.org/zh-CN/docs/Web/CSS/animation-fill-mode)
-playMode | 播放模式 | `forwards` `fallbacks` | `forwards` |
-startFrame | 开始播放帧 | `number` | `0` |
-endFrame | 结束播放帧 | `number` | `0` | 设置为 `0` 时，默认为 SVGA 文件最后一帧
-cacheFrames（v1.5+）| 是否缓存帧 | `boolean` | `false` | 开启后对已绘制的帧进行缓存，提升重复播放动画性能
-intersectionObserverRender（v1.5+）| 是否开启动画容器视窗检测 | `boolean` | `false` | 开启后利用 [Intersection Observer API](https://developer.mozilla.org/zh-CN/docs/Web/API/Intersection_Observer_API) 检测动画容器是否处于视窗内，若处于视窗外，停止描绘渲染帧避免造成资源消耗
-noExecutionDelay（v1.5+） | 是否避免执行延迟 | `boolean` | `false` | 开启后使用 `WebWorker` 确保动画按时执行（ [一些情况下浏览器会延迟或停止执行一些任务](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#Policies_in_place_to_aid_background_page_performance) ）
-
-### 支持 1.x 版本 SVGA
-
-```js
-import { Downloader, Parser, Player } from 'svga.lite'
-import Parser1x from 'svga.lite/parser.1x'
-import * as util from 'svga.lite/util'
-
-const downloader = new Downloader()
-const svgaFile = './svga/show.svga'
-const fileData = await downloader.get(svgaFile)
-
-// Parser1x 默认调用 WebWorker 线程解析
-// 可配置 new Parser1x({ disableWorker: true }) 禁止
-const parser = util.version(fileData) === 1 ? new Parser1x() : new Parser()
-const svgaData = await parser.do(fileData)
-
-const player = new Player('#canvas')
-await player.mount(svgaData)
+// 开始播放动画
 player.start()
+
+// 暂停播放动画
+// player.pause()
+
+// 继续播放动画
+// player.resume()
+
+// 停止播放动画
+// player.stop()
+
+// 清空动画
+// player.clear()
+
+// 销毁
+// parser.destroy()
+// player.destroy()
 ```
 
-### 替换元素
+### ParserConfigOptions
 
-你能够通过改变 `svga data` 对应键值的元素
+```ts
+new Parser({
+  // 是否取消使用 WebWorker，默认值 false
+  isDisableWebWorker: false,
 
-```js
-import { Downloader, Parser, Player } from 'svga.lite'
-
-const downloader = new Downloader()
-const parser = new Parser()
-const player = new Player('#canvas')
-
-;(async () => {
-  const fileData = await downloader.get('./xxx.svga')
-  const svgaData = await parser.do(fileData)
-
-  const image = new Image()
-  image.src = 'https://xxx.com/xxx.png'
-  svgaData.images['key'] = image
-
-  await player.mount(svgaData)
-
-  player.start()
-})()
+  // 是否取消使用 ImageBitmap 垫片，默认值 false
+  isDisableImageBitmapShim: false
+})
 ```
 
-### 动态元素
+### PlayerConfigOptions
 
-你可以通过 `svga data` 插入一些动态元素
+```ts
+const enum PLAYER_FILL_MODE {
+  FORWARDS = 'forwards',
+  BACKWARDS = 'backwards'
+}
+
+const enum PLAYER_PLAY_MODE {
+  FORWARDS = 'forwards',
+  FALLBACKS = 'fallbacks'
+}
+
+new Player({
+  // 播放动画的 Canvas 元素
+  container?: HTMLCanvasElement
+
+  // 循环次数，默认值 0（无限循环）
+  loop?: number | boolean
+
+  // 最后停留的目标模式，默认值 forwards
+  // 类似于 https://developer.mozilla.org/en-US/docs/Web/CSS/animation-fill-mode
+  fillMode?: PLAYER_FILL_MODE
+
+  // 播放模式，默认值 forwards
+  playMode?: PLAYER_PLAY_MODE
+
+  // 开始播放的帧数，默认值 0
+  startFrame?: number
+
+  // 结束播放的帧数，默认值 0
+  endFrame?: number
+
+  // 是否开启缓存已播放过的帧数据，默认值 false
+  // 开启后对已绘制的帧进行缓存，提升重复播放动画性能
+  isCacheFrames?: boolean
+
+  // 是否开启动画容器视窗检测，默认值 false
+  // 开启后利用 Intersection Observer API 检测动画容器是否处于视窗内，若处于视窗外，停止描绘渲染帧避免造成资源消耗
+  // https://developer.mozilla.org/zh-CN/docs/Web/API/Intersection_Observer_API
+  isUseIntersectionObserver?: boolean
+
+  // 是否使用避免执行延迟，默认值 false
+  // 开启后使用 `WebWorker` 确保动画按时执行（避免个别情况下浏览器延迟或停止执行动画任务）
+  // https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#Policies_in_place_to_aid_background_page_performance
+  isOpenNoExecutionDelay?: boolean
+})
+```
+
+### 替换元素 / 插入动态元素
+
+可通过修改解析后的数据元，从而实现修改元素、插入动态元素功能
 
 ```js
+const svga = await parser.load('xx.svga')
+
+// 替换元素
+const image = new Image()
+image.src = 'https://xxx.com/xxx.png'
+svga.replaceElements['key'] = image
+
+// 动态元素
 const text = 'hello gg'
 const fontCanvas = document.getElementById('font')
 const fontContext = fontCanvas.getContext('2d')
@@ -180,109 +164,55 @@ fontContext.textAlign = 'center'
 fontContext.textBaseline = 'middle'
 fontContext.fillStyle = '#000'
 fontContext.fillText(text, fontCanvas.clientWidth / 2, fontCanvas.clientHeight / 2)
+svga.dynamicElements['key'] = fontCanvas
 
-const { Downloader, Parser, Player } = SVGA
-const downloader = new Downloader()
-const parser = new Parser()
-const player = new Player('#canvas')
-const svgaFile = './svga/kingset.svga'
-const fileData = await downloader.get(svgaFile)
-const svgaData = await parser.do(fileData)
-
-svgaData.dynamicElements['banner'] = fontCanvas
-
-await player.mount(svgaData)
-
-player.start()
+await player.mount(svga)
 ```
 
-### 可复用实例化 Downloader & Parser
+### DB
+
+利用 [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) 进行持久化缓存已下载并解析的数据元，可避免重复消耗资源对相同 SVGA 下载和解析
 
 ```js
-import { Downloader, Parser, Player } from 'svga.lite'
-
-const downloader = new Downloader()
-const parser = new Parser()
-const player1 = new Player('#canvas1')
-const player2 = new Player('#canvas2')
-const fileData1 = await downloader.get('./1.svga')
-const fileData2 = await downloader.get('./2.svga')
-const svgaData1 = await parser.do(fileData1)
-const svgaData2 = await parser.do(fileData2)
-
-await player1.mount(svgaData1)
-await player2.mount(svgaData2)
-
-player1.start()
-player2.start()
-```
-
-### 销毁实例
-
-```js
-const downloader = new Downloader()
-downloader.destroy()
-
-const parser = new Parser()
-parser.destroy()
-
-const player = new Player('#canvas')
-player.destroy()
-```
-
-### DB (v1.5+)
-
-已下载并解析的数据利用 IndexedDB 进行持久化缓存，下次可避免重复消耗资源对统一 SVGA 下载和解析
-
-```js
-import { Downloader, Parser, Player } from 'svga.lite'
-import DB from 'svga.lite/db'
-
-const svgaFile = 'test.svga'
-let data = void 0
-let db = void 0
+import { DB } from 'svga'
 
 try {
-  db = new DB()
+  const url = 'xx.svga'
+  const db = DB()
+  let svga = await db.find(url)
+  if (!svga) {
+    const parser = new Parser({ isDisableImageBitmapShim: true })
+    svga = await parser.load(url)
+    await db.insert(url, svga)
+  }
+  await player.mount(svga)
 } catch (error) {
   console.error(error)
 }
-
-if (db) {
-  data = await db.find(svgaFile)
-}
-
-if (!data) {
-  const downloader = new Downloader()
-  const fileData = await downloader.get(svgaFile)
-  const parser = new Parser()
-
-  data = await parser.do(fileData)
-
-  // 插入数据
-  db && (await db.insert(svgaFile, data))
-}
-
-const player = new Player('#canvas')
-await player.mount(data)
-
-player.start()
 ```
 
-## Downloader Cancel (v1.4.0+)
+## Webpack SVGA
 
-你可以取消下载中的 SVGA 文件请求
+SVGA 文件可用 [url-loader](https://www.npmjs.com/package/raw-loader) 配置 Webpack 进行打包构建，例如：
 
 ```js
-downloader.get('test.svga').then((fileData) => {
-  console.log('下载完成')
-}).catch(error => {
-  console.log('catch', error)
-})
+// webpack.config.js
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /\.svga$/i,
+        use: 'url-loader'
+      }
+    ]
+  }
+}
 
-setTimeout(() => {
-  downloader.cancel() // 或者 downloader.destroy()
-}, 1000)
+// js
+import { Parser } from 'svga'
+import XX from './xx.svga'
+const parser = new Parser()
+const svga = await parser.load(XX)
 ```
 
 ## [VSCode Plugin SVGA Preview](https://marketplace.visualstudio.com/items?itemName=svga-perview.svga-perview)
@@ -297,7 +227,7 @@ setTimeout(() => {
 # 安装依赖
 yarn install
 
-# 开发测试
+# 开发 & 测试
 yarn test
 
 # 构建
