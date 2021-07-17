@@ -55,6 +55,10 @@ export class Player {
   private readonly cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap} = {}
 
   constructor (options: HTMLCanvasElement | PalyerConfigOptions) {
+    this.animator = new Animator()
+    this.animator.onEnd = () => {
+      if (this.onEnd !== undefined) this.onEnd()
+    }
     let container: HTMLCanvasElement | undefined
     if (options instanceof HTMLCanvasElement) {
       container = options
@@ -64,10 +68,6 @@ export class Player {
     }
     this.config.container = container ?? this.config.container
     this.ofsCanvas = window.OffscreenCanvas !== undefined ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height) : document.createElement('canvas')
-    this.animator = new Animator()
-    this.animator.onEnd = () => {
-      if (this.onEnd !== undefined) this.onEnd()
-    }
   }
 
   /**

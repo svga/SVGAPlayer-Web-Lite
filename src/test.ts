@@ -11,7 +11,9 @@ const TESTCASE1 = async (): Promise<void> => {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement
   const player = new Player({
     container: canvas,
-    loop: 0
+    loop: 0,
+    isCacheFrames: true,
+    isUseIntersectionObserver: true
   })
   await player.mount(svga)
   player.start()
@@ -88,8 +90,8 @@ const TESTCASE4 = async (): Promise<void> => {
 }
 
 Promise.all([
-  // TESTCASE1()
+  TESTCASE1()
   // TESTCASE2()
-  TESTCASE3()
+  // TESTCASE3()
   // TESTCASE4()
 ]).catch(error => console.error(error))

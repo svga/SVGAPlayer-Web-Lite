@@ -17,7 +17,7 @@
   "bugs": {
     "url": "https://github.com/svga/SVGAPlayer-Web-Lite/issues"
   },
-  "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/tree/2.0#readme",
+  "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
   "scripts": {
     "test": "cross-env NODE_ENV=test rollup -c -w",
     "clean": "rimraf dist",
