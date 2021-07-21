@@ -230,12 +230,24 @@ export interface Video {
 }
 
 export const enum PLAYER_FILL_MODE {
+  /**
+   * 播放完成后停在首帧
+   */
   FORWARDS = 'forwards',
+  /**
+   * 播放完成后停在尾帧
+   */
   BACKWARDS = 'backwards'
 }
 
 export const enum PLAYER_PLAY_MODE {
+  /**
+   * 顺序播放
+   */
   FORWARDS = 'forwards',
+  /**
+   * 倒序播放
+   */
   FALLBACKS = 'fallbacks'
 }
 
