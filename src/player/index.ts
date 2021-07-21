@@ -75,6 +75,11 @@ export class Player {
    * @param options 可配置项
    */
   public setConfig (options: PalyerConfigOptions): void {
+    if (options.startFrame !== undefined && options.endFrame !== undefined) {
+      if (options.startFrame >= options.endFrame) {
+        throw new Error('StartFrame should > EndFrame')
+      }
+    }
     this.config.container = options.container ?? this.config.container
     this.config.loop = options.loop ?? 0
     this.config.fillMode = options.fillMode ?? PLAYER_FILL_MODE.FORWARDS
@@ -229,7 +234,8 @@ export class Player {
   public destroy (): void {
     this.animator.stop()
     this.clearContainer()
-    this.videoEntity = undefined
+    ;(this.animator as any) = null
+    ;(this.videoEntity as any) = null
   }
 
   private startAnimation (): void {
@@ -265,14 +271,13 @@ export class Player {
     this.animator.fillRule = fillMode === 'backwards' ? 1 : 0
 
     this.animator.onUpdate = (value: number) => {
-      value = Math.floor(value)
       if (this.currentFrame === value) return
       this.currentFrame = value
       this.drawFrame(this.currentFrame)
       if (this.onProcess !== undefined) this.onProcess()
     }
 
-    this.animator.start(this.currentFrame)
+    this.animator.start()
   }
 
   private setSize (): void {
