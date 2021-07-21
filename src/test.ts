@@ -1,5 +1,11 @@
+import { PLAYER_FILL_MODE, PLAYER_PLAY_MODE } from 'types'
 import { Parser, Player, DB } from './index'
 
+const canvas = document.getElementById('canvas') as HTMLCanvasElement
+
+/**
+ * 基本使用
+ */
 const TESTCASE1 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   // const url = '/svga/TwitterHeart.svga'
@@ -8,42 +14,48 @@ const TESTCASE1 = async (): Promise<void> => {
   const parser = new Parser()
   const svga = await parser.load(url)
   console.log(svga)
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement
-  const player = new Player({
-    container: canvas,
-    loop: 0,
-    isCacheFrames: true,
-    isUseIntersectionObserver: true
-  })
+  const player = new Player(canvas)
   await player.mount(svga)
   player.start()
 }
 
+/**
+ * 事件、回调
+ */
 const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  const parser = new Parser()
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement
-  const player = new Player(canvas)
+  let parser = new Parser()
+  let player = new Player(canvas)
   console.time('load')
-  const svga = await parser.load(url)
+  let svga = await parser.load(url)
   console.timeEnd('load')
   console.time('load')
   console.time('mount')
   await player.mount(svga)
   console.timeEnd('mount')
-  ;(window as any).start = () => player.start()
-  ;(window as any).pause = () => player.pause()
-  ;(window as any).resume = () => player.resume()
-  ;(window as any).stop = () => player.stop()
-  ;(window as any).clear = () => player.clear()
   player.onStart = () => console.log('onStart')
   player.onResume = () => console.log('onResume')
   player.onPause = () => console.log('onPause')
   player.onStop = () => console.log('onStop')
   player.onProcess = () => console.log('onProcess')
   player.onEnd = () => console.log('onEnd')
+  ;(window as any).start = () => player.start()
+  ;(window as any).pause = () => player.pause()
+  ;(window as any).resume = () => player.resume()
+  ;(window as any).stop = () => player.stop()
+  ;(window as any).clear = () => player.clear()
+  ;(window as any).destroy = () => {
+    parser.destroy()
+    player.destroy()
+    ;(svga as any) = null
+    ;(parser as any) = null
+    ;(player as any) = null
+  }
 }
 
+/**
+ * 替换、动态元素
+ */
 const TESTCASE3 = async (): Promise<void> => {
   const text = 'hello gg'
   const fontCanvas = document.createElement('canvas')
@@ -67,12 +79,14 @@ const TESTCASE3 = async (): Promise<void> => {
   svga.replaceElements['99'] = image
   svga.dynamicElements.banner = fontCanvas
 
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement
   const player = new Player(canvas)
   await player.mount(svga)
   player.start()
 }
 
+/**
+ * DB
+ */
 const TESTCASE4 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const db = new DB()
@@ -83,15 +97,63 @@ const TESTCASE4 = async (): Promise<void> => {
     svga = await parser.load(url)
     await db.insert(url, svga)
   }
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement
   const player = new Player(canvas)
   await player.mount(svga)
   player.start()
 }
 
+/**
+ * 多项设置项
+ */
+const TESTCASE5 = async (): Promise<void> => {
+  const url = '/svga/angel.svga'
+  const parser = new Parser()
+  const svga = await parser.load(url)
+  const player = new Player({
+    container: canvas,
+    loop: 0,
+    isCacheFrames: true,
+    isUseIntersectionObserver: true,
+    playMode: PLAYER_PLAY_MODE.FALLBACKS,
+    fillMode: PLAYER_FILL_MODE.BACKWARDS,
+    startFrame: 10,
+    endFrame: 40
+  })
+  await player.mount(svga)
+  player.start()
+}
+
+/**
+ * 往来顺序播放
+ */
+const TESTCASE6 = async (): Promise<void> => {
+  const url = '/svga/angel.svga'
+  const parser = new Parser()
+  const svga = await parser.load(url)
+  console.log(svga)
+  const player = new Player({
+    container: canvas,
+    loop: 1,
+    playMode: PLAYER_PLAY_MODE.FORWARDS
+  })
+  await player.mount(svga)
+  player.start()
+  player.onEnd = () => {
+    console.log('onEnd', player.currentFrame)
+    const playMode = player.config.playMode === PLAYER_PLAY_MODE.FORWARDS ? PLAYER_PLAY_MODE.FALLBACKS : PLAYER_PLAY_MODE.FORWARDS
+    player.setConfig({
+      loop: 1,
+      playMode
+    })
+    player.start()
+  }
+}
+
 Promise.all([
-  TESTCASE1()
-  // TESTCASE2()
+  // TESTCASE1()
+  TESTCASE2()
   // TESTCASE3()
   // TESTCASE4()
+  // TESTCASE5()
+  // TESTCASE6()
 ]).catch(error => console.error(error))
