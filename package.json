@@ -20,6 +20,7 @@
   "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
   "scripts": {
     "format:check": "eslint",
+    "type:check": "tsc --noEmit",
     "test": "cross-env NODE_ENV=test rollup -c -w",
     "clean": "rimraf dist",
     "build:umd": "cross-env FORMAT=umd rollup -c",
@@ -79,7 +80,7 @@
     ]
   },
   "gitHooks": {
-    "pre-commit": "lint-staged",
+    "pre-commit": "npm run type:check && lint-staged",
     "commit-msg": "commitlint -e $GIT_PARAMS"
   }
 }
