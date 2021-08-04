@@ -195,6 +195,13 @@ try {
 }
 ```
 
+## TypeScript 声明 SVGA 文件
+
+```ts
+// global.d.ts
+declare module '*.svga'
+```
+
 ## Webpack SVGA
 
 SVGA 文件可用 [url-loader](https://www.npmjs.com/package/raw-loader) 配置 Webpack 进行打包构建，例如：
@@ -214,9 +221,28 @@ module.exports = {
 
 // js
 import { Parser } from 'svga'
-import XX from './xx.svga'
+import xx from './xx.svga'
 const parser = new Parser()
-const svga = await parser.load(XX)
+const svga = await parser.load(xx)
+```
+
+## Vite SVGA
+
+SVGA 文件可通过配置 Vite 作为 [静态资源](https://vitejs.dev/guide/assets.html#explicit-url-imports) 打包构建，例如：
+
+```js
+// vite.config.ts
+export default defineConfig({
+  assetsInclude: [
+    'svga'
+  ]
+})
+
+// js
+import { Parser } from 'svga'
+import xx from './xx.svga?url'
+const parser = new Parser()
+const svga = await parser.load(xx)
 ```
 
 ## [VSCode Plugin SVGA Preview](https://marketplace.visualstudio.com/items?itemName=svga-perview.svga-perview)
