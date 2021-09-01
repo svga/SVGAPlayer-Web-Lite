@@ -70,9 +70,9 @@ function drawSprite (
 
   if (bitmap !== undefined) {
     if (replaceElement !== undefined) {
-      context.drawImage(replaceElement, 0, 0, bitmap.width, bitmap.height)
+      context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
     } else {
-      context.drawImage(bitmap, 0, 0)
+      context.drawImage(bitmap, 0, 0, frame.layout.width, frame.layout.height)
     }
   }
 
