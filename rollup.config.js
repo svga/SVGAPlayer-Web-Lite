@@ -2,7 +2,7 @@ import serve from 'rollup-plugin-serve'
 import livereload from 'rollup-plugin-livereload'
 import { terser } from 'rollup-plugin-terser'
 import banner from 'rollup-plugin-banner'
-import babel from '@rollup/plugin-babel'
+import { getBabelOutputPlugin } from '@rollup/plugin-babel'
 import typescript from 'rollup-plugin-typescript2'
 import resolve from '@rollup/plugin-node-resolve'
 import commonjs from '@rollup/plugin-commonjs'
@@ -14,6 +14,24 @@ const DIST_FILE_NAME = 'index'
 const TEST_DIR = '__test__'
 const DIST_DIR = 'dist'
 const UMD_NAME = 'SVGA'
+
+const babelOutputPlugin = getBabelOutputPlugin({
+  allowAllFormats: true,
+  comments: false,
+  presets: [
+    [
+      '@babel/preset-env',
+      {
+        targets: {
+          browsers: [
+            'Android >= 4.4',
+            'iOS >= 9.0'
+          ]
+        }
+      }
+    ]
+  ]
+})
 
 const config = [
   {
@@ -31,14 +49,7 @@ const config = [
       typescript({
         tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
       }),
-      babel({
-        babelHelpers: 'bundled',
-        babelrc: false,
-        exclude: 'node_modules',
-        presets: [
-          ['@babel/preset-env', { modules: false }]
-        ]
-      }),
+      babelOutputPlugin,
       IS_TEST_ENV && serve(TEST_DIR),
       IS_TEST_ENV && livereload({
         delay: 810,
@@ -66,14 +77,7 @@ if (IS_TEST_ENV || FORMAT === 'umd') {
       typescript({
         tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
       }),
-      babel({
-        babelHelpers: 'bundled',
-        babelrc: false,
-        exclude: 'node_modules',
-        presets: [
-          ['@babel/preset-env', { modules: false }]
-        ]
-      }),
+      babelOutputPlugin,
       !IS_TEST_ENV && terser(),
       IS_TEST_ENV && inlineParser
     ]
