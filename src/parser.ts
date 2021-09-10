@@ -44,10 +44,14 @@ export class Parser {
       const { isDisableImageBitmapShim } = this
       const postData = { url, options: { isDisableImageBitmapShim } }
       if (this.worker instanceof Worker) {
+        this.worker.onmessage = ({ data }: { data: Video | Error }) => {
+          data instanceof Error ? reject(data) : resolve(data)
+        }
         this.worker.postMessage(postData)
-        this.worker.onmessage = ({ data }: { data: Video }) => resolve(data)
       } else {
-        this.worker.onmessageCallback = (data: Video) => resolve(data)
+        this.worker.onmessageCallback = (data: Video | Error) => {
+          data instanceof Error ? reject(data) : resolve(data)
+        }
         this.worker.onmessage({ data: postData })
       }
     })

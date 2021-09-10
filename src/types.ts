@@ -7,8 +7,8 @@ export interface ParserPostMessageArgs {
 
 export interface MockWebWorker {
   onmessage: (event: { data: ParserPostMessageArgs }) => void
-  onmessageCallback: (data: Video) => void
-  postMessage: (data: Video) => void
+  onmessageCallback: (data: Video | Error) => void
+  postMessage: (data: Video | Error) => void
 }
 
 export interface ParserConfigOptions {

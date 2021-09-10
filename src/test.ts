@@ -6,6 +6,7 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement
 /**
  * 基本使用
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   // const url = '/svga/TwitterHeart.svga'
@@ -22,6 +23,7 @@ const TESTCASE1 = async (): Promise<void> => {
 /**
  * 事件、回调
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   let parser = new Parser()
@@ -56,6 +58,7 @@ const TESTCASE2 = async (): Promise<void> => {
 /**
  * 替换、动态元素
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE3 = async (): Promise<void> => {
   const text = 'hello gg'
   const fontCanvas = document.createElement('canvas')
@@ -87,6 +90,7 @@ const TESTCASE3 = async (): Promise<void> => {
 /**
  * DB
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE4 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const db = new DB()
@@ -105,6 +109,7 @@ const TESTCASE4 = async (): Promise<void> => {
 /**
  * 多项设置项
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE5 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const parser = new Parser()
@@ -126,6 +131,7 @@ const TESTCASE5 = async (): Promise<void> => {
 /**
  * 往来顺序播放
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE6 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const parser = new Parser()
@@ -149,11 +155,30 @@ const TESTCASE6 = async (): Promise<void> => {
   }
 }
 
+/**
+ * 捕捉错误
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const TESTCASE7 = async (): Promise<void> => {
+  const url = '/svga/undefined.svga'
+  try {
+    const parser = new Parser()
+    // const parser = new Parser({ isDisableWebWorker: true })
+    const svga = await parser.load(url)
+    const player = new Player(canvas)
+    await player.mount(svga)
+    player.start()
+  } catch (error) {
+    console.error('Catch >>>>', error)
+  }
+}
+
 Promise.all([
   // TESTCASE1()
-  TESTCASE2()
+  // TESTCASE2()
   // TESTCASE3()
   // TESTCASE4()
   // TESTCASE5()
   // TESTCASE6()
+  TESTCASE7()
 ]).catch(error => console.error(error))

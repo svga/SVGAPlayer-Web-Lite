@@ -32,32 +32,39 @@ async function download (url: string): Promise<ArrayBuffer> {
       if (request.response !== undefined && (request.status === 200 || request.status === 304)) {
         resolve(request.response)
       } else {
-        reject(request)
+        reject(new Error(`XMLHttpRequest, ${request.statusText}`))
       }
     }
-    request.onerror = () => reject(request.response)
     request.send()
   })
 }
 
 async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void> {
-  const { url, options } = event.data
-  const buffer = await download(url)
-  const dataHeader = new Uint8Array(buffer, 0, 4)
-  if (Utils.getVersion(dataHeader) !== 2) throw new Error('this parser only support version@2 of SVGA.')
-  const inflateData: Uint8Array = new Zlib.Inflate(new Uint8Array(buffer)).decompress()
-  const movie = message.decode(inflateData) as unknown as Movie
-  const images: RawImages = {}
-  for (const key in movie.images) {
-    const image = movie.images[key]
-    if (!options.isDisableImageBitmapShim && self.createImageBitmap !== undefined) {
-      images[key] = await self.createImageBitmap(new Blob([image]))
-    } else {
-      const value = uint8ArrayToString(image)
-      images[key] = btoa(value)
+  try {
+    const { url, options } = event.data
+    const buffer = await download(url)
+    const dataHeader = new Uint8Array(buffer, 0, 4)
+    if (Utils.getVersion(dataHeader) !== 2) throw new Error('this parser only support version@2 of SVGA.')
+    const inflateData: Uint8Array = new Zlib.Inflate(new Uint8Array(buffer)).decompress()
+    const movie = message.decode(inflateData) as unknown as Movie
+    const images: RawImages = {}
+    for (const key in movie.images) {
+      const image = movie.images[key]
+      if (!options.isDisableImageBitmapShim && self.createImageBitmap !== undefined) {
+        images[key] = await self.createImageBitmap(new Blob([image]))
+      } else {
+        const value = uint8ArrayToString(image)
+        images[key] = btoa(value)
+      }
     }
+    worker.postMessage(new VideoEntity(movie, images))
+  } catch (error) {
+    let errorMessage: string = (error as unknown as any).toString()
+    if (error instanceof Error) errorMessage = error.message
+    worker.postMessage(
+      new Error(`[SVGA Parser Error] ${errorMessage}`)
+    )
   }
-  worker.postMessage(new VideoEntity(movie, images))
 }
 
 if (self.document !== undefined) {
