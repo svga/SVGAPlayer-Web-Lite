@@ -251,7 +251,7 @@ export const enum PLAYER_PLAY_MODE {
   FALLBACKS = 'fallbacks'
 }
 
-export interface PalyerConfig {
+export interface PlayerConfig {
   /**
    * 播放动画的 Canvas 元素
    */
@@ -292,4 +292,4 @@ export interface PalyerConfig {
   isOpenNoExecutionDelay: boolean
 }
 
-export type PalyerConfigOptions = Partial<PalyerConfig>
+export type PlayerConfigOptions = Partial<PlayerConfig>
