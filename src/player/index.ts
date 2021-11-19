@@ -1,10 +1,10 @@
 import {
   PLAYER_FILL_MODE,
   PLAYER_PLAY_MODE,
-  PalyerConfigOptions,
+  PlayerConfigOptions,
   Video,
   BitmapsCache,
-  PalyerConfig
+  PlayerConfig
 } from '../types'
 import { Animator } from './animator'
 import render from './render'
@@ -34,7 +34,7 @@ export class Player {
   /**
    * 当前配置项
    */
-  public readonly config: PalyerConfig = {
+  public readonly config: PlayerConfig = {
     container: document.createElement('canvas'),
     loop: 0,
     fillMode: PLAYER_FILL_MODE.FORWARDS,
@@ -54,7 +54,7 @@ export class Player {
   private bitmapsCache: BitmapsCache = {}
   private readonly cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap} = {}
 
-  constructor (options: HTMLCanvasElement | PalyerConfigOptions) {
+  constructor (options: HTMLCanvasElement | PlayerConfigOptions) {
     this.animator = new Animator()
     this.animator.onEnd = () => {
       if (this.onEnd !== undefined) this.onEnd()
@@ -74,7 +74,7 @@ export class Player {
    * 设置配置项
    * @param options 可配置项
    */
-  public setConfig (options: PalyerConfigOptions): void {
+  public setConfig (options: PlayerConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined) {
       if (options.startFrame >= options.endFrame) {
         throw new Error('StartFrame should > EndFrame')
