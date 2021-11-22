@@ -182,7 +182,7 @@ import { DB } from 'svga'
 
 try {
   const url = 'xx.svga'
-  const db = DB()
+  const db = new DB()
   let svga = await db.find(url)
   if (!svga) {
     const parser = new Parser({ isDisableImageBitmapShim: true })
