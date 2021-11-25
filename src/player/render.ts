@@ -69,6 +69,10 @@ function drawSprite (
   )
 
   if (bitmap !== undefined) {
+    if (frame.maskPath !== null) {
+      drawBezier(context, frame.maskPath.d, frame.maskPath.transform, frame.maskPath.styles)
+      context.clip()
+    }
     if (replaceElement !== undefined) {
       context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
     } else {

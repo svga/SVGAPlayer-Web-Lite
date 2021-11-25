@@ -147,6 +147,12 @@ export interface VideoShapeEllipse {
   transform: Transform
 }
 
+export interface MaskPath {
+  d: string
+  transform: Transform | undefined
+  styles: VideoStyles
+}
+
 export interface MovieFrame {
   alpha: number
   transform: Transform | null
@@ -154,7 +160,7 @@ export interface MovieFrame {
   ny: number
   layout: Rect
   clipPath: string
-  maskPath: null
+  maskPath: MaskPath | null
   shapes: MovieShape[]
 }
 
@@ -169,7 +175,7 @@ export interface VideoFrame {
   ny: number
   layout: Rect
   clipPath: string
-  maskPath: null
+  maskPath: MaskPath | null
   shapes: VideoFrameShapes
 }
 

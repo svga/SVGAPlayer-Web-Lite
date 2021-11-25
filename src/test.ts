@@ -8,16 +8,22 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
-  const url = '/svga/angel.svga'
+  // const url = '/svga/angel.svga'
+  const url = '/svga/11.svga'
   // const url = '/svga/TwitterHeart.svga'
   // const url = '/svga/loading-1.svga'
   // const url = '/svga/kaola.svga'
   const parser = new Parser()
   const svga = await parser.load(url)
   console.log(svga)
-  const player = new Player(canvas)
-  await player.mount(svga)
-  player.start()
+  if (canvas !== null) {
+    const player = new Player({
+      container: canvas,
+      loop: 1
+    })
+    await player.mount(svga)
+    player.start()
+  }
 }
 
 /**
@@ -174,11 +180,11 @@ const TESTCASE7 = async (): Promise<void> => {
 }
 
 Promise.all([
-  // TESTCASE1()
+  TESTCASE1()
   // TESTCASE2()
   // TESTCASE3()
   // TESTCASE4()
   // TESTCASE5()
   // TESTCASE6()
-  TESTCASE7()
+  // TESTCASE7()
 ]).catch(error => console.error(error))

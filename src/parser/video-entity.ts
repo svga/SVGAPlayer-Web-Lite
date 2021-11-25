@@ -184,6 +184,22 @@ export class VideoEntity implements Video {
         const nx = Math.min(Math.min(lbx, rbx), Math.min(llx, lrx))
         const ny = Math.min(Math.min(lby, rby), Math.min(lly, lry))
 
+        const maskPath = clipPath.length > 0
+          ? {
+              d: clipPath,
+              transform: undefined,
+              styles: {
+                fill: 'rgba(0, 0, 0, 0)' as RGBA<0, 0, 0, 0>,
+                stroke: null,
+                strokeWidth: null,
+                lineCap: null,
+                lineJoin: null,
+                miterLimit: null,
+                lineDash: null
+              }
+            }
+          : null
+
         vSprite.frames.push({
           alpha: mFrame.alpha ?? 0,
           layout,
@@ -192,7 +208,7 @@ export class VideoEntity implements Video {
           shapes,
           nx,
           ny,
-          maskPath: null
+          maskPath
         })
       })
       this.sprites.push(vSprite)
