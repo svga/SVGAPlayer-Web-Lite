@@ -76,7 +76,7 @@ export class Player {
    */
   public setConfig (options: PlayerConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined) {
-      if (options.startFrame >= options.endFrame) {
+      if (options.startFrame > options.endFrame) {
         throw new Error('StartFrame should > EndFrame')
       }
     }

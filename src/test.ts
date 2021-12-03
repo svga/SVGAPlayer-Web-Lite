@@ -179,12 +179,40 @@ const TESTCASE7 = async (): Promise<void> => {
   }
 }
 
+/**
+ * 重设配置
+ */
+const TESTCASE8 = async (): Promise<void> => {
+  const url = '/svga/angel.svga'
+  const parser = new Parser()
+  const svga = await parser.load(url)
+  const player = new Player(canvas)
+  await player.mount(svga)
+  player.setConfig({
+    loop: 1,
+    startFrame: 0,
+    endFrame: 1
+  })
+  player.start()
+
+  setTimeout(() => {
+    console.log('start')
+    player.setConfig({
+      loop: 0,
+      startFrame: 0,
+      endFrame: 0
+    })
+    player.start()
+  }, 5000)
+}
+
 Promise.all([
-  TESTCASE1()
+  // TESTCASE1()
   // TESTCASE2()
   // TESTCASE3()
   // TESTCASE4()
   // TESTCASE5()
   // TESTCASE6()
   // TESTCASE7()
+  TESTCASE8()
 ]).catch(error => console.error(error))
