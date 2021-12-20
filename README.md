@@ -34,7 +34,7 @@ npm i svga
 ### CDN
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/svga/dist/index.min.js"></script>
+<script src="https://unpkg.com/svga/dist/index.min.js"></script>
 ```
 
 ## 使用
