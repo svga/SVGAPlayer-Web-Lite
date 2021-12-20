@@ -185,6 +185,7 @@ try {
   const db = new DB()
   let svga = await db.find(url)
   if (!svga) {
+    // Parser 需要配置取消使用 ImageBitmap 特性，ImageBitmap 数据无法直接存储到 DB 内
     const parser = new Parser({ isDisableImageBitmapShim: true })
     svga = await parser.load(url)
     await db.insert(url, svga)
