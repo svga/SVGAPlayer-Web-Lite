@@ -185,7 +185,8 @@ function drawBezier (
   })
   if (styles.fill !== null) {
     context.fill()
-  } else if (styles.stroke !== null) {
+  }
+  if (styles.stroke !== null) {
     context.stroke()
   }
   context.restore()
@@ -353,7 +354,8 @@ function drawEllipse (
   context.bezierCurveTo(xm - ox, ye, x, ym + oy, x, ym)
   if (styles.fill !== null) {
     context.fill()
-  } else if (styles.stroke !== null) {
+  }
+  if (styles.stroke !== null) {
     context.stroke()
   }
   context.restore()
@@ -397,7 +399,8 @@ function drawRect (
   context.closePath()
   if (styles.fill !== null) {
     context.fill()
-  } else if (styles.stroke !== null) {
+  }
+  if (styles.stroke !== null) {
     context.stroke()
   }
   context.restore()
