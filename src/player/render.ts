@@ -35,6 +35,7 @@ function render (
   const context = canvas.getContext('2d')
 
   if (context === null) throw new Error('Render Context cannot be null')
+  if (!('save' in context)) throw new Error('Render Context is not context2d')
 
   videoEntity.sprites.forEach(sprite => {
     const bitmap = bitmapsCache[sprite.imageKey]

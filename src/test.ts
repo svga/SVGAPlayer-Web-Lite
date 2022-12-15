@@ -8,8 +8,8 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
-  // const url = '/svga/angel.svga'
-  const url = '/svga/11.svga'
+  const url = '/svga/angel.svga'
+  // const url = '/svga/11.svga'
   // const url = '/svga/TwitterHeart.svga'
   // const url = '/svga/loading-1.svga'
   // const url = '/svga/kaola.svga'
@@ -182,6 +182,7 @@ const TESTCASE7 = async (): Promise<void> => {
 /**
  * 重设配置
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE8 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const parser = new Parser()
@@ -207,12 +208,12 @@ const TESTCASE8 = async (): Promise<void> => {
 }
 
 Promise.all([
-  // TESTCASE1()
+  TESTCASE1()
   // TESTCASE2()
   // TESTCASE3()
   // TESTCASE4()
   // TESTCASE5()
   // TESTCASE6()
   // TESTCASE7()
-  TESTCASE8()
+  // TESTCASE8()
 ]).catch(error => console.error(error))

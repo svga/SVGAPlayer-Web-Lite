@@ -12,10 +12,6 @@
       "dom",
       "webworker"
     ],
-    "types": [
-      "node",
-      "offscreencanvas"
-    ],
     "skipLibCheck": true
   },
   "include": [

@@ -305,7 +305,12 @@ export class Player {
       return
     }
 
-    const ofsCanvas = this.ofsCanvas
+    let ofsCanvas = this.ofsCanvas
+
+    // OffscreenCanvas 在 Firefox 浏览器无法被清理历史内容
+    if (window.OffscreenCanvas !== undefined && window.navigator.userAgent.includes('Firefox')) {
+      ofsCanvas = new window.OffscreenCanvas(this.config.container.width, this.config.container.height)
+    }
 
     ofsCanvas.width = this.config.container.width
     ofsCanvas.height = this.config.container.height
