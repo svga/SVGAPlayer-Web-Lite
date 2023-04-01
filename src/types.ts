@@ -283,6 +283,10 @@ export interface PlayerConfig {
    */
   endFrame: number
   /**
+   * 循环播放的开始帧，默认值 0
+   */
+  loopStartFrame: number
+  /**
    * 是否开启缓存已播放过的帧数据，默认值 false
    */
   isCacheFrames: boolean

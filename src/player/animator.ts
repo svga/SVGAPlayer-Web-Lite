@@ -9,6 +9,7 @@ export class Animator {
   public startValue: number = 0
   public endValue: number = 0
   public duration: number = 0
+  public loopStart: number = 0
   public loop: number = 1
   public fillRule: number = 0
   public onStart: () => void = () => {}
@@ -60,11 +61,13 @@ export class Animator {
   }
 
   private doDeltaTime (deltaTime: number): void {
-    if (deltaTime >= this.duration * this.loop) {
+    if (deltaTime >= this.loopStart + (this.duration - this.loopStart) * this.loop) {
       this.currentFrication = this.fillRule === 1 ? 0.0 : 1.0
       this.isRunning = false
     } else {
-      this.currentFrication = deltaTime % this.duration / this.duration
+      this.currentFrication = deltaTime <= this.duration
+        ? deltaTime / this.duration
+        : ((deltaTime - this.loopStart) % (this.duration - this.loopStart) + this.loopStart) / this.duration
     }
     this.onUpdate(this.animatedValue)
     if (!this.isRunning) {

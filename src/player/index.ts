@@ -41,6 +41,7 @@ export class Player {
     playMode: PLAYER_PLAY_MODE.FORWARDS,
     startFrame: 0,
     endFrame: 0,
+    loopStartFrame: 0,
     isCacheFrames: false,
     isUseIntersectionObserver: false,
     isOpenNoExecutionDelay: false
@@ -86,6 +87,7 @@ export class Player {
     this.config.playMode = options.playMode ?? PLAYER_PLAY_MODE.FORWARDS
     this.config.startFrame = options.startFrame ?? 0
     this.config.endFrame = options.endFrame ?? 0
+    this.config.loopStartFrame = options.loopStartFrame ?? 0
     this.config.isCacheFrames = options.isCacheFrames ?? false
     this.config.isUseIntersectionObserver = options.isUseIntersectionObserver ?? false
     this.config.isOpenNoExecutionDelay = options.isOpenNoExecutionDelay ?? false
@@ -242,7 +244,7 @@ export class Player {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
 
     const { config, totalFrames, videoEntity } = this
-    const { playMode, startFrame, endFrame, fillMode, loop } = config
+    const { playMode, startFrame, endFrame, loopStartFrame, fillMode, loop } = config
 
     // 如果开始动画的当前帧是最后一帧，重置为第 0 帧
     if (this.currentFrame === totalFrames) {
@@ -267,6 +269,7 @@ export class Player {
     }
 
     this.animator.duration = frames * (1.0 / videoEntity.fps) * 1000
+    this.animator.loopStart = loopStartFrame > startFrame ? (loopStartFrame - startFrame) * (1.0 / videoEntity.fps) * 1000 : 0
     this.animator.loop = loop === true || loop <= 0 ? Infinity : (loop === false ? 1 : loop)
     this.animator.fillRule = fillMode === 'backwards' ? 1 : 0
 
