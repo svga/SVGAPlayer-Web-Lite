@@ -130,6 +130,10 @@ new Player({
   // 结束播放的帧数，默认值 0
   endFrame?: number
 
+  // 循环播放开始的帧数，可设置每次循环从中间开始。默认值 0，每次播放到 endFrame 后，跳转到此帧开始循环，若此值小于 startFrame 则不生效
+  // 类似于 https://developer.mozilla.org/en-US/docs/Web/API/AudioBufferSourceNode/loopStart
+  loopStartFrame?: number
+
   // 是否开启缓存已播放过的帧数据，默认值 false
   // 开启后对已绘制的帧进行缓存，提升重复播放动画性能
   isCacheFrames?: boolean
