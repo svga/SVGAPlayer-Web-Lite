@@ -1,6 +1,6 @@
 {
   "name": "svga",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Lightweight SVGA Web Player",
   "main": "dist/index.cjs.min.js",
   "module": "dist/index.esm.min.js",
