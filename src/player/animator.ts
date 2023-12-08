@@ -1,4 +1,4 @@
-const WORKER = 'onmessage = function () {setTimeout(function() {postMessage(null)}, 1 / 60)}'
+const WORKER = 'onmessage = function () {setTimeout(function() {postMessage(null)}, 1000 / 60)}'
 
 export class Animator {
   private isRunning = false
