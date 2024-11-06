@@ -157,7 +157,7 @@ function resetShapeStyles (
 
 function drawBezier (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  d: string,
+  d: string | undefined,
   transform: Transform | undefined,
   styles: VideoStyles
 ): void {
@@ -175,15 +175,17 @@ function drawBezier (
   }
   const currentPoint: CurrentPoint = { x: 0, y: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
   context.beginPath()
-  d = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
-  d.split('|||').forEach(segment => {
-    if (segment.length === 0) return
-    const firstLetter = segment.substr(0, 1)
-    if (validMethods.includes(firstLetter)) {
-      const args = segment.substr(1).trim().split(' ')
-      drawBezierElement(context, currentPoint, firstLetter, args)
-    }
-  })
+  if (d !== undefined) {
+    d = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
+    d.split('|||').forEach(segment => {
+      if (segment.length === 0) return
+      const firstLetter = segment.substr(0, 1)
+      if (validMethods.includes(firstLetter)) {
+        const args = segment.substr(1).trim().split(' ')
+        drawBezierElement(context, currentPoint, firstLetter, args)
+      }
+    })
+  }
   if (styles.fill !== null) {
     context.fill()
   }

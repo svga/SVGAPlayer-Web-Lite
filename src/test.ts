@@ -8,7 +8,7 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
-  const url = '/svga/angel.svga'
+  const url = '/svga/shape-path-undefined.svga'
   // const url = '/svga/11.svga'
   // const url = '/svga/TwitterHeart.svga'
   // const url = '/svga/loading-1.svga'
