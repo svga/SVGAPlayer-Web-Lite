@@ -49,6 +49,7 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
     const movie = message.decode(inflateData) as unknown as Movie
     const images: RawImages = {}
     for (const key in movie.images) {
+      if (key.startsWith('audio')) continue
       const image = movie.images[key]
       if (!options.isDisableImageBitmapShim && self.createImageBitmap !== undefined) {
         images[key] = await self.createImageBitmap(new Blob([image]))
@@ -59,7 +60,7 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
     }
     worker.postMessage(new VideoEntity(movie, images))
   } catch (error) {
-    let errorMessage: string = (error as unknown as any).toString()
+    let errorMessage: string = (error as any).toString()
     if (error instanceof Error) errorMessage = error.message
     worker.postMessage(
       new Error(`[SVGA Parser Error] ${errorMessage}`)
