@@ -258,6 +258,9 @@ const svga = await parser.load(xx)
 
 我们感谢社区提供错误修正和改进。
 
+### 环境要求
+Node.js v16.x
+
 ```sh
 # 安装依赖
 yarn install
