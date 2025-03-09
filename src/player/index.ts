@@ -44,18 +44,19 @@ export class Player {
     loopStartFrame: 0,
     isCacheFrames: false,
     isUseIntersectionObserver: false,
-    isOpenNoExecutionDelay: false
+    isOpenNoExecutionDelay: false,
+    isOpenOffscreenCanvas: true
   }
 
   private readonly animator: Animator
-  private readonly ofsCanvas: HTMLCanvasElement | OffscreenCanvas
+  private ofsCanvas?: HTMLCanvasElement | OffscreenCanvas
 
   private isBeIntersection = true
   private intersectionObserver: IntersectionObserver | null = null
   private bitmapsCache: BitmapsCache = {}
-  private readonly cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap} = {}
+  private readonly cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap } = {}
 
-  constructor (options: HTMLCanvasElement | PlayerConfigOptions) {
+  constructor(options: HTMLCanvasElement | PlayerConfigOptions) {
     this.animator = new Animator()
     this.animator.onEnd = () => {
       if (this.onEnd !== undefined) this.onEnd()
@@ -68,14 +69,14 @@ export class Player {
       this.setConfig(options)
     }
     this.config.container = container ?? this.config.container
-    this.ofsCanvas = window.OffscreenCanvas !== undefined ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height) : document.createElement('canvas')
+    
   }
 
   /**
    * 设置配置项
    * @param options 可配置项
    */
-  public setConfig (options: PlayerConfigOptions): void {
+  public setConfig(options: PlayerConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined) {
       if (options.startFrame > options.endFrame) {
         throw new Error('StartFrame should > EndFrame')
@@ -91,12 +92,13 @@ export class Player {
     this.config.isCacheFrames = options.isCacheFrames ?? false
     this.config.isUseIntersectionObserver = options.isUseIntersectionObserver ?? false
     this.config.isOpenNoExecutionDelay = options.isOpenNoExecutionDelay ?? false
+    this.config.isOpenOffscreenCanvas = options.isOpenOffscreenCanvas === undefined || options.isOpenOffscreenCanvas ? true : false;
     this.animator.isOpenNoExecutionDelay = options.isOpenNoExecutionDelay ?? false
     // 监听容器是否处于浏览器视窗内
     this.setIntersectionObserver()
   }
 
-  private setIntersectionObserver (): void {
+  private setIntersectionObserver(): void {
     if (hasIntersectionObserver && this.config.isUseIntersectionObserver) {
       this.intersectionObserver = new IntersectionObserver(entries => {
         this.isBeIntersection = !(entries[0].intersectionRatio <= 0)
@@ -117,7 +119,7 @@ export class Player {
    * @param videoEntity SVGA 数据源
    * @returns Promise<void>
    */
-  public async mount (videoEntity: Video): Promise<void> {
+  public async mount(videoEntity: Video): Promise<void> {
     return await new Promise((resolve, reject) => {
       this.currentFrame = 0
       this.totalFrames = videoEntity.frames - 1
@@ -182,7 +184,7 @@ export class Player {
    */
   public onEnd: EventCallback
 
-  private clearContainer (): void {
+  private clearContainer(): void {
     const width = this.config.container.width
     this.config.container.width = width
   }
@@ -190,7 +192,7 @@ export class Player {
   /**
    * 开始播放
    */
-  public start (): void {
+  public start(): void {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
     this.clearContainer()
     this.startAnimation()
@@ -200,7 +202,7 @@ export class Player {
   /**
    * 重新播放
    */
-  public resume (): void {
+  public resume(): void {
     this.startAnimation()
     if (this.onResume !== undefined) this.onResume()
   }
@@ -208,7 +210,7 @@ export class Player {
   /**
    * 暂停播放
    */
-  public pause (): void {
+  public pause(): void {
     this.animator.stop()
     if (this.onPause !== undefined) this.onPause()
   }
@@ -216,7 +218,7 @@ export class Player {
   /**
    * 停止播放
    */
-  public stop (): void {
+  public stop(): void {
     this.animator.stop()
     this.currentFrame = 0
     this.clearContainer()
@@ -226,21 +228,21 @@ export class Player {
   /**
    * 清理容器画布
    */
-  public clear (): void {
+  public clear(): void {
     this.clearContainer()
   }
 
   /**
    * 销毁实例
    */
-  public destroy (): void {
+  public destroy(): void {
     this.animator.stop()
     this.clearContainer()
-    ;(this.animator as any) = null
-    ;(this.videoEntity as any) = null
+      ; (this.animator as any) = null
+      ; (this.videoEntity as any) = null
   }
 
-  private startAnimation (): void {
+  private startAnimation(): void {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
 
     const { config, totalFrames, videoEntity } = this
@@ -283,7 +285,7 @@ export class Player {
     this.animator.start()
   }
 
-  private setSize (): void {
+  private setSize(): void {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
     const size = this.videoEntity.size
     this.config.container.width = size.width
@@ -291,7 +293,7 @@ export class Player {
   }
 
   /// ----------- 描绘一帧 -----------
-  private drawFrame (frame: number): void {
+  private drawFrame(frame: number): void {
     if (this.videoEntity === undefined) throw new Error('Player VideoEntity undefined')
     if (this.config.isUseIntersectionObserver && !this.isBeIntersection) return
 
@@ -308,36 +310,36 @@ export class Player {
       return
     }
 
-    let ofsCanvas = this.ofsCanvas
-
-    // OffscreenCanvas 在 Firefox 浏览器无法被清理历史内容
-    if (window.OffscreenCanvas !== undefined && window.navigator.userAgent.includes('Firefox')) {
-      ofsCanvas = new window.OffscreenCanvas(this.config.container.width, this.config.container.height)
-    }
-
-    ofsCanvas.width = this.config.container.width
-    ofsCanvas.height = this.config.container.height
-
-    render(
-      ofsCanvas,
-      this.bitmapsCache,
-      this.videoEntity.dynamicElements,
-      this.videoEntity.replaceElements,
-      this.videoEntity,
-      this.currentFrame
-    )
-
-    context.drawImage(
-      ofsCanvas,
-      0, 0, ofsCanvas.width, ofsCanvas.height,
-      0, 0, ofsCanvas.width, ofsCanvas.height
-    )
-
     if (this.config.isCacheFrames) {
-      // ImageData
-      // const imageData = (ofsCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D).getImageData(0, 0, ofsCanvas.width, ofsCanvas.height)
-      // this.frames[frame] = imageData
+      // ofsCanvas 不存在 或者 (OffscreenCanvas 在 Firefox 浏览器无法被清理历史内容 每次重新构建)
+      if (!this.ofsCanvas || window.navigator.userAgent.includes('Firefox') /*OffscreenCanvas 在 Firefox 浏览器无法被清理历史内容 每次重新构建*/) {
+        this.ofsCanvas = this.config.isOpenOffscreenCanvas && window.OffscreenCanvas !== undefined ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height) : document.createElement('canvas')
+      }
+
+      let ofsCanvas = this.ofsCanvas
+
+      ofsCanvas.width = this.config.container.width
+      ofsCanvas.height = this.config.container.height
+
+      render(
+        ofsCanvas,
+        this.bitmapsCache,
+        this.videoEntity.dynamicElements,
+        this.videoEntity.replaceElements,
+        this.videoEntity,
+        this.currentFrame
+      )
+
+      context.drawImage(
+        ofsCanvas,
+        0, 0, ofsCanvas.width, ofsCanvas.height,
+        0, 0, ofsCanvas.width, ofsCanvas.height
+      )
+      // 把帧缓存起来
       if ('toDataURL' in ofsCanvas) {
+        // ImageData
+        // const imageData = (ofsCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D).getImageData(0, 0, ofsCanvas.width, ofsCanvas.height)
+        // this.frames[frame] = imageData
         const ofsImageBase64 = ofsCanvas.toDataURL()
         const ofsImage = new Image()
         ofsImage.src = ofsImageBase64
@@ -345,6 +347,15 @@ export class Player {
       } else {
         this.cacheFrames[frame] = ofsCanvas.transferToImageBitmap()
       }
+    } else {
+      render(
+        this.config.container,
+        this.bitmapsCache,
+        this.videoEntity.dynamicElements,
+        this.videoEntity.replaceElements,
+        this.videoEntity,
+        this.currentFrame
+      )
     }
   }
 }
