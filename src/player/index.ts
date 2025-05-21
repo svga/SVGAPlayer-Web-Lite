@@ -1,6 +1,8 @@
 import {
   PLAYER_FILL_MODE,
   PLAYER_PLAY_MODE,
+  PLAYER_FILL_MODE,
+  PLAYER_PLAY_MODE,
   PlayerConfigOptions,
   Video,
   BitmapsCache,
@@ -11,6 +13,10 @@ import render from './render'
 
 const inBrowser = typeof window !== 'undefined'
 const hasIntersectionObserver = inBrowser && 'IntersectionObserver' in window
+const hasLongAnimationFrame =
+  inBrowser &&
+  window.PerformanceObserver &&
+  window.PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame')
 
 type EventCallback = undefined | (() => void)
 
@@ -44,11 +50,13 @@ export class Player {
     loopStartFrame: 0,
     isCacheFrames: false,
     isUseIntersectionObserver: false,
-    isOpenNoExecutionDelay: false
+    isOpenNoExecutionDelay: false,
+    enableLongAnimationFrameLogging: false
   }
 
   private readonly animator: Animator
   private readonly ofsCanvas: HTMLCanvasElement | OffscreenCanvas
+  private longAnimationFrameObserver: PerformanceObserver | null = null
 
   private isBeIntersection = true
   private intersectionObserver: IntersectionObserver | null = null
@@ -91,9 +99,45 @@ export class Player {
     this.config.isCacheFrames = options.isCacheFrames ?? false
     this.config.isUseIntersectionObserver = options.isUseIntersectionObserver ?? false
     this.config.isOpenNoExecutionDelay = options.isOpenNoExecutionDelay ?? false
+    this.config.enableLongAnimationFrameLogging = options.enableLongAnimationFrameLogging ?? false
     this.animator.isOpenNoExecutionDelay = options.isOpenNoExecutionDelay ?? false
     // 监听容器是否处于浏览器视窗内
     this.setIntersectionObserver()
+    // 根据配置初始化长动画帧观察器
+    this.initLongAnimationFrameObserver()
+  }
+
+  private initLongAnimationFrameObserver (): void {
+    if (this.longAnimationFrameObserver !== null) {
+      this.longAnimationFrameObserver.disconnect()
+      this.longAnimationFrameObserver = null
+    }
+
+    if (hasLongAnimationFrame && this.config.enableLongAnimationFrameLogging) {
+      this.longAnimationFrameObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          // 类型守卫，确保 entry 是 PerformanceLongAnimationFrameTiming
+          if ('duration' in entry && 'renderingTime' in entry && 'scripts' in entry) {
+            console.warn('Long Animation Frame detected:', {
+              duration: entry.duration,
+              renderingTime: entry.renderingTime,
+              // @ts-expect-error PerformanceScriptTiming not in official typescript lib yet
+              scriptSources: entry.scripts.map(script => ({
+                sourceURL: script.sourceURL,
+                sourceFunctionName: script.sourceFunctionName,
+                sourceCharPosition: script.sourceCharPosition,
+                duration: script.duration,
+                executionType: script.executionType
+              }))
+            })
+          } else {
+            // 处理 entry 不是 PerformanceLongAnimationFrameTiming 的情况
+            // 例如，如果观察者被用于其他类型的性能条目
+            console.log('Received non-long-animation-frame entry:', entry)
+          }
+        }
+      })
+    }
   }
 
   private setIntersectionObserver (): void {
@@ -193,6 +237,13 @@ export class Player {
   public start (): void {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
     this.clearContainer()
+    // 确保在开始播放时，如果配置了，观察器也启动
+    if (this.config.enableLongAnimationFrameLogging && hasLongAnimationFrame) {
+      if (this.longAnimationFrameObserver === null) {
+        this.initLongAnimationFrameObserver() // 可能在setConfig中已经初始化，但作为安全措施
+      }
+      this.longAnimationFrameObserver?.observe({ type: 'long-animation-frame', buffered: true })
+    }
     this.startAnimation()
     if (this.onStart !== undefined) this.onStart()
   }
@@ -220,6 +271,7 @@ export class Player {
     this.animator.stop()
     this.currentFrame = 0
     this.clearContainer()
+    this.longAnimationFrameObserver?.disconnect()
     if (this.onStop !== undefined) this.onStop()
   }
 
@@ -236,6 +288,10 @@ export class Player {
   public destroy (): void {
     this.animator.stop()
     this.clearContainer()
+    this.longAnimationFrameObserver?.disconnect()
+    this.longAnimationFrameObserver = null
+    this.intersectionObserver?.disconnect()
+    this.intersectionObserver = null
     ;(this.animator as any) = null
     ;(this.videoEntity as any) = null
   }
@@ -271,7 +327,7 @@ export class Player {
     this.animator.duration = frames * (1.0 / videoEntity.fps) * 1000
     this.animator.loopStart = loopStartFrame > startFrame ? (loopStartFrame - startFrame) * (1.0 / videoEntity.fps) * 1000 : 0
     this.animator.loop = loop === true || loop <= 0 ? Infinity : (loop === false ? 1 : loop)
-    this.animator.fillRule = fillMode === 'backwards' ? 1 : 0
+    this.animator.fillRule = fillMode === 'backwards' ? 1 : 0 // 'backwards' (0) or 'forwards' (1)
 
     this.animator.onUpdate = (value: number) => {
       if (this.currentFrame === value) return

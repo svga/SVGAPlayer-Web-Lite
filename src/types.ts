@@ -300,6 +300,11 @@ export interface PlayerConfig {
    * 开启后使用 `WebWorker` 确保动画按时执行（避免个别情况下浏览器延迟或停止执行动画任务）
    */
   isOpenNoExecutionDelay: boolean
+  /**
+   * 是否启用长动画帧API日志记录，默认值 false
+   * 开启后，如果浏览器支持 Long Animation Frames API，则会通过 console.warn 输出长动画帧的相关信息
+   */
+  enableLongAnimationFrameLogging: boolean
 }
 
 export type PlayerConfigOptions = Partial<PlayerConfig>

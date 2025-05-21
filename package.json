@@ -28,7 +28,8 @@
     "build:esm": "cross-env FORMAT=esm rollup -c",
     "build:index": "cross-env NODE_ENV=production node ./scripts/inject-parser.mjs",
     "build": "run-s clean build:umd build:cjs build:esm build:index",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "postinstall": "patch-package"
   },
   "files": [
     "dist"
@@ -54,6 +55,8 @@
     "glob": "^7.1.7",
     "lint-staged": "^11.1.1",
     "npm-run-all": "^4.1.5",
+    "patch-package": "^8.0.0",
+    "postinstall-postinstall": "^2.1.0",
     "protobufjs": "git+https://github.com/lijialiang/protobuf.js.git",
     "rimraf": "^3.0.2",
     "rollup": "^2.51.1",
@@ -63,7 +66,7 @@
     "rollup-plugin-serve": "^1.0.1",
     "rollup-plugin-terser": "^5.1.1",
     "rollup-plugin-typescript2": "^0.30.0",
-    "tslib": "^2.3.0",
+    "tslib": "~2.3.1",
     "typescript": "^4.9.4",
     "yorkie": "^2.0.0",
     "zlibjs": "git+https://github.com/lijialiang/zlib.js.git#esm"
@@ -81,5 +84,8 @@
   "gitHooks": {
     "pre-commit": "npm run type:check && lint-staged",
     "commit-msg": "commitlint -e $GIT_PARAMS"
+  },
+  "resolutions": {
+    "tslib": "~2.3.1"
   }
 }
