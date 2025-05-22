@@ -6,7 +6,7 @@ import { getBabelOutputPlugin } from '@rollup/plugin-babel'
 import typescript from 'rollup-plugin-typescript2'
 import resolve from '@rollup/plugin-node-resolve'
 import commonjs from '@rollup/plugin-commonjs'
-import { inlineParser } from './scripts/plugins'
+import { inlineParserPlugin } from './scripts/plugins.mjs'
 
 const FORMAT = process.env.FORMAT
 const IS_TEST_ENV = process.env.NODE_ENV === 'test'
@@ -58,28 +58,31 @@ const config = [
       }),
       !IS_TEST_ENV && terser(),
       !IS_TEST_ENV && banner('SVGA.Lite v<%= pkg.version %>'),
-      IS_TEST_ENV && inlineParser
+      IS_TEST_ENV && inlineParserPlugin()
     ]
   }
 ]
 
-if (IS_TEST_ENV || FORMAT === 'umd') {
+// Configuration for the parser worker
+if (IS_TEST_ENV || FORMAT === 'umd') { // Keep UMD condition if parser is also built for UMD standalone
   config.unshift({
-    onwarn () {},
+    onwarn () {}, // Suppress warnings if any
     input: 'src/parser/index.ts',
     output: {
       file: IS_TEST_ENV ? `${TEST_DIR}/parser.js` : `${DIST_DIR}/parser.js`,
-      format: 'iife'
+      format: 'iife', // Parser is an IIFE to be injected
+      name: 'SVGAParserWorker' // Give it a name for the IIFE context
     },
     plugins: [
       resolve({ jsnext: true, preferBuiltins: true, browser: true }),
       commonjs(),
       typescript({
-        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
+        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json',
+        check: false // Potentially disable strict type checking for faster worker builds if needed
       }),
-      babelOutputPlugin,
-      !IS_TEST_ENV && terser(),
-      IS_TEST_ENV && inlineParser
+      babelOutputPlugin, // Apply Babel transformations
+      !IS_TEST_ENV && terser() // Minify if not test environment
+      // Remove inlineParser from here; it's handled by the main test bundle
     ]
   })
 }

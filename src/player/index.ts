@@ -1,8 +1,6 @@
 import {
   PLAYER_FILL_MODE,
   PLAYER_PLAY_MODE,
-  PLAYER_FILL_MODE,
-  PLAYER_PLAY_MODE,
   PlayerConfigOptions,
   Video,
   BitmapsCache,

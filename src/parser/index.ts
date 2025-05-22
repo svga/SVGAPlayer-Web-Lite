@@ -5,7 +5,7 @@ import {
   RawImages
 } from '../types'
 import { Root } from 'protobufjs'
-import Zlib from 'zlibjs/bin/inflate.min.js'
+import * as pako from 'pako'
 import SVGA_PROTO from './svga-proto'
 import { VideoEntity } from './video-entity'
 import { Utils } from '../utils'
@@ -44,8 +44,14 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
     const { url, options } = event.data
     const buffer = await download(url)
     const dataHeader = new Uint8Array(buffer, 0, 4)
-    if (Utils.getVersion(dataHeader) !== 2) throw new Error('this parser only support version@2 of SVGA.')
-    const inflateData: Uint8Array = new Zlib.Inflate(new Uint8Array(buffer)).decompress()
+
+    if (Utils.getVersion(dataHeader) !== 2) { // This checks if first 4 bytes are "SVGA"
+      throw new Error('this parser only support version@2 of SVGA (magic word "SVGA" not found or mismatch).')
+    }
+
+    // For SVGA v2, the data after the 4-byte "SVGA" magic word is the zlib-compressed MovieEntity.
+    const inflateData: Uint8Array = pako.inflate(new Uint8Array(buffer.slice(4)))
+
     const movie = message.decode(inflateData) as unknown as Movie
     const images: RawImages = {}
     for (const key in movie.images) {
