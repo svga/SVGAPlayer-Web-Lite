@@ -6,6 +6,7 @@ import { getBabelOutputPlugin } from '@rollup/plugin-babel'
 import typescript from 'rollup-plugin-typescript2'
 import resolve from '@rollup/plugin-node-resolve'
 import commonjs from '@rollup/plugin-commonjs'
+import wasm from '@rollup/plugin-wasm'
 import { inlineParserPlugin } from './scripts/plugins.mjs'
 
 const FORMAT = process.env.FORMAT
@@ -76,6 +77,13 @@ if (IS_TEST_ENV || FORMAT === 'umd') { // Keep UMD condition if parser is also b
     plugins: [
       resolve({ jsnext: true, preferBuiltins: true, browser: true }),
       commonjs(),
+      wasm({
+        maxFileSize: 1000000, // Inline WASM modules up to 1MB
+        // targetEnv: 'auto-inline', // DEPRECATED, maxFileSize is preferred
+        // For true self-contained worker, inlining is best.
+        // If not inlining, wasm files are copied to output dir, and paths are rewritten.
+        // This might be complex for Blob workers if paths are not relative or easily determinable.
+      }),
       typescript({
         tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json',
         check: false // Potentially disable strict type checking for faster worker builds if needed

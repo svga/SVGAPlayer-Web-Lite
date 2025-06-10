@@ -4,9 +4,9 @@ import {
   ParserPostMessageArgs,
   RawImages
 } from '../types'
-import { Root } from 'protobufjs'
+// Removed protobufjs and SVGA_PROTO
 import * as pako from 'pako'
-import SVGA_PROTO from './svga-proto'
+import initWasm, { parse_svga } from './wasm/svga_wasm_parser.js' // Assuming placement
 import { VideoEntity } from './video-entity'
 import { Utils } from '../utils'
 
@@ -18,8 +18,18 @@ function uint8ArrayToString (u8a: Uint8Array): string {
   return dataString
 }
 
-const proto = Root.fromJSON(SVGA_PROTO)
-const message = proto.lookupType('com.opensource.svga.MovieEntity')
+// Initialize WASM module when worker loads.
+// The `initWasm` function is the default export from the wasm-bindgen JS glue.
+const wasmInitialized = initWasm().catch(error => {
+  console.error("Failed to initialize WASM module:", error);
+  // Post an error back to the main thread or handle appropriately
+  // This is crucial, otherwise the worker might silently fail to init.
+  if (worker && worker.postMessage) {
+    worker.postMessage(new Error(`[SVGA Parser Error] WASM module initialization failed: ${error.message}`));
+  }
+  return null; // Ensure wasmInitialized promise resolves to null on failure after logging
+});
+
 
 let worker: MockWebWorker | Worker
 
@@ -49,17 +59,35 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
       throw new Error('this parser only support version@2 of SVGA (magic word "SVGA" not found or mismatch).')
     }
 
+    // Ensure WASM is initialized before proceeding
+    const wasmInstance = await wasmInitialized;
+    if (!wasmInstance) {
+      // WASM failed to initialize, error already posted by the init catch block.
+      // Or, throw a new error to be caught by the try...catch below.
+      throw new Error("WASM module not initialized.");
+    }
+
     // For SVGA v2, the data after the 4-byte "SVGA" magic word is the zlib-compressed MovieEntity.
     const inflateData: Uint8Array = pako.inflate(new Uint8Array(buffer.slice(4)))
 
-    const movie = message.decode(inflateData) as unknown as Movie
+    // Use WASM's parse_svga function
+    // The returned object structure should match `ParsedSvgaOutput` from Rust,
+    // which was designed to be compatible with the existing `Movie` type.
+    const movie = parse_svga(inflateData) as unknown as Movie;
+    // Note: parse_svga from wasm-bindgen will throw an exception if the Rust function returns Err.
+    // So, no need to check for Result<Ok,Err> explicitly here.
+
     const images: RawImages = {}
+    // The `movie.images` from WASM (originally HashMap<String, Vec<u8>>)
+    // should be a JS object like { [key: string]: Uint8Array }
     for (const key in movie.images) {
       if (key.startsWith('audio')) continue
-      const image = movie.images[key]
+      const image = movie.images[key] as unknown as Uint8Array // Explicit cast if necessary for type safety
       if (!options.isDisableImageBitmapShim && self.createImageBitmap !== undefined) {
+        // Assuming `image` is Uint8Array, Blob constructor is fine.
         images[key] = await self.createImageBitmap(new Blob([image]))
       } else {
+        // uint8ArrayToString expects Uint8Array, so this should work.
         const value = uint8ArrayToString(image)
         images[key] = btoa(value)
       }

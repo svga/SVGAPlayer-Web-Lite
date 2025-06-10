@@ -66,6 +66,8 @@
 
 ### 使用 WebAssembly (WASM) 替代 WebWorker 进行 SVGA 解析
 
+**Status**: _详细技术方案与核心Rust代码结构已定义完成。下一步涉及实际的Rust编译、WASM模块在项目中的集成、完整的端到端测试以及解决潜在的构建/依赖问题（例如之前遇到的 `yarn install` 超时）。_
+
 **目标**: 利用 WebAssembly 的高性能特性来替代当前基于 JavaScript 的 WebWorker 进行 SVGA 文件核心解析任务（特别是 Protobuf 解码部分），以期提高解析速度，缩短动画加载时间。
 
 **背景**:
