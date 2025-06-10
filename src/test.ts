@@ -211,15 +211,41 @@ const TESTCASE8 = async (): Promise<void> => {
 let originalPerformanceObserver: any
 let originalConsoleWarn: any
 
+// Define Mock Types for LoAF
+type MockLoafPerformanceEntry = {
+  name: string;
+  entryType: string;
+  startTime: number;
+  duration: number;
+  renderingTime?: number;
+  scripts?: Array<any>;
+  // Potential other fields from PerformanceLongAnimationFrameTiming if needed by tests
+  toJSON?: () => any; // PerformanceEntry has a toJSON method
+};
+type MockLoafEntries = { getEntries: () => Array<MockLoafPerformanceEntry> };
+
+// Forward declare MockPerformanceObserver so it can be used in its own callback type
+// This is a bit tricky as the class MockPerformanceObserver is defined later.
+// We'll use `any` for the observer type in the callback for simplicity here,
+// or define a minimal interface first.
+interface IMockPerformanceObserver {
+  disconnect: () => void;
+  observe: (options?: any) => void;
+  takeRecords: () => MockLoafPerformanceEntry[];
+  // we'll pass the global mockPerformanceObserverInstance which has the callback itself
+}
+type MockPerformanceObserverCallback = (entries: MockLoafEntries, observer: IMockPerformanceObserver) => void;
+
+
 let mockPerformanceObserverInstance: {
-  observeCalled: boolean
-  disconnectCalled: boolean
-  options: any
-  callback: Function | null
-  observe: () => void
-  disconnect: () => void
-  takeRecords: () => any[]
-} | null
+  observeCalled: boolean;
+  disconnectCalled: boolean;
+  options: any;
+  callback: MockPerformanceObserverCallback | null; // Apply new type
+  observe: (options?: any) => void;
+  disconnect: () => void;
+  takeRecords: () => MockLoafPerformanceEntry[];
+} | null;
 
 let performanceObserverConstructed: boolean
 let consoleWarnCalledWith: any[] | null
@@ -232,32 +258,57 @@ function resetSpies() {
 }
 
 // Mock PerformanceObserver
-class MockPerformanceObserver {
-  constructor(callback: Function) {
-    performanceObserverConstructed = true
-    mockPerformanceObserverInstance = {
+class MockPerformanceObserver implements IMockPerformanceObserver {
+  private instanceRef: typeof mockPerformanceObserverInstance;
+
+  constructor(callback: MockPerformanceObserverCallback) {
+    performanceObserverConstructed = true;
+    // Create the instance structure and assign it to the global spy
+    // Also keep a reference to it for the observer argument in the callback
+    this.instanceRef = {
       observeCalled: false,
       disconnectCalled: false,
       options: null,
-      callback: callback,
-      observe: function (options: any) {
-        this.observeCalled = true
-        this.options = options
-        console.log('[MockPerformanceObserver] observe called with:', options)
+      callback: callback, // Store the typed callback
+      observe: function (options?: any) {
+        this.observeCalled = true;
+        this.options = options;
+        console.log('[MockPerformanceObserver] observe called with:', options);
       },
       disconnect: function () {
-        this.disconnectCalled = true
-        console.log('[MockPerformanceObserver] disconnect called')
+        this.disconnectCalled = true;
+        console.log('[MockPerformanceObserver] disconnect called');
       },
-      takeRecords: function () { // Added to satisfy PerformanceObserver interface
-        return []
+      takeRecords: function (): MockLoafPerformanceEntry[] { // Ensure return type matches
+        // Return a plausible empty array or mock entries if needed for other tests
+        return [];
       }
-    }
-    console.log('[MockPerformanceObserver] constructed')
+    };
+    mockPerformanceObserverInstance = this.instanceRef; // Assign to global spy
+    console.log('[MockPerformanceObserver] constructed');
   }
 
-  static supportedEntryTypes = ['long-animation-frame'] // Default to supported
+  // Implement IMockPerformanceObserver methods for the class instance itself
+  // These typically would be called on the instance returned by `new MockPerformanceObserver(...)`
+  // However, our tests use the global `mockPerformanceObserverInstance` spy.
+  // For the callback's `observer` argument, we need an object that has these methods.
+  // The global `mockPerformanceObserverInstance` serves this purpose.
+  observe(options?: any): void {
+    if (this.instanceRef) this.instanceRef.observe(options);
+  }
+
+  disconnect(): void {
+    if (this.instanceRef) this.instanceRef.disconnect();
+  }
+
+  takeRecords(): MockLoafPerformanceEntry[] {
+    if (this.instanceRef) return this.instanceRef.takeRecords();
+    return [];
+  }
+
+  static supportedEntryTypes = ['long-animation-frame']; // Default to supported
 }
+
 
 async function TESTCASE_LONG_ANIM_FRAMES_DISABLED(): Promise<void> {
   console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: Start', 'color: blue; font-weight: bold;')
@@ -325,8 +376,8 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
 
   // Simulate a long animation frame
   if (mockPerformanceObserverInstance && mockPerformanceObserverInstance.callback) {
-    console.log('Simulating long animation frame entry...')
-    const mockEntry = {
+    console.log('Simulating long animation frame entry...');
+    const mockEntry: MockLoafPerformanceEntry = {
       name: 'long-animation-frame',
       entryType: 'long-animation-frame',
       startTime: 100,
@@ -338,12 +389,20 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
         sourceCharPosition: 10,
         duration: 50,
         executionType: 'script'
-      }]
-    }
-    // @ts-expect-error PerformanceEntryList is not fully emulated
-    mockPerformanceObserverInstance.callback({ getEntries: () => [mockEntry] })
-    console.log('Expected: console.warn WAS called. Actual:', !!consoleWarnCalledWith)
-    if (!consoleWarnCalledWith) console.error('Failure: console.warn not called for mock entry.')
+      }],
+      toJSON: function() { return this; } // Add toJSON for completeness
+    };
+
+    // The observer argument for the callback should be an object matching IMockPerformanceObserver.
+    // Our global mockPerformanceObserverInstance fits this.
+    const observerArgument = mockPerformanceObserverInstance as IMockPerformanceObserver;
+
+    mockPerformanceObserverInstance.callback(
+      { getEntries: () => [mockEntry] },
+      observerArgument
+    );
+    console.log('Expected: console.warn WAS called. Actual:', !!consoleWarnCalledWith);
+    if (!consoleWarnCalledWith) console.error('Failure: console.warn not called for mock entry.');
     else console.log('console.warn arguments:', consoleWarnCalledWith)
 
   }
