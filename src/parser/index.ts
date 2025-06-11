@@ -6,7 +6,7 @@ import {
 } from '../types'
 // Removed protobufjs and SVGA_PROTO
 import * as pako from 'pako'
-import initWasm, { parse_svga } from './wasm/svga_wasm_parser.js' // Assuming placement
+import { init as initWasm, parse_svga } from './wasm/svga_wasm_parser.js' // Assuming placement and named export for init
 import { VideoEntity } from './video-entity'
 import { Utils } from '../utils'
 

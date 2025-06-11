@@ -318,7 +318,16 @@ async function TESTCASE_LONG_ANIM_FRAMES_DISABLED(): Promise<void> {
   ;(window as any).PerformanceObserver = MockPerformanceObserver
 
   const player = new Player(canvas) // Default: enableLongAnimationFrameLogging = false
-  await player.mount({ size: { width: 100, height: 100 }, fps: 20, frames: 10, images: {}, replaceElements: {}, dynamicElements: {}, sprites: [] })
+  await player.mount({
+    version: "2.0",
+    size: { width: 100, height: 100 },
+    fps: 20,
+    frames: 10,
+    images: {},
+    replaceElements: {},
+    dynamicElements: {},
+    sprites: []
+  })
 
   console.log('Player created with default settings (LoAF logging disabled)')
   console.log('Expected: PerformanceObserver NOT constructed. Actual:', performanceObserverConstructed)
@@ -361,7 +370,16 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
   }
 
   const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true })
-  await player.mount({ size: { width: 100, height: 100 }, fps: 20, frames: 10, images: {}, replaceElements: {}, dynamicElements: {}, sprites: [] })
+  await player.mount({
+    version: "2.0",
+    size: { width: 100, height: 100 },
+    fps: 20,
+    frames: 10,
+    images: {},
+    replaceElements: {},
+    dynamicElements: {},
+    sprites: []
+  })
 
   console.log('Player created with LoAF logging enabled.')
   console.log('Expected: PerformanceObserver constructed. Actual:', performanceObserverConstructed)
@@ -440,7 +458,16 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED(): Pr
   let errorThrown = false
   try {
     const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true })
-    await player.mount({ size: { width: 100, height: 100 }, fps: 20, frames: 10, images: {}, replaceElements: {}, dynamicElements: {}, sprites: [] })
+    await player.mount({
+      version: "2.0",
+      size: { width: 100, height: 100 },
+      fps: 20,
+      frames: 10,
+      images: {},
+      replaceElements: {},
+      dynamicElements: {},
+      sprites: []
+    })
     console.log('Player created with LoAF logging enabled, API undefined.')
     console.log('Expected: PerformanceObserver NOT constructed. Actual:', performanceObserverConstructed)
 
@@ -482,7 +509,16 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED(): 
   let errorThrown = false
   try {
     const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true })
-    await player.mount({ size: { width: 100, height: 100 }, fps: 20, frames: 10, images: {}, replaceElements: {}, dynamicElements: {}, sprites: [] })
+    await player.mount({
+      version: "2.0",
+      size: { width: 100, height: 100 },
+      fps: 20,
+      frames: 10,
+      images: {},
+      replaceElements: {},
+      dynamicElements: {},
+      sprites: []
+    })
     console.log('Player created with LoAF logging enabled, API unsupported.')
     // PerformanceObserver constructor might be called by the player before it checks supportedEntryTypes
     // but observe should not be. The critical part is that it doesn't try to observe 'long-animation-frame'.
