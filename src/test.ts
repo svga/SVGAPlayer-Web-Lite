@@ -224,22 +224,6 @@ type MockLoafPerformanceEntry = {
 };
 type MockLoafEntries = { getEntries: () => Array<MockLoafPerformanceEntry> };
 
-// --- Mocks and Spies for Long Animation Frame Tests ---
-let originalPerformanceObserver: any;
-let originalConsoleWarn: any;
-
-// Define Mock Types for LoAF
-type MockLoafPerformanceEntry = {
-  name: string;
-  entryType: string;
-  startTime: number;
-  duration: number;
-  renderingTime?: number;
-  scripts?: Array<any>;
-  toJSON?: () => any; // PerformanceEntry has a toJSON method
-};
-type MockLoafEntries = { getEntries: () => Array<MockLoafPerformanceEntry> };
-
 // Minimal interface for the observer argument in the callback
 interface IMockPerformanceObserver {
   disconnect: () => void;
