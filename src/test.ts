@@ -517,17 +517,40 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED(): 
 }
 
 
-Promise.all([
-  // TESTCASE1(),
-  // TESTCASE2(),
-  // TESTCASE3(),
-  // TESTCASE4(),
-  // TESTCASE5(),
-  // TESTCASE6(),
-  // TESTCASE7(),
-  // TESTCASE8(),
-  TESTCASE_LONG_ANIM_FRAMES_DISABLED(),
-  TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(),
-  TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED(),
-  TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED()
-]).catch(error => console.error(error))
+// Comment out or remove the original Promise.all if it runs other tests that might interfere
+// or if we want to focus only on these sequential tests for now.
+// Promise.all([
+//   TESTCASE1(),
+//   // TESTCASE3(),
+//   // TESTCASE4(),
+//   // TESTCASE5(),
+//   // TESTCASE6(),
+//   // TESTCASE7(),
+//   // TESTCASE8(),
+// ]).catch(error => console.error("Error in original non-LoAF test cases:", error));
+
+// Run TESTCASE2 and LoAF tests sequentially
+(async () => {
+  try {
+    console.log('%cStarting sequential execution of TESTCASE2 and LoAF tests...', 'color: purple; font-weight: bold;');
+
+    await TESTCASE2(); // Ensure window.start etc. are defined for potential manual interaction/debug
+    console.log('%cTESTCASE2 completed.', 'color: purple;');
+
+    await TESTCASE_LONG_ANIM_FRAMES_DISABLED();
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED completed.', 'color: purple;');
+
+    await TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE();
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE completed.', 'color: purple;');
+
+    await TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED();
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED completed.', 'color: purple;');
+
+    await TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED();
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED completed.', 'color: purple;');
+
+    console.log('%cAll LoAF tests and TESTCASE2 completed sequentially.', 'color: green; font-weight: bold;');
+  } catch (error) {
+    console.error('Error during sequential test execution:', error);
+  }
+})();
