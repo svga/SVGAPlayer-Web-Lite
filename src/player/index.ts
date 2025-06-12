@@ -108,10 +108,17 @@ export class Player {
   private initLongAnimationFrameObserver (): void {
     if (this.longAnimationFrameObserver !== null) {
       this.longAnimationFrameObserver.disconnect()
+      this.longAnimationFrameObserver.disconnect()
       this.longAnimationFrameObserver = null
     }
 
-    if (hasLongAnimationFrame && this.config.enableLongAnimationFrameLogging) {
+    // Runtime check for PerformanceObserver and long-animation-frame support
+    if (typeof window.PerformanceObserver !== 'function' ||
+        !window.PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame')) {
+      return; // API not available or not supported, do nothing.
+    }
+
+    if (this.config.enableLongAnimationFrameLogging) {
       this.longAnimationFrameObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           // 类型守卫，确保 entry 是 PerformanceLongAnimationFrameTiming

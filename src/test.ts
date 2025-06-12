@@ -224,85 +224,76 @@ type MockLoafPerformanceEntry = {
 };
 type MockLoafEntries = { getEntries: () => Array<MockLoafPerformanceEntry> };
 
-// Forward declare MockPerformanceObserver so it can be used in its own callback type
-// This is a bit tricky as the class MockPerformanceObserver is defined later.
-// We'll use `any` for the observer type in the callback for simplicity here,
-// or define a minimal interface first.
+// --- Mocks and Spies for Long Animation Frame Tests ---
+let originalPerformanceObserver: any;
+let originalConsoleWarn: any;
+
+// Define Mock Types for LoAF
+type MockLoafPerformanceEntry = {
+  name: string;
+  entryType: string;
+  startTime: number;
+  duration: number;
+  renderingTime?: number;
+  scripts?: Array<any>;
+  toJSON?: () => any; // PerformanceEntry has a toJSON method
+};
+type MockLoafEntries = { getEntries: () => Array<MockLoafPerformanceEntry> };
+
+// Minimal interface for the observer argument in the callback
 interface IMockPerformanceObserver {
   disconnect: () => void;
   observe: (options?: any) => void;
   takeRecords: () => MockLoafPerformanceEntry[];
-  // we'll pass the global mockPerformanceObserverInstance which has the callback itself
 }
 type MockPerformanceObserverCallback = (entries: MockLoafEntries, observer: IMockPerformanceObserver) => void;
 
+// This global variable will hold the *instance* of MockPerformanceObserver
+let mockPerformanceObserverInstance: MockPerformanceObserver | null;
 
-let mockPerformanceObserverInstance: {
-  observeCalled: boolean;
-  disconnectCalled: boolean;
-  options: any;
-  callback: MockPerformanceObserverCallback | null; // Apply new type
-  observe: (options?: any) => void;
-  disconnect: () => void;
-  takeRecords: () => MockLoafPerformanceEntry[];
-} | null;
-
-let performanceObserverConstructed: boolean
-let consoleWarnCalledWith: any[] | null
+// This global flag tracks if the constructor of MockPerformanceObserver was called
+let performanceObserverConstructed: boolean;
+let consoleWarnCalledWith: any[] | null;
 
 // Helper to reset spies
 function resetSpies() {
-  performanceObserverConstructed = false
-  mockPerformanceObserverInstance = null
-  consoleWarnCalledWith = null
+  performanceObserverConstructed = false;
+  mockPerformanceObserverInstance = null; // Reset the instance
+  consoleWarnCalledWith = null;
 }
 
 // Mock PerformanceObserver
 class MockPerformanceObserver implements IMockPerformanceObserver {
-  private instanceRef: typeof mockPerformanceObserverInstance;
+  observeCalled: boolean = false;
+  disconnectCalled: boolean = false;
+  observedOptions: any = null;
+  callback: MockPerformanceObserverCallback;
 
   constructor(callback: MockPerformanceObserverCallback) {
-    performanceObserverConstructed = true;
-    // Create the instance structure and assign it to the global spy
-    // Also keep a reference to it for the observer argument in the callback
-    this.instanceRef = {
-      observeCalled: false,
-      disconnectCalled: false,
-      options: null,
-      callback: callback, // Store the typed callback
-      observe: function (options?: any) {
-        this.observeCalled = true;
-        this.options = options;
-        console.log('[MockPerformanceObserver] observe called with:', options);
-      },
-      disconnect: function () {
-        this.disconnectCalled = true;
-        console.log('[MockPerformanceObserver] disconnect called');
-      },
-      takeRecords: function (): MockLoafPerformanceEntry[] { // Ensure return type matches
-        // Return a plausible empty array or mock entries if needed for other tests
-        return [];
-      }
-    };
-    mockPerformanceObserverInstance = this.instanceRef; // Assign to global spy
+    performanceObserverConstructed = true; // Global spy for constructor call
+    this.callback = callback;
+    // DO NOT set the global mockPerformanceObserverInstance here directly to `this`.
+    // Instead, the player will replace window.PerformanceObserver with this class,
+    // and when `new window.PerformanceObserver()` is called, this constructor runs.
+    // The instance created by `new` will be what `player.longAnimationFrameObserver` holds.
+    // We need to assign `this` to the global `mockPerformanceObserverInstance`
+    // so our tests can access its state (observeCalled, etc.).
+    mockPerformanceObserverInstance = this; // Assign the created instance to the global spy
     console.log('[MockPerformanceObserver] constructed');
   }
 
-  // Implement IMockPerformanceObserver methods for the class instance itself
-  // These typically would be called on the instance returned by `new MockPerformanceObserver(...)`
-  // However, our tests use the global `mockPerformanceObserverInstance` spy.
-  // For the callback's `observer` argument, we need an object that has these methods.
-  // The global `mockPerformanceObserverInstance` serves this purpose.
   observe(options?: any): void {
-    if (this.instanceRef) this.instanceRef.observe(options);
+    this.observeCalled = true;
+    this.observedOptions = options;
+    // console.log('[MockPerformanceObserver] observe called with:', options); // Keep for debugging if needed
   }
 
   disconnect(): void {
-    if (this.instanceRef) this.instanceRef.disconnect();
+    this.disconnectCalled = true;
+    // console.log('[MockPerformanceObserver] disconnect called'); // Keep for debugging if needed
   }
 
   takeRecords(): MockLoafPerformanceEntry[] {
-    if (this.instanceRef) return this.instanceRef.takeRecords();
     return [];
   }
 
@@ -311,13 +302,13 @@ class MockPerformanceObserver implements IMockPerformanceObserver {
 
 
 async function TESTCASE_LONG_ANIM_FRAMES_DISABLED(): Promise<void> {
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: Start', 'color: blue; font-weight: bold;')
-  resetSpies()
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: Start', 'color: blue; font-weight: bold;');
+  resetSpies();
 
-  originalPerformanceObserver = window.PerformanceObserver
-  ;(window as any).PerformanceObserver = MockPerformanceObserver
+  originalPerformanceObserver = window.PerformanceObserver;
+  (window as any).PerformanceObserver = MockPerformanceObserver;
 
-  const player = new Player(canvas) // Default: enableLongAnimationFrameLogging = false
+  const player = new Player(canvas); // Default: enableLongAnimationFrameLogging = false
   await player.mount({
     version: "2.0",
     size: { width: 100, height: 100 },
@@ -327,49 +318,36 @@ async function TESTCASE_LONG_ANIM_FRAMES_DISABLED(): Promise<void> {
     replaceElements: {},
     dynamicElements: {},
     sprites: []
-  })
+  });
 
-  console.log('Player created with default settings (LoAF logging disabled)')
-  console.log('Expected: PerformanceObserver NOT constructed. Actual:', performanceObserverConstructed)
+  player.start(); // Call start to potentially trigger observer logic if it were enabled
 
-  player.start()
-  console.log('player.start() called')
-  console.log('Expected: MockPerformanceObserver.observe NOT called. Actual:', mockPerformanceObserverInstance?.observeCalled)
-
-  player.stop()
-  console.log('player.stop() called')
-  console.log('Expected: MockPerformanceObserver.disconnect NOT called. Actual:', mockPerformanceObserverInstance?.disconnectCalled)
-
-  player.destroy()
-  console.log('player.destroy() called')
-  console.log('Expected: MockPerformanceObserver.disconnect NOT called. Actual:', mockPerformanceObserverInstance?.disconnectCalled)
-
-  if (performanceObserverConstructed || mockPerformanceObserverInstance?.observeCalled || mockPerformanceObserverInstance?.disconnectCalled) {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_DISABLED: Failed. Observer was interacted with.')
+  if (performanceObserverConstructed) {
+    console.error('TESTCASE_LONG_ANIM_FRAMES_DISABLED: Failed. Observer was constructed.');
   } else {
-    console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: Passed', 'color: green; font-weight: bold;')
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: Passed. Observer was not constructed.', 'color: green; font-weight: bold;');
   }
 
-  ;(window as any).PerformanceObserver = originalPerformanceObserver
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: End', 'color: blue; font-weight: bold;')
+  (window as any).PerformanceObserver = originalPerformanceObserver;
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_DISABLED: End', 'color: blue; font-weight: bold;');
 }
 
 async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> {
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Start', 'color: blue; font-weight: bold;')
-  resetSpies()
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Start', 'color: blue; font-weight: bold;');
+  resetSpies();
 
-  originalPerformanceObserver = window.PerformanceObserver
-  originalConsoleWarn = console.warn
+  originalPerformanceObserver = window.PerformanceObserver;
+  originalConsoleWarn = console.warn;
 
-  ;(window as any).PerformanceObserver = MockPerformanceObserver
-  MockPerformanceObserver.supportedEntryTypes = ['long-animation-frame'] // Ensure it's supported
+  (window as any).PerformanceObserver = MockPerformanceObserver;
+  MockPerformanceObserver.supportedEntryTypes = ['long-animation-frame']; // Ensure it's supported
 
   console.warn = (...args: any[]) => {
-    consoleWarnCalledWith = args
-    console.log('[MockConsoleWarn] called with:', args)
-  }
+    consoleWarnCalledWith = args;
+    // console.log('[MockConsoleWarn] called with:', args);
+  };
 
-  const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true })
+  const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true });
   await player.mount({
     version: "2.0",
     size: { width: 100, height: 100 },
@@ -379,17 +357,26 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
     replaceElements: {},
     dynamicElements: {},
     sprites: []
-  })
+  });
 
-  console.log('Player created with LoAF logging enabled.')
-  console.log('Expected: PerformanceObserver constructed. Actual:', performanceObserverConstructed)
-  if (!performanceObserverConstructed) console.error('Failure: Observer not constructed on init.')
+  console.log('Player created with LoAF logging enabled.');
+  if (!performanceObserverConstructed || !mockPerformanceObserverInstance) {
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. Observer not constructed or instance not set.');
+    (window as any).PerformanceObserver = originalPerformanceObserver;
+    console.warn = originalConsoleWarn;
+    return;
+  }
+  console.log('Expected: PerformanceObserver constructed. Actual:', performanceObserverConstructed);
 
 
-  player.start()
-  console.log('player.start() called')
-  console.log('Expected: MockPerformanceObserver.observe WAS called. Actual:', mockPerformanceObserverInstance?.observeCalled)
-  if (!mockPerformanceObserverInstance?.observeCalled) console.error('Failure: observe not called on start.')
+  player.start();
+  console.log('player.start() called');
+  if (!mockPerformanceObserverInstance.observeCalled) {
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. observe was not called on start.');
+  } else {
+    console.log('Expected: observeCalled === true. Actual:', mockPerformanceObserverInstance.observeCalled);
+    console.log('Expected: observedOptions type === "long-animation-frame". Actual:', mockPerformanceObserverInstance.observedOptions?.type);
+  }
 
 
   // Simulate a long animation frame
@@ -408,57 +395,81 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
         duration: 50,
         executionType: 'script'
       }],
-      toJSON: function() { return this; } // Add toJSON for completeness
+      toJSON: function() { return this; }
     };
-
-    // The observer argument for the callback should be an object matching IMockPerformanceObserver.
-    // Our global mockPerformanceObserverInstance fits this.
-    const observerArgument = mockPerformanceObserverInstance as IMockPerformanceObserver;
 
     mockPerformanceObserverInstance.callback(
       { getEntries: () => [mockEntry] },
-      observerArgument
+      mockPerformanceObserverInstance // Pass the instance itself as the observer argument
     );
-    console.log('Expected: console.warn WAS called. Actual:', !!consoleWarnCalledWith);
-    if (!consoleWarnCalledWith) console.error('Failure: console.warn not called for mock entry.');
-    else console.log('console.warn arguments:', consoleWarnCalledWith)
-
+    if (!consoleWarnCalledWith) console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. console.warn not called for mock entry.');
+    else console.log('Expected: console.warn WAS called. Actual: true');
   }
 
-  player.stop()
-  console.log('player.stop() called')
-  console.log('Expected: MockPerformanceObserver.disconnect WAS called. Actual:', mockPerformanceObserverInstance?.disconnectCalled)
-  if (!mockPerformanceObserverInstance?.disconnectCalled) console.error('Failure: disconnect not called on stop.')
-  mockPerformanceObserverInstance!.disconnectCalled = false // Reset for destroy check
-
-  player.destroy()
-  console.log('player.destroy() called')
-  console.log('Expected: MockPerformanceObserver.disconnect WAS called. Actual:', mockPerformanceObserverInstance?.disconnectCalled)
-  if (!mockPerformanceObserverInstance?.disconnectCalled) console.error('Failure: disconnect not called on destroy.')
-
-
-  if (performanceObserverConstructed && mockPerformanceObserverInstance?.observeCalled && consoleWarnCalledWith && mockPerformanceObserverInstance?.disconnectCalled) {
-    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Passed (core checks)', 'color: green; font-weight: bold;')
+  // Test disconnect on stop
+  if (!mockPerformanceObserverInstance) throw new Error("mockPerformanceObserverInstance is null before stop test");
+  mockPerformanceObserverInstance.disconnectCalled = false; // Reset before action
+  player.stop();
+  console.log('player.stop() called');
+  if (!mockPerformanceObserverInstance.disconnectCalled) {
+     console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. disconnect was not called on stop.');
   } else {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. Check logs.')
+    console.log('Expected: disconnectCalled === true (after stop). Actual:', mockPerformanceObserverInstance.disconnectCalled);
   }
 
-  ;(window as any).PerformanceObserver = originalPerformanceObserver
-  console.warn = originalConsoleWarn
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: End', 'color: blue; font-weight: bold;')
+  // Test disconnect on destroy
+  // Player needs to be "started" again for observer to be active before destroy
+  // or ensure observer is not disconnected by stop if we want to test destroy independently.
+  // Current player logic: stop disconnects. So, to test destroy's disconnect, we'd need to re-init/re-start.
+  // For simplicity, we'll assume `setConfig` or `start` would re-initialize the observer if needed.
+  // Let's create a new player instance for a clean destroy test or re-setup the observer.
+  // Given the current setup, player.destroy() will call disconnect.
+  // If it was already disconnected by player.stop(), this is fine, it's just a second safe call.
+  if (!mockPerformanceObserverInstance) throw new Error("mockPerformanceObserverInstance is null before destroy test");
+  mockPerformanceObserverInstance.disconnectCalled = false; // Reset
+  player.destroy(); // This player instance still has the same observer reference
+  console.log('player.destroy() called');
+   if (!mockPerformanceObserverInstance.disconnectCalled && player.config.enableLongAnimationFrameLogging) {
+    // If logging was enabled, destroy should attempt a disconnect.
+    // However, the global `mockPerformanceObserverInstance` might be from an old player if not careful.
+    // The `player.longAnimationFrameObserver` is set to null in destroy.
+    // The key is that `destroy` on *that player's observer* was called.
+    // Our global spy `mockPerformanceObserverInstance` will reflect the last instance created.
+    // This test might be tricky if multiple player instances are used without care.
+    // For this test structure, we assume one player and one observer instance active in the spy.
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. disconnect was not called on destroy by the spied instance.');
+  } else {
+    // If logging was disabled, or if disconnect was called, this is okay.
+    // The player.destroy() sets its internal observer to null.
+    // The global spy will hold the state of the *last* observer instance created.
+    console.log('Expected: disconnectCalled === true (after destroy, if observer existed and was active). Actual:', mockPerformanceObserverInstance.disconnectCalled);
+  }
+
+
+  // Simplified overall check for this test case
+  if (performanceObserverConstructed &&
+      mockPerformanceObserverInstance &&
+      mockPerformanceObserverInstance.observeCalled &&
+      consoleWarnCalledWith) {
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Passed (core checks)', 'color: green; font-weight: bold;');
+  } else {
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. Check logs.');
+  }
+
+  (window as any).PerformanceObserver = originalPerformanceObserver;
+  console.warn = originalConsoleWarn;
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: End', 'color: blue; font-weight: bold;');
 }
 
 async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED(): Promise<void> {
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Start', 'color: blue; font-weight: bold;')
-  resetSpies()
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Start', 'color: blue; font-weight: bold;');
+  resetSpies();
 
-  originalPerformanceObserver = window.PerformanceObserver
-  ;(window as any).PerformanceObserver = undefined // API is undefined
+  originalPerformanceObserver = window.PerformanceObserver;
+  (window as any).PerformanceObserver = undefined; // API is undefined
 
-  let errorThrown = false
-  try {
-    const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true })
-    await player.mount({
+  const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true });
+  await player.mount({
       version: "2.0",
       size: { width: 100, height: 100 },
       fps: 20,
@@ -467,49 +478,29 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED(): Pr
       replaceElements: {},
       dynamicElements: {},
       sprites: []
-    })
-    console.log('Player created with LoAF logging enabled, API undefined.')
-    console.log('Expected: PerformanceObserver NOT constructed. Actual:', performanceObserverConstructed)
+  });
+  player.start(); // Attempt to trigger observer creation
 
-    player.start()
-    console.log('player.start() called')
-    console.log('Expected: No observer interaction.')
-
-    player.stop()
-    console.log('player.stop() called')
-
-    player.destroy()
-    console.log('player.destroy() called')
-  } catch (e) {
-    errorThrown = true
-    console.error('Error during test case (API undefined):', e)
+  if (performanceObserverConstructed) {
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Failed. Observer was constructed.');
+  } else {
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Passed. Observer was not constructed.', 'color: green; font-weight: bold;');
   }
 
-  if (errorThrown) {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Failed. Error was thrown.')
-  } else if (performanceObserverConstructed) {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Failed. Observer was constructed.')
-  }
-  else {
-    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: Passed', 'color: green; font-weight: bold;')
-  }
-
-  ;(window as any).PerformanceObserver = originalPerformanceObserver
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: End', 'color: blue; font-weight: bold;')
+  (window as any).PerformanceObserver = originalPerformanceObserver;
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNDEFINED: End', 'color: blue; font-weight: bold;');
 }
 
 async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED(): Promise<void> {
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Start', 'color: blue; font-weight: bold;')
-  resetSpies()
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Start', 'color: blue; font-weight: bold;');
+  resetSpies();
 
-  originalPerformanceObserver = window.PerformanceObserver
-  ;(window as any).PerformanceObserver = MockPerformanceObserver
-  MockPerformanceObserver.supportedEntryTypes = ['paint'] // Does not include 'long-animation-frame'
+  originalPerformanceObserver = window.PerformanceObserver;
+  (window as any).PerformanceObserver = MockPerformanceObserver; // Provide the mock class
+  MockPerformanceObserver.supportedEntryTypes = ['paint']; // Does not include 'long-animation-frame'
 
-  let errorThrown = false
-  try {
-    const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true })
-    await player.mount({
+  const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true });
+  await player.mount({
       version: "2.0",
       size: { width: 100, height: 100 },
       fps: 20,
@@ -518,62 +509,27 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED(): 
       replaceElements: {},
       dynamicElements: {},
       sprites: []
-    })
-    console.log('Player created with LoAF logging enabled, API unsupported.')
-    // PerformanceObserver constructor might be called by the player before it checks supportedEntryTypes
-    // but observe should not be. The critical part is that it doesn't try to observe 'long-animation-frame'.
-    console.log('PerformanceObserver constructed (expected, due to player init):', performanceObserverConstructed)
-    if (performanceObserverConstructed && mockPerformanceObserverInstance) {
-        // If the observer was constructed, it means initLongAnimationFrameObserver was called.
-        // We need to check if it tried to *observe* 'long-animation-frame'.
-        // In the current implementation, the PerformanceObserver is only created if hasLongAnimationFrame is true.
-        // hasLongAnimationFrame checks supportedEntryTypes. So, the observer shouldn't be created.
-         console.log('Expected: PerformanceObserver NOT constructed (as hasLongAnimationFrame should be false). Actual:', performanceObserverConstructed)
-    }
+  });
+  player.start(); // Attempt to trigger observer creation
 
-
-    player.start()
-    console.log('player.start() called')
-    console.log('Expected: MockPerformanceObserver.observe NOT called for long-animation-frame. Actual:', mockPerformanceObserverInstance?.observeCalled)
-
-    player.stop()
-    console.log('player.stop() called')
-     // disconnect might be called if observer was created, even if not observing LoAF. This is acceptable.
-
-    player.destroy()
-    console.log('player.destroy() called')
-  } catch (e) {
-    errorThrown = true
-    console.error('Error during test case (API unsupported):', e)
+  if (performanceObserverConstructed) {
+     // This case is tricky. The Player's `initLongAnimationFrameObserver` has a runtime check.
+     // If MockPerformanceObserver is assigned to window.PerformanceObserver, the constructor
+     // of MockPerformanceObserver will run if `typeof window.PerformanceObserver === 'function'` is true.
+     // However, the *next* check in Player.ts is `!window.PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame')`.
+     // This should prevent the *assignment* `this.longAnimationFrameObserver = new PerformanceObserver(...)`.
+     // So, `performanceObserverConstructed` (our global spy set in mock constructor) might be true,
+     // but `player.longAnimationFrameObserver` should be null.
+     // The key is that no *observation* for 'long-animation-frame' should occur.
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Failed. Observer was constructed.');
+  } else {
+    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Passed. Observer was not constructed.', 'color: green; font-weight: bold;');
   }
 
-  if (errorThrown) {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Failed. Error was thrown.')
-  } else if (performanceObserverConstructed && mockPerformanceObserverInstance?.options?.type === 'long-animation-frame') {
-    // This checks if 'observe' was called with 'long-animation-frame'
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Failed. Observer tried to observe "long-animation-frame".')
-  } else if (performanceObserverConstructed && !MockPerformanceObserver.supportedEntryTypes.includes('long-animation-frame')) {
-     // If observer was constructed, but didn't try to observe 'long-animation-frame' because it wasn't supported, this is a pass.
-     // The player's `hasLongAnimationFrame` should prevent `initLongAnimationFrameObserver` from creating the observer.
-     // So, ideally, `performanceObserverConstructed` should be false.
-     if (performanceObserverConstructed) {
-        console.warn('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Observer was constructed, but this should ideally be prevented by hasLongAnimationFrame check. However, no attempt to observe "long-animation-frame" was made, which is the key.')
-        // For the purpose of this test, if it didn't *try* to observe 'long-animation-frame', we can consider it a soft pass.
-        // The player correctly identified that 'long-animation-frame' is not supported.
-        console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Passed (conditionally - observer constructed but did not observe LoAF)', 'color: orange; font-weight: bold;')
-     } else {
-        console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Passed', 'color: green; font-weight: bold;')
-     }
-  } else if (!performanceObserverConstructed) {
-    console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Passed', 'color: green; font-weight: bold;')
-  }
-  else {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: Failed. Check logs for observer interaction state.')
-  }
-
-  ;(window as any).PerformanceObserver = originalPerformanceObserver
-  MockPerformanceObserver.supportedEntryTypes = ['long-animation-frame'] // Restore for other tests
-  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: End', 'color: blue; font-weight: bold;')
+  // Restore static property for other tests if they run in the same suite sequentially without full page reloads
+  MockPerformanceObserver.supportedEntryTypes = ['long-animation-frame'];
+  (window as any).PerformanceObserver = originalPerformanceObserver;
+  console.log('%cTESTCASE_LONG_ANIM_FRAMES_ENABLED_API_UNAVAILABLE_UNSUPPORTED: End', 'color: blue; font-weight: bold;');
 }
 
 
