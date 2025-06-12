@@ -31,34 +31,89 @@ const TESTCASE1 = async (): Promise<void> => {
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE2 = async (): Promise<void> => {
-  const url = '/svga/angel.svga'
-  let parser = new Parser()
-  let player = new Player(canvas)
-  console.time('load')
-  let svga = await parser.load(url)
-  console.timeEnd('load')
-  console.time('load')
-  console.time('mount')
-  await player.mount(svga)
-  console.timeEnd('mount')
-  player.onStart = () => console.log('onStart')
-  player.onResume = () => console.log('onResume')
-  player.onPause = () => console.log('onPause')
-  player.onStop = () => console.log('onStop')
-  player.onProcess = () => console.log('onProcess')
-  player.onEnd = () => console.log('onEnd')
-  ;(window as any).start = () => player.start()
-  ;(window as any).pause = () => player.pause()
-  ;(window as any).resume = () => player.resume()
-  ;(window as any).stop = () => player.stop()
-  ;(window as any).clear = () => player.clear()
-  ;(window as any).destroy = () => {
-    parser.destroy()
-    player.destroy()
-    ;(svga as any) = null
-    ;(parser as any) = null
-    ;(player as any) = null
+  const url = '/svga/angel.svga';
+  let parser: Parser | null = new Parser(); // Initialize, can be set to null in destroy
+  let player: Player | null = new Player(canvas); // Initialize, can be set to null in destroy
+  let svgaData: any = null; // To hold the loaded svga data for cleanup
+
+  console.log('%cTESTCASE2: Attempting to load and mount SVGA...', 'color: blue;');
+  try {
+    console.time('load');
+    svgaData = await parser.load(url);
+    console.timeEnd('load');
+    console.log('%cTESTCASE2: SVGA loaded successfully.', 'color: blue;');
+
+    console.time('mount');
+    await player.mount(svgaData);
+    console.timeEnd('mount');
+    console.log('%cTESTCASE2: SVGA mounted successfully.', 'color: blue;');
+
+    player.onStart = () => console.log('onStart');
+    player.onResume = () => console.log('onResume');
+    player.onPause = () => console.log('onPause');
+    player.onStop = () => console.log('onStop');
+    player.onProcess = () => console.log('onProcess');
+    player.onEnd = () => console.log('onEnd');
+  } catch (error) {
+    console.error('TESTCASE2: Error during SVGA load or mount:', error);
+    // Player or parser might be null or in an invalid state,
+    // but window functions will still be defined with checks.
   }
+
+  (window as any).start = () => {
+    if (player) {
+      player.start();
+    } else {
+      console.warn('Player not available in TESTCASE2 for window.start - setup may have failed or was destroyed.');
+    }
+  };
+  (window as any).pause = () => {
+    if (player) {
+      player.pause();
+    } else {
+      console.warn('Player not available in TESTCASE2 for window.pause - setup may have failed or was destroyed.');
+    }
+  };
+  (window as any).resume = () => {
+    if (player) {
+      player.resume();
+    } else {
+      console.warn('Player not available in TESTCASE2 for window.resume - setup may have failed or was destroyed.');
+    }
+  };
+  (window as any).stop = () => {
+    if (player) {
+      player.stop();
+    } else {
+      console.warn('Player not available in TESTCASE2 for window.stop - setup may have failed or was destroyed.');
+    }
+  };
+  (window as any).clear = () => {
+    if (player) {
+      player.clear();
+    } else {
+      console.warn('Player not available in TESTCASE2 for window.clear - setup may have failed or was destroyed.');
+    }
+  };
+  (window as any).destroy = () => {
+    console.log('TESTCASE2: window.destroy called.');
+    if (parser) {
+      parser.destroy();
+      parser = null; // Set to null after destroying
+      console.log('TESTCASE2: Parser destroyed.');
+    } else {
+      console.warn('Parser not available or already destroyed in TESTCASE2 for window.destroy.');
+    }
+    if (player) {
+      player.destroy();
+      player = null; // Set to null after destroying
+      console.log('TESTCASE2: Player destroyed.');
+    } else {
+      console.warn('Player not available or already destroyed in TESTCASE2 for window.destroy.');
+    }
+    svgaData = null; // Clear SVGA data reference
+  };
+  console.log('%cTESTCASE2: Global control functions (window.start, etc.) defined.', 'color: blue; font-weight: bold;');
 }
 
 /**

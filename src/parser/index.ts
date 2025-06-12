@@ -18,20 +18,40 @@ function uint8ArrayToString (u8a: Uint8Array): string {
   return dataString
 }
 
-// Initialize WASM module when worker loads.
-// The `initWasm` function is the default export from the wasm-bindgen JS glue.
-const wasmInitialized = initWasm().catch(error => {
-  console.error("Failed to initialize WASM module:", error);
-  // Post an error back to the main thread or handle appropriately
-  // This is crucial, otherwise the worker might silently fail to init.
-  if (worker && worker.postMessage) {
-    worker.postMessage(new Error(`[SVGA Parser Error] WASM module initialization failed: ${error.message}`));
+let worker: MockWebWorker | Worker; // Ensure worker is declared to be accessible in initializeWasm's catch
+let wasmInitializationPromise: Promise<void> | null = null;
+let wasmInitializationError: Error | null = null;
+
+function initializeWasm(): void {
+  if (wasmInitializationPromise) {
+    return; // Already initializing or initialized
   }
-  return null; // Ensure wasmInitialized promise resolves to null on failure after logging
-});
+  wasmInitializationPromise = initWasm()
+    .then(() => {
+      console.log("WASM module initialized successfully.");
+      wasmInitializationError = null; // Explicitly set to null on success
+    })
+    .catch(error => {
+      console.error("Failed to initialize WASM module:", error);
+      const initError = new Error(`[SVGA Parser Error] WASM module initialization failed: ${error.message}`);
+      wasmInitializationError = initError;
+      // If worker is already set up, post error back. Otherwise, onmessage will throw this error.
+      if (worker && worker.postMessage && typeof worker.postMessage === 'function') {
+         // Check if it's the mock worker or a real worker
+        if ('onmessageCallback' in worker) { // Likely MockWebWorker
+          // Mock worker might not handle direct error objects well unless designed for it.
+          // For now, we rely on onmessage throwing the error.
+        } else { // Real Worker
+          worker.postMessage(initError);
+        }
+      }
+      // Ensure the promise chain still rejects so awaiters can catch it
+      throw initError;
+    });
+}
 
-
-let worker: MockWebWorker | Worker
+// Start WASM initialization when the worker script loads.
+initializeWasm();
 
 async function download (url: string): Promise<ArrayBuffer> {
   return await new Promise((resolve, reject) => {
@@ -59,14 +79,17 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
       throw new Error('this parser only support version@2 of SVGA (magic word "SVGA" not found or mismatch).')
     }
 
-    // Ensure WASM is initialized before proceeding
-    const wasmInstance = await wasmInitialized;
-    if (!wasmInstance) {
-      // WASM failed to initialize, error already posted by the init catch block.
-      // Or, throw a new error to be caught by the try...catch below.
-      throw new Error("WASM module not initialized.");
+    // Check for WASM initialization status at the beginning of message processing
+    if (wasmInitializationError) {
+      throw wasmInitializationError; // Throw the stored initialization error
     }
+    if (!wasmInitializationPromise) {
+      // This case should ideally not be hit if initializeWasm() is called at script load.
+      throw new Error("[SVGA Parser Error] WASM initialization not started.");
+    }
+    await wasmInitializationPromise; // Wait for initialization to complete (or throw if it failed)
 
+    // If we reach here, WASM is initialized successfully.
     // For SVGA v2, the data after the 4-byte "SVGA" magic word is the zlib-compressed MovieEntity.
     const inflateData: Uint8Array = pako.inflate(new Uint8Array(buffer.slice(4)))
 
@@ -94,11 +117,19 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
     }
     worker.postMessage(new VideoEntity(movie, images))
   } catch (error) {
-    let errorMessage: string = (error as any).toString()
-    if (error instanceof Error) errorMessage = error.message
-    worker.postMessage(
-      new Error(`[SVGA Parser Error] ${errorMessage}`)
-    )
+    let errorMessage: string = (error as any).toString();
+    if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    // Ensure worker and postMessage are available before trying to use them
+    if (worker && worker.postMessage && typeof worker.postMessage === 'function') {
+      worker.postMessage(
+        new Error(`[SVGA Parser Error] ${errorMessage}`)
+      );
+    } else {
+      // Fallback if worker is not set up when an error occurs (e.g., early WASM init error)
+      console.error(`[SVGA Parser Error] Worker not available to post message: ${errorMessage}`);
+    }
   }
 }
 
