@@ -61,31 +61,31 @@ const TESTCASE2 = async (): Promise<void> => {
   }
 
   (window as any).start = () => {
-    if (player) {
+    if (player && player.videoEntity) {
       player.start();
     } else {
-      console.warn('Player not available in TESTCASE2 for window.start - setup may have failed or was destroyed.');
+      console.warn('Player not ready or no videoEntity for window.start - setup/load in TESTCASE2 may have failed or was destroyed.');
     }
   };
   (window as any).pause = () => {
-    if (player) {
+    if (player && player.videoEntity) {
       player.pause();
     } else {
-      console.warn('Player not available in TESTCASE2 for window.pause - setup may have failed or was destroyed.');
+      console.warn('Player not ready or no videoEntity for window.pause - setup/load in TESTCASE2 may have failed or was destroyed.');
     }
   };
   (window as any).resume = () => {
-    if (player) {
+    if (player && player.videoEntity) {
       player.resume();
     } else {
-      console.warn('Player not available in TESTCASE2 for window.resume - setup may have failed or was destroyed.');
+      console.warn('Player not ready or no videoEntity for window.resume - setup/load in TESTCASE2 may have failed or was destroyed.');
     }
   };
   (window as any).stop = () => {
-    if (player) {
+    if (player && player.videoEntity) {
       player.stop();
     } else {
-      console.warn('Player not available in TESTCASE2 for window.stop - setup may have failed or was destroyed.');
+      console.warn('Player not ready or no videoEntity for window.stop - setup/load in TESTCASE2 may have failed or was destroyed.');
     }
   };
   (window as any).clear = () => {
@@ -309,6 +309,7 @@ class MockPerformanceObserver implements IMockPerformanceObserver {
   callback: MockPerformanceObserverCallback;
 
   constructor(callback: MockPerformanceObserverCallback) {
+    console.log('%c[MockPerformanceObserver] CONSTRUCTOR EXECUTED!', 'color: green; font-weight: bold;');
     performanceObserverConstructed = true; // Global spy for constructor call
     this.callback = callback;
     // DO NOT set the global mockPerformanceObserverInstance here directly to `this`.
@@ -378,6 +379,9 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
   originalPerformanceObserver = window.PerformanceObserver;
   originalConsoleWarn = console.warn;
 
+  console.log('[TESTCASE_LoAF_Available] About to create Player. window.PerformanceObserver is:', window.PerformanceObserver === MockPerformanceObserver ? 'MockPerformanceObserver (Correct)' : window.PerformanceObserver);
+  console.log('[TESTCASE_LoAF_Available] MockPerformanceObserver.supportedEntryTypes is:', MockPerformanceObserver.supportedEntryTypes);
+  console.log('[TESTCASE_LoAF_Available] Player config will be: { container: canvas, enableLongAnimationFrameLogging: true }');
   (window as any).PerformanceObserver = MockPerformanceObserver;
   MockPerformanceObserver.supportedEntryTypes = ['long-animation-frame']; // Ensure it's supported
 
@@ -387,6 +391,18 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
   };
 
   const player = new Player({ container: canvas, enableLongAnimationFrameLogging: true });
+
+  // Moved assertion block immediately after Player construction
+  console.log('Player created with LoAF logging enabled (checked immediately after construction).');
+  if (!performanceObserverConstructed || !mockPerformanceObserverInstance) {
+    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. Observer not constructed or instance not set (checked immediately after Player construction).');
+    (window as any).PerformanceObserver = originalPerformanceObserver;
+    console.warn = originalConsoleWarn;
+    return; // Exit test early if this fundamental check fails
+  }
+  console.log('Expected: PerformanceObserver constructed. Actual:', performanceObserverConstructed);
+  // End of moved assertion block
+
   await player.mount({
     version: "2.0",
     size: { width: 100, height: 100 },
@@ -398,14 +414,10 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
     sprites: []
   });
 
-  console.log('Player created with LoAF logging enabled.');
-  if (!performanceObserverConstructed || !mockPerformanceObserverInstance) {
-    console.error('TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE: Failed. Observer not constructed or instance not set.');
-    (window as any).PerformanceObserver = originalPerformanceObserver;
-    console.warn = originalConsoleWarn;
-    return;
-  }
-  console.log('Expected: PerformanceObserver constructed. Actual:', performanceObserverConstructed);
+  // console.log('Player created with LoAF logging enabled.'); // Original log line, now part of the moved block
+  // The following checks were part of the moved block and are now above player.mount()
+  // if (!performanceObserverConstructed || !mockPerformanceObserverInstance) { ... }
+  // console.log('Expected: PerformanceObserver constructed. Actual:', performanceObserverConstructed);
 
 
   player.start();

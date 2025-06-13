@@ -105,21 +105,44 @@ export class Player {
     this.initLongAnimationFrameObserver()
   }
 
-  private initLongAnimationFrameObserver (): void {
+  private initLongAnimationFrameObserver(): void {
+    console.log('[Player.initLoAF] Method called.');
     if (this.longAnimationFrameObserver !== null) {
-      this.longAnimationFrameObserver.disconnect()
-      this.longAnimationFrameObserver.disconnect()
-      this.longAnimationFrameObserver = null
+        console.log('[Player.initLoAF] Disconnecting existing observer.');
+        this.longAnimationFrameObserver.disconnect();
+        this.longAnimationFrameObserver = null;
     }
 
-    // Runtime check for PerformanceObserver and long-animation-frame support
-    if (typeof window.PerformanceObserver !== 'function' ||
-        !window.PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame')) {
-      return; // API not available or not supported, do nothing.
+    // Log initial state for debugging
+    console.log('[Player.initLoAF] Current config.enableLongAnimationFrameLogging:', this.config.enableLongAnimationFrameLogging);
+    const observerType = typeof window.PerformanceObserver;
+    console.log('[Player.initLoAF] typeof window.PerformanceObserver:', observerType);
+
+    if (observerType !== 'function') {
+        console.log('[Player.initLoAF] PerformanceObserver is not a function. Exiting.');
+        return;
     }
 
+    // Check for supportedEntryTypes and 'long-animation-frame'
+    let isLoAFSupported = false;
+    // Ensure PerformanceObserver.supportedEntryTypes itself exists and is an array
+    if (typeof window.PerformanceObserver.supportedEntryTypes !== 'undefined' && Array.isArray(window.PerformanceObserver.supportedEntryTypes)) {
+        isLoAFSupported = window.PerformanceObserver.supportedEntryTypes.includes('long-animation-frame');
+        console.log('[Player.initLoAF] window.PerformanceObserver.supportedEntryTypes:', JSON.stringify(window.PerformanceObserver.supportedEntryTypes)); // stringify for better logging of array
+        console.log('[Player.initLoAF] "long-animation-frame" is supported:', isLoAFSupported);
+    } else {
+        console.log('[Player.initLoAF] window.PerformanceObserver.supportedEntryTypes is not an array or undefined.');
+    }
+
+    if (!isLoAFSupported) {
+        console.log('[Player.initLoAF] "long-animation-frame" not supported by this PerformanceObserver. Exiting.');
+        return;
+    }
+
+    // Proceed if logging is enabled AND LoAF is supported
     if (this.config.enableLongAnimationFrameLogging) {
-      this.longAnimationFrameObserver = new PerformanceObserver((list) => {
+        console.log('[Player.initLoAF] Conditions met (API available/supported + config enabled). Creating PerformanceObserver instance.');
+        this.longAnimationFrameObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           // 类型守卫，确保 entry 是 PerformanceLongAnimationFrameTiming
           if ('duration' in entry && 'renderingTime' in entry && 'scripts' in entry) {
@@ -242,13 +265,9 @@ export class Player {
   public start (): void {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
     this.clearContainer()
-    // 确保在开始播放时，如果配置了，观察器也启动
-    if (this.config.enableLongAnimationFrameLogging && hasLongAnimationFrame) {
-      if (this.longAnimationFrameObserver === null) {
-        this.initLongAnimationFrameObserver() // 可能在setConfig中已经初始化，但作为安全措施
-      }
-      this.longAnimationFrameObserver?.observe({ type: 'long-animation-frame', buffered: true })
-    }
+    // Observer should have been initialized by constructor/setConfig if conditions were met.
+    // Simply call observe if the instance exists.
+    this.longAnimationFrameObserver?.observe({ type: 'long-animation-frame', buffered: true });
     this.startAnimation()
     if (this.onStart !== undefined) this.onStart()
   }
