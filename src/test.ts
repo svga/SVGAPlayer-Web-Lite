@@ -34,7 +34,7 @@ const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga';
   let parser: Parser | null = new Parser(); // Initialize, can be set to null in destroy
   let player: Player | null = new Player(canvas); // Initialize, can be set to null in destroy
-  let svgaData: any = null; // To hold the loaded svga data for cleanup
+  let svgaData: import('./types').Video | null = null; // To hold the loaded svga data for cleanup
 
   console.log('%cTESTCASE2: Attempting to load and mount SVGA...', 'color: blue;');
   try {
@@ -325,12 +325,10 @@ class MockPerformanceObserver implements IMockPerformanceObserver {
   observe(options?: any): void {
     this.observeCalled = true;
     this.observedOptions = options;
-    // console.log('[MockPerformanceObserver] observe called with:', options); // Keep for debugging if needed
   }
 
   disconnect(): void {
     this.disconnectCalled = true;
-    // console.log('[MockPerformanceObserver] disconnect called'); // Keep for debugging if needed
   }
 
   takeRecords(): MockLoafPerformanceEntry[] {

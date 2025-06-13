@@ -23,31 +23,49 @@ let wasmInitializationPromise: Promise<void> | null = null;
 let wasmInitializationError: Error | null = null;
 
 function initializeWasm(): void {
+  console.log('[ParserWorker] Attempting WASM initialization...');
   if (wasmInitializationPromise) {
-    return; // Already initializing or initialized
+    console.log('[ParserWorker] WASM initialization already in progress or completed.');
+    return;
   }
-  wasmInitializationPromise = initWasm()
-    .then(() => {
-      console.log("WASM module initialized successfully.");
-      wasmInitializationError = null; // Explicitly set to null on success
-    })
-    .catch(error => {
-      console.error("Failed to initialize WASM module:", error);
-      const initError = new Error(`[SVGA Parser Error] WASM module initialization failed: ${error.message}`);
-      wasmInitializationError = initError;
-      // If worker is already set up, post error back. Otherwise, onmessage will throw this error.
+
+  try {
+    if (typeof initWasm !== 'function') {
+      const importError = new Error("[SVGA Parser Error] initWasm function not found or not imported correctly from mock/WASM module.");
+      wasmInitializationError = importError;
+      wasmInitializationPromise = Promise.reject(importError); // Set promise to rejected
+      console.error(importError.message);
+      // Attempt to notify main thread if worker is set, otherwise it will be caught by onmessage
       if (worker && worker.postMessage && typeof worker.postMessage === 'function') {
-         // Check if it's the mock worker or a real worker
-        if ('onmessageCallback' in worker) { // Likely MockWebWorker
-          // Mock worker might not handle direct error objects well unless designed for it.
-          // For now, we rely on onmessage throwing the error.
-        } else { // Real Worker
-          worker.postMessage(initError);
-        }
+        worker.postMessage(importError);
       }
-      // Ensure the promise chain still rejects so awaiters can catch it
-      throw initError;
-    });
+      return;
+    }
+
+    console.log('[ParserWorker] Starting WASM initialization...');
+    wasmInitializationPromise = initWasm()
+      .then(() => {
+        console.log("[ParserWorker] WASM module initialized successfully.");
+        wasmInitializationError = null;
+      })
+      .catch(error => {
+        const initError = new Error(`[SVGA Parser Error] WASM module initialization failed: ${error.message || String(error)}`);
+        console.error("[ParserWorker] WASM Initialization failed (async catch):", initError.message);
+        wasmInitializationError = initError;
+        // No worker.postMessage here; the error is thrown to make the promise reject.
+        // The onmessage handler will catch this rejection or the stored error.
+        throw initError;
+      });
+  } catch (syncError: any) {
+    // Catch synchronous errors, e.g., if initWasm itself throws immediately (less common for promise-returning functions)
+    const criticalError = new Error(`[SVGA Parser Error] Critical error during WASM initialization setup: ${syncError.message || String(syncError)}`);
+    console.error(criticalError.message);
+    wasmInitializationError = criticalError;
+    wasmInitializationPromise = Promise.reject(criticalError);
+    if (worker && worker.postMessage && typeof worker.postMessage === 'function') {
+      worker.postMessage(criticalError);
+    }
+  }
 }
 
 // Start WASM initialization when the worker script loads.
