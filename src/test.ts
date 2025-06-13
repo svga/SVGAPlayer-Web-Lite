@@ -379,7 +379,7 @@ async function TESTCASE_LONG_ANIM_FRAMES_ENABLED_API_AVAILABLE(): Promise<void> 
   originalPerformanceObserver = window.PerformanceObserver;
   originalConsoleWarn = console.warn;
 
-  console.log('[TESTCASE_LoAF_Available] About to create Player. window.PerformanceObserver is:', window.PerformanceObserver === MockPerformanceObserver ? 'MockPerformanceObserver (Correct)' : window.PerformanceObserver);
+  console.log(`[TESTCASE_LoAF_Available] Setting up Player. MockPerformanceObserver is assigned to window.PerformanceObserver for this test.`);
   console.log('[TESTCASE_LoAF_Available] MockPerformanceObserver.supportedEntryTypes is:', MockPerformanceObserver.supportedEntryTypes);
   console.log('[TESTCASE_LoAF_Available] Player config will be: { container: canvas, enableLongAnimationFrameLogging: true }');
   (window as any).PerformanceObserver = MockPerformanceObserver;
