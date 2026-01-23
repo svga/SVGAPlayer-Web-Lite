@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "module": "es2015",
     "baseUrl": "./src",
     "target": "es5",
     "moduleResolution": "bundler",
