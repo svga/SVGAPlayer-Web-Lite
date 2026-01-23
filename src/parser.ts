@@ -1,6 +1,5 @@
 import { Video, MockWebWorker, ParserConfigOptions } from './types'
-
-const INLINE_WORKER_FLAG = '#PARSER_V2_INLINE_WORKER#'
+import { createParserMockWorker } from './parser/worker-core'
 
 /**
  * SVGA 下载解析器
@@ -14,15 +13,11 @@ export class Parser {
     this.isDisableImageBitmapShim = isDisableImageBitmapShim ?? false
 
     if (isDisableWebWorker === true) {
-      // eslint-disable-next-line no-eval
-      eval(INLINE_WORKER_FLAG)
-      const mockWorker = window.SVGAParserMockWorker
-      this.worker = mockWorker ?? (() => { throw new Error('SVGAParserMockWorker undefined') })()
+      this.worker = createParserMockWorker()
       return
     }
 
-    const blob = new Blob([INLINE_WORKER_FLAG])
-    this.worker = new Worker(URL.createObjectURL(blob))
+    this.worker = new Worker(new URL('./parser.worker.js', import.meta.url), { type: 'module' })
   }
 
   /**

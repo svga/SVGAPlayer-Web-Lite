@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SVGAPlayer-Web-Lite is a lightweight (< 60KB, gzip < 18KB) SVGA animation player for web, optimized for mobile (Android 4.4+, iOS 9+). It uses WebWorker for parsing, OffscreenCanvas/ImageBitmap for rendering, and IndexedDB for caching.
+SVGAPlayer-Web-Lite is a lightweight (< 60KB, gzip < 18KB) SVGA animation player for web, optimized for modern mobile browsers (Android 10+, iOS 14+). It uses WebWorker for parsing, OffscreenCanvas/ImageBitmap for rendering, and IndexedDB for caching.
 
 **Key Limitations:** Does NOT support SVGA 1.x format or audio playback.
 
@@ -33,7 +33,7 @@ SVGAPlayer-Web-Lite is a lightweight (< 60KB, gzip < 18KB) SVGA animation player
 # Development with hot reload (serves __test__/ directory)
 yarn test
 
-# Production build (UMD, CJS, ESM formats)
+# Production build (ESM-only)
 yarn build
 
 # Type checking
@@ -50,7 +50,7 @@ The codebase follows a three-layer architecture:
 ### 1. Parser Layer (`src/parser.ts`, `src/parser/`)
 Downloads and parses SVGA files using WebWorker. Uses protobuf deserialization with Zlib decompression. Converts raw Movie data to Video entity format.
 
-**Key Detail:** The parser worker code is inlined into the main bundle as a string during build (see `scripts/inject-parser.mjs` and the `#PARSER_V2_INLINE_WROKER#` placeholder in `src/parser.ts`).
+**Key Detail:** The parser worker is built as a module file and loaded via `new Worker(new URL('./parser.worker.js', import.meta.url), { type: 'module' })`.
 
 ### 2. Player Layer (`src/player/`)
 - **Player** (`index.ts`): Main controller with canvas management, configuration, and event callbacks
@@ -85,12 +85,8 @@ All types defined in `src/types.ts` (306 lines). Key types:
 **Tool:** Rollup with TypeScript
 
 **Outputs:**
-- `dist/index.min.js` - UMD format
-- `dist/index.cjs.min.js` - CommonJS
-- `dist/index.esm.min.js` - ES modules
-- `dist/parser.js` - Standalone parser worker (IIFE)
-
-**Process:** The build has a special step where the parser worker code is stringified and injected inline into the main bundle (replacing `#PARSER_V2_INLINE_WROKER#` in `src/parser.ts`).
+- `dist/index.js` - ES modules
+- `dist/parser.worker.js` - Module worker entry
 
 ## Code Conventions
 
@@ -115,4 +111,4 @@ All types defined in `src/types.ts` (306 lines). Key types:
 ## Dependencies
 
 - Custom forks of `protobufjs` and `zlibjs` for ESM compatibility
-- Babel for transpilation to target Android 4.4+ / iOS 9+
+- Babel for transpilation to target Android 10+ / iOS 14+

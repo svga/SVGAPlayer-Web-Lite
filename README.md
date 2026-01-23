@@ -5,10 +5,11 @@
 ## 实现
 
 - [x] 体积 < 60kb (gzip < 18kb)
-- [x] 兼容 Android 4.4+ / iOS 9+
+- [x] 现代浏览器 (Android 10+ / iOS 14+)
 - [x] 更好的异步操作
 - [x] 多线程 (WebWorker) 解析文件数据
 - [x] OffscreenCanvas / ImageBitmap
+- [x] ESM-only (v3.beta)
 
 ## 实验性
 
@@ -33,8 +34,13 @@ npm i svga
 
 ### CDN
 
+v3.beta 仅支持 ESM，推荐使用 ESM CDN：
+
 ```html
-<script src="https://unpkg.com/svga/dist/index.min.js"></script>
+<script type="module">
+  import { Parser, Player } from 'https://esm.sh/svga'
+  // 使用方式同下方示例
+</script>
 ```
 
 ## 使用

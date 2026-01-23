@@ -2,7 +2,8 @@ import {
   MockWebWorker,
   Movie,
   ParserPostMessageArgs,
-  RawImages
+  RawImages,
+  Video
 } from '../types'
 // @ts-ignore - protobufjs types may not be available
 import { Root } from 'protobufjs'
@@ -12,14 +13,16 @@ import SVGA_PROTO from './svga-proto'
 import { VideoEntity } from './video-entity'
 import { Utils } from '../utils'
 
+export interface ParserWorkerHost {
+  postMessage: (data: Video | Error) => void
+}
+
 function uint8ArrayToString (u8a: Uint8Array): string {
   return Array.from(u8a).map(byte => String.fromCharCode(byte)).join('')
 }
 
 const proto = Root.fromJSON(SVGA_PROTO)
 const message = proto.lookupType('com.opensource.svga.MovieEntity')
-
-let worker: MockWebWorker | Worker
 
 async function download (url: string): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -41,7 +44,15 @@ async function download (url: string): Promise<ArrayBuffer> {
   })
 }
 
-async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void> {
+function extractImageBytes (image: Uint8Array): ArrayBuffer {
+  const { buffer, byteOffset, byteLength } = image
+  if (buffer instanceof ArrayBuffer) {
+    return buffer.slice(byteOffset, byteOffset + byteLength)
+  }
+  return new Uint8Array(image).buffer
+}
+
+export const createParserOnMessage = (host: ParserWorkerHost) => async (event: { data: ParserPostMessageArgs }): Promise<void> => {
   const { url, options } = event.data
   const buffer = await download(url)
 
@@ -69,24 +80,17 @@ async function onmessage (event: { data: ParserPostMessageArgs }): Promise<void>
     }
   }
 
-  worker.postMessage(new VideoEntity(movie, images))
+  host.postMessage(new VideoEntity(movie, images))
 }
 
-function extractImageBytes (image: Uint8Array): ArrayBuffer {
-  const { buffer, byteOffset, byteLength } = image
-  if (buffer instanceof ArrayBuffer) {
-    return buffer.slice(byteOffset, byteOffset + byteLength)
-  }
-  return new Uint8Array(image).buffer
-}
-
-if (self.document !== undefined) {
-  worker = window.SVGAParserMockWorker = {
+export const createParserMockWorker = (): MockWebWorker => {
+  const mockWorker: MockWebWorker = {
     onmessageCallback: () => {},
     postMessage (data) { this.onmessageCallback(data) },
-    onmessage
+    onmessage: () => {}
   }
-} else {
-  worker = self as unknown as Worker
-  worker.onmessage = onmessage
+
+  mockWorker.onmessage = createParserOnMessage(mockWorker)
+
+  return mockWorker
 }

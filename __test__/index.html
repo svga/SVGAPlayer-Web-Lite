@@ -31,11 +31,38 @@
       padding: 8px 16px;
       cursor: pointer;
     }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .status {
       margin-top: 20px;
       padding: 10px;
       background: #f5f5f5;
       border-radius: 4px;
+    }
+    .metrics {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e3f2fd;
+      border-radius: 4px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .metrics > div {
+      font-size: 14px;
+    }
+    .error-log {
+      display: none;
+      margin-top: 10px;
+      padding: 10px;
+      background: #ffebee;
+      border-radius: 4px;
+      border-left: 4px solid #f44336;
+    }
+    .error-log.show {
+      display: block;
     }
   </style>
 </head>
@@ -53,17 +80,18 @@
         <option value="svga/TwitterHeart.svga">TwitterHeart.svga</option>
         <option value="svga/shape-path-undefined.svga">shape-path-undefined.svga</option>
         <option value="svga/story.svga">story.svga</option>
+        <option value="svga/nonexistent.svga">nonexistent.svga</option>
       </select>
-      <button onclick="loadSVGA()">Load</button>
+      <button id="load-btn" onclick="loadSVGA()">Load</button>
     </div>
 
     <div class="control-group">
-      <button onclick="window.start()">Start</button>
-      <button onclick="window.pause()">Pause</button>
-      <button onclick="window.resume()">Resume</button>
-      <button onclick="window.stop()">Stop</button>
-      <button onclick="window.clear()">Clear</button>
-      <button onclick="window.destroy()">Destroy</button>
+      <button id="start-btn" onclick="window.start()" disabled>Start</button>
+      <button id="pause-btn" onclick="window.pause()" disabled>Pause</button>
+      <button id="resume-btn" onclick="window.resume()" disabled>Resume</button>
+      <button id="stop-btn" onclick="window.stop()" disabled>Stop</button>
+      <button id="clear-btn" onclick="window.clear()" disabled>Clear</button>
+      <button id="destroy-btn" onclick="window.destroy()" disabled>Destroy</button>
     </div>
 
     <div class="control-group">
@@ -79,16 +107,26 @@
       </label>
     </div>
 
+    <div class="metrics">
+      <div>FPS: <span id="fps-value">--</span></div>
+      <div>Frame Time: <span id="frame-time-value">--</span> ms</div>
+      <div>Current Frame: <span id="current-frame-value">--</span></div>
+      <div>Total Frames: <span id="total-frames-value">--</span></div>
+    </div>
+
     <div class="status" id="status">
       Status: Ready. Select a file and click Load.
+    </div>
+
+    <div class="error-log" id="error-log">
+      <div class="error-log-content" id="error-log-content"></div>
     </div>
   </div>
 
   <canvas id="canvas"></canvas>
 
-  <!-- Load SVGA library first -->
-  <script src="index.js"></script>
-  <script src="parser.js"></script>
+  <!-- Load SVGA library from dist -->
+  <script type="module" src="index.js"></script>
 
   <!-- Demo functionality -->
   <script>
@@ -96,28 +134,133 @@
     let parser = null
     let player = null
     let currentVideo = null
+    let isPlaying = false
+
+    // FPS calculation state
+    let lastFrameTime = 0
+    let frameCount = 0
+    let fpsUpdateTimer = 0
+    let currentFps = 0
+    let currentFrameTime = 0
+    let metricsUpdateInterval = null
+
+    // Update button states
+    function updateButtonStates () {
+      const hasPlayer = !!player
+      const hasVideo = !!currentVideo
+
+      document.getElementById('start-btn').disabled = !(hasPlayer && hasVideo) || isPlaying
+      document.getElementById('pause-btn').disabled = !hasPlayer || !isPlaying
+      document.getElementById('resume-btn').disabled = !hasPlayer || isPlaying
+      document.getElementById('stop-btn').disabled = !hasPlayer || !isPlaying
+      document.getElementById('clear-btn').disabled = !hasPlayer
+      document.getElementById('destroy-btn').disabled = !hasPlayer
+    }
+
+    // Reset metrics display
+    function resetMetrics () {
+      document.getElementById('fps-value').textContent = '--'
+      document.getElementById('frame-time-value').textContent = '--'
+      document.getElementById('current-frame-value').textContent = '--'
+      document.getElementById('total-frames-value').textContent = '--'
+    }
+
+    // Update performance metrics
+    function updateMetrics () {
+      if (player) {
+        const now = performance.now()
+        frameCount++
+
+        // Every 500ms, update FPS display
+        if (now - fpsUpdateTimer >= 500) {
+          const elapsed = now - fpsUpdateTimer
+          currentFps = (frameCount * 1000) / elapsed
+          frameCount = 0
+          fpsUpdateTimer = now
+
+          document.getElementById('fps-value').textContent = currentFps.toFixed(2)
+          document.getElementById('frame-time-value').textContent = currentFrameTime.toFixed(2)
+        }
+
+        // Calculate frame time
+        if (lastFrameTime > 0) {
+          currentFrameTime = now - lastFrameTime
+        }
+        lastFrameTime = now
+
+        // Update frame count
+        document.getElementById('current-frame-value').textContent = player.currentFrame.toString()
+      }
+    }
+
+    // Start metrics update interval
+    function startMetricsUpdate () {
+      if (metricsUpdateInterval) {
+        clearInterval(metricsUpdateInterval)
+      }
+      lastFrameTime = 0
+      frameCount = 0
+      fpsUpdateTimer = performance.now()
+      currentFps = 0
+      currentFrameTime = 0
+      metricsUpdateInterval = setInterval(updateMetrics, 16) // ~60fps
+    }
+
+    // Stop metrics update interval
+    function stopMetricsUpdate () {
+      if (metricsUpdateInterval) {
+        clearInterval(metricsUpdateInterval)
+        metricsUpdateInterval = null
+      }
+    }
+
+    // Show error
+    function showError (message) {
+      const errorLog = document.getElementById('error-log')
+      const errorLogContent = document.getElementById('error-log-content')
+      errorLogContent.textContent = message
+      errorLog.classList.add('show')
+    }
+
+    // Hide error
+    function hideError () {
+      const errorLog = document.getElementById('error-log')
+      errorLog.classList.remove('show')
+    }
 
     // Control functions
     window.start = function () {
       if (player && currentVideo) {
+        isPlaying = true
+        updateButtonStates()
+        startMetricsUpdate()
         player.start()
       }
     }
 
     window.pause = function () {
       if (player) {
+        isPlaying = false
+        updateButtonStates()
+        stopMetricsUpdate()
         player.pause()
       }
     }
 
     window.resume = function () {
       if (player) {
+        isPlaying = true
+        updateButtonStates()
+        startMetricsUpdate()
         player.resume()
       }
     }
 
     window.stop = function () {
       if (player) {
+        isPlaying = false
+        updateButtonStates()
+        stopMetricsUpdate()
         player.stop()
       }
     }
@@ -125,10 +268,16 @@
     window.clear = function () {
       if (player) {
         player.clear()
+        stopMetricsUpdate()
+        resetMetrics()
       }
     }
 
     window.destroy = function () {
+      isPlaying = false
+      stopMetricsUpdate()
+      resetMetrics()
+      hideError()
       if (player) {
         player.destroy()
         player = null
@@ -138,6 +287,7 @@
         parser = null
       }
       currentVideo = null
+      updateButtonStates()
     }
 
     // Load SVGA function
@@ -145,43 +295,53 @@
       const url = document.getElementById('svga-file').value
       const status = document.getElementById('status')
 
+      hideError()
       status.textContent = 'Loading ' + url + '...'
 
       // Clear previous player
       window.destroy()
 
       setTimeout(function () {
-        if (typeof Parser === 'undefined' || typeof Player === 'undefined') {
+        if (typeof window.Parser === 'undefined' || typeof window.Player === 'undefined') {
           status.textContent = 'Error: SVGA library not loaded. Make sure index.js is loaded.'
-          console.error('Parser or Player not available', { Parser: typeof Parser, Player: typeof Player })
+          console.error('Parser or Player not available', { Parser: typeof window.Parser, Player: typeof window.Player })
           return
         }
 
         const canvas = document.getElementById('canvas')
-        parser = new Parser()
+        parser = new window.Parser()
 
         parser.load(url).then(function onVideoLoaded (video) {
           currentVideo = video
           status.textContent = 'Loaded ' + url + ' successfully (' + video.frames + ' frames)'
           console.log('Loaded video:', video)
 
+          // Update total frames display
+          document.getElementById('total-frames-value').textContent = video.frames.toString()
+
           // Create player and mount video
           const loopCheckbox = document.getElementById('loop-check')
           const loop = loopCheckbox.checked
-          player = new Player({
+          const fillModeValue = document.getElementById('fill-mode').value
+
+          player = new window.Player({
             container: canvas,
             loop: loop ? 0 : 1  // 0 = infinite, 1 = once
           })
 
           player.mount(video).then(function onMounted () {
-            player.start()
+            updateButtonStates()
+            status.textContent = 'Ready to play. Click Start to begin.'
           }).catch(function onMountError (err) {
             console.error('Mount error:', err)
             status.textContent = 'Error mounting video: ' + err.message
+            showError('Error mounting video: ' + err.message)
           })
         }).catch(function onLoadError (error) {
           status.textContent = 'Error loading ' + url + ': ' + error.message
+          showError('Error: ' + error.message)
           console.error('Load error:', error)
+          updateButtonStates()
         })
       }, 100)
     }
@@ -190,7 +350,7 @@
     function updateFillMode () {
       const fillMode = document.getElementById('fill-mode').value
       console.log('Fill mode:', fillMode)
-      // Note: fillMode needs to be set before player.start()
+      // Note: fillMode needs to be set when creating a new player
     }
 
     // Update loop mode
@@ -203,10 +363,13 @@
     document.getElementById('fill-mode').addEventListener('change', updateFillMode)
     document.getElementById('loop-check').addEventListener('change', updateLoopMode)
 
+    // Initialize button states on page load
+    updateButtonStates()
+
     // Log when page is loaded
     console.log('SVGA Lite Demo loaded')
-    console.log('Parser available:', typeof Parser !== 'undefined')
-    console.log('Player available:', typeof Player !== 'undefined')
+    console.log('Parser available:', typeof window.Parser !== 'undefined')
+    console.log('Player available:', typeof window.Player !== 'undefined')
     console.log('Available SVGA files:', Array.from(document.querySelectorAll('#svga-file option')).map(function (option) { return option.value }))
   </script>
 </body>

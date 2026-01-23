@@ -2,3 +2,4 @@ node_modules
 dist
 __test__/*.js
 openspec
+test-results/

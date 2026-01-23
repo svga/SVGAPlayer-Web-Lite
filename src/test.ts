@@ -11,7 +11,6 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement
 /**
  * 基本使用
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
   const url = '/svga/shape-path-undefined.svga'
   const parser = new Parser()
@@ -30,7 +29,6 @@ const TESTCASE1 = async (): Promise<void> => {
 /**
  * 事件、回调
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   let parser = new Parser()
@@ -62,7 +60,6 @@ const TESTCASE2 = async (): Promise<void> => {
 /**
  * 替换、动态元素
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE3 = async (): Promise<void> => {
   const text = 'hello gg'
   const fontCanvas = document.createElement('canvas')
@@ -94,7 +91,6 @@ const TESTCASE3 = async (): Promise<void> => {
 /**
  * DB
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE4 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const db = new DB()
@@ -113,7 +109,6 @@ const TESTCASE4 = async (): Promise<void> => {
 /**
  * 多项设置项
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE5 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const parser = new Parser()
@@ -135,7 +130,6 @@ const TESTCASE5 = async (): Promise<void> => {
 /**
  * 往来顺序播放
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE6 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const parser = new Parser()
@@ -163,7 +157,6 @@ const TESTCASE6 = async (): Promise<void> => {
 /**
  * 捕捉错误
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE7 = async (): Promise<void> => {
   const url = '/svga/undefined.svga'
   try {
@@ -180,7 +173,6 @@ const TESTCASE7 = async (): Promise<void> => {
 /**
  * 重设配置
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE8 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const parser = new Parser()
