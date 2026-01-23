@@ -57,28 +57,26 @@ function drawSprite (
 
   if (frame.alpha < 0.05) return
 
+  const transform = frame.transform
   context.save()
   context.globalAlpha = frame.alpha
 
   context.transform(
-    frame.transform?.a ?? 1,
-    frame.transform?.b ?? 0,
-    frame.transform?.c ?? 0,
-    frame.transform?.d ?? 1,
-    frame.transform?.tx ?? 0,
-    frame.transform?.ty ?? 0
+    transform?.a ?? 1,
+    transform?.b ?? 0,
+    transform?.c ?? 0,
+    transform?.d ?? 1,
+    transform?.tx ?? 0,
+    transform?.ty ?? 0
   )
 
   if (bitmap !== undefined) {
-    if (frame.maskPath !== null) {
-      drawBezier(context, frame.maskPath.d, frame.maskPath.transform, frame.maskPath.styles)
+    const { maskPath, layout } = frame
+    if (maskPath !== null) {
+      drawBezier(context, maskPath.d, maskPath.transform, maskPath.styles)
       context.clip()
     }
-    if (replaceElement !== undefined) {
-      context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
-    } else {
-      context.drawImage(bitmap, 0, 0, frame.layout.width, frame.layout.height)
-    }
+    context.drawImage(replaceElement ?? bitmap, 0, 0, layout.width, layout.height)
   }
 
   if (dynamicElement !== undefined) {
@@ -106,10 +104,10 @@ function drawShape (
     case SHAPE_TYPE.ELLIPSE:
       drawEllipse(
         context,
-        shape.path.x ?? 0.0,
-        shape.path.y ?? 0.0,
-        shape.path.radiusX ?? 0.0,
-        shape.path.radiusY ?? 0.0,
+        shape.path.x,
+        shape.path.y,
+        shape.path.radiusX,
+        shape.path.radiusY,
         shape.transform,
         shape.styles
       )
@@ -117,11 +115,11 @@ function drawShape (
     case SHAPE_TYPE.RECT:
       drawRect(
         context,
-        shape.path.x ?? 0.0,
-        shape.path.y ?? 0.0,
-        shape.path.width ?? 0.0,
-        shape.path.height ?? 0.0,
-        shape.path.cornerRadius ?? 0.0,
+        shape.path.x,
+        shape.path.y,
+        shape.path.width,
+        shape.path.height,
+        shape.path.cornerRadius,
         shape.transform,
         shape.styles
       )
@@ -135,24 +133,14 @@ function resetShapeStyles (
 ): void {
   if (styles === undefined) return
 
-  if (styles.stroke !== null) {
-    context.strokeStyle = styles.stroke
-  } else {
-    context.strokeStyle = 'transparent'
-  }
+  context.strokeStyle = styles.stroke ?? 'transparent'
+  context.fillStyle = styles.fill ?? 'transparent'
 
-  if (styles.strokeWidth !== null && styles.strokeWidth > 0) context.lineWidth = styles.strokeWidth
-  if (styles.miterLimit !== null && styles.miterLimit > 0) context.miterLimit = styles.miterLimit
-  if (styles.lineCap !== null) context.lineCap = styles.lineCap
-  if (styles.lineJoin !== null) context.lineJoin = styles.lineJoin
-
-  if (styles.fill !== null) {
-    context.fillStyle = styles.fill
-  } else {
-    context.fillStyle = 'transparent'
-  }
-
-  if (styles.lineDash !== null) context.setLineDash(styles.lineDash)
+  if (styles.strokeWidth) context.lineWidth = styles.strokeWidth
+  if (styles.miterLimit) context.miterLimit = styles.miterLimit
+  if (styles.lineCap) context.lineCap = styles.lineCap
+  if (styles.lineJoin) context.lineJoin = styles.lineJoin
+  if (styles.lineDash) context.setLineDash(styles.lineDash)
 }
 
 function drawBezier (
@@ -163,35 +151,28 @@ function drawBezier (
 ): void {
   context.save()
   resetShapeStyles(context, styles)
-  if (transform !== undefined) {
-    context.transform(
-      transform.a,
-      transform.b,
-      transform.c,
-      transform.d,
-      transform.tx,
-      transform.ty
-    )
-  }
+
   const currentPoint: CurrentPoint = { x: 0, y: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
   context.beginPath()
+
   if (d !== undefined) {
-    d = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
-    d.split('|||').forEach(segment => {
+    if (transform !== undefined) {
+      context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
+    }
+
+    const pathData = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
+    pathData.split('|||').forEach(segment => {
       if (segment.length === 0) return
-      const firstLetter = segment.substr(0, 1)
+      const firstLetter = segment.charAt(0)
       if (validMethods.includes(firstLetter)) {
-        const args = segment.substr(1).trim().split(' ')
+        const args = segment.slice(1).trim().split(' ')
         drawBezierElement(context, currentPoint, firstLetter, args)
       }
     })
   }
-  if (styles.fill !== null) {
-    context.fill()
-  }
-  if (styles.stroke !== null) {
-    context.stroke()
-  }
+
+  if (styles.fill) context.fill()
+  if (styles.stroke) context.stroke()
   context.restore()
 }
 
@@ -257,38 +238,22 @@ function drawBezierElement (
       context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 'S':
-      if (currentPoint.x1 !== undefined && currentPoint.y1 !== undefined && currentPoint.x2 !== undefined && currentPoint.y2 !== undefined) {
-        currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-        currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-        currentPoint.x2 = Number(args[0])
-        currentPoint.y2 = Number(args[1])
-        currentPoint.x = Number(args[2])
-        currentPoint.y = Number(args[3])
-        context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-      } else {
-        currentPoint.x1 = Number(args[0])
-        currentPoint.y1 = Number(args[1])
-        currentPoint.x = Number(args[2])
-        currentPoint.y = Number(args[3])
-        context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-      }
+      currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
+      currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
+      currentPoint.x2 = Number(args[0])
+      currentPoint.y2 = Number(args[1])
+      currentPoint.x = Number(args[2])
+      currentPoint.y = Number(args[3])
+      context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 's':
-      if (currentPoint.x1 !== undefined && currentPoint.y1 !== undefined && currentPoint.x2 !== undefined && currentPoint.y2 !== undefined) {
-        currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-        currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-        currentPoint.x2 = currentPoint.x + Number(args[0])
-        currentPoint.y2 = currentPoint.y + Number(args[1])
-        currentPoint.x += Number(args[2])
-        currentPoint.y += Number(args[3])
-        context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-      } else {
-        currentPoint.x1 = currentPoint.x + Number(args[0])
-        currentPoint.y1 = currentPoint.y + Number(args[1])
-        currentPoint.x += Number(args[2])
-        currentPoint.y += Number(args[3])
-        context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-      }
+      currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
+      currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
+      currentPoint.x2 = currentPoint.x + Number(args[0])
+      currentPoint.y2 = currentPoint.y + Number(args[1])
+      currentPoint.x += Number(args[2])
+      currentPoint.y += Number(args[3])
+      context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 'Q':
       currentPoint.x1 = Number(args[0])
@@ -304,15 +269,9 @@ function drawBezierElement (
       currentPoint.y += Number(args[3])
       context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
       break
-    case 'A':
-      break
-    case 'a':
-      break
     case 'Z':
     case 'z':
       context.closePath()
-      break
-    default:
       break
   }
 }
@@ -328,39 +287,32 @@ function drawEllipse (
 ): void {
   context.save()
   resetShapeStyles(context, styles)
+
   if (transform !== undefined) {
-    context.transform(
-      transform.a,
-      transform.b,
-      transform.c,
-      transform.d,
-      transform.tx,
-      transform.ty
-    )
+    context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
   }
-  x = x - radiusX
-  y = y - radiusY
-  const w = radiusX * 2
-  const h = radiusY * 2
+
+  const width = radiusX * 2
+  const height = radiusY * 2
+  const xPos = x - radiusX
+  const yPos = y - radiusY
   const kappa = 0.5522848
-  const ox = (w / 2) * kappa
-  const oy = (h / 2) * kappa
-  const xe = x + w
-  const ye = y + h
-  const xm = x + w / 2
-  const ym = y + h / 2
+  const ox = (width / 2) * kappa
+  const oy = (height / 2) * kappa
+  const xe = xPos + width
+  const ye = yPos + height
+  const xm = xPos + width / 2
+  const ym = yPos + height / 2
+
   context.beginPath()
-  context.moveTo(x, ym)
-  context.bezierCurveTo(x, ym - oy, xm - ox, y, xm, y)
-  context.bezierCurveTo(xm + ox, y, xe, ym - oy, xe, ym)
+  context.moveTo(xPos, ym)
+  context.bezierCurveTo(xPos, ym - oy, xm - ox, yPos, xm, yPos)
+  context.bezierCurveTo(xm + ox, yPos, xe, ym - oy, xe, ym)
   context.bezierCurveTo(xe, ym + oy, xm + ox, ye, xm, ye)
-  context.bezierCurveTo(xm - ox, ye, x, ym + oy, x, ym)
-  if (styles.fill !== null) {
-    context.fill()
-  }
-  if (styles.stroke !== null) {
-    context.stroke()
-  }
+  context.bezierCurveTo(xm - ox, ye, xPos, ym + oy, xPos, ym)
+
+  if (styles.fill) context.fill()
+  if (styles.stroke) context.stroke()
   context.restore()
 }
 
@@ -376,23 +328,13 @@ function drawRect (
 ): void {
   context.save()
   resetShapeStyles(context, styles)
+
   if (transform !== undefined) {
-    context.transform(
-      transform.a,
-      transform.b,
-      transform.c,
-      transform.d,
-      transform.tx,
-      transform.ty
-    )
+    context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
   }
-  let radius = cornerRadius
-  if (width < 2 * radius) {
-    radius = width / 2
-  }
-  if (height < 2 * radius) {
-    radius = height / 2
-  }
+
+  const radius = Math.min(cornerRadius, width / 2, height / 2)
+
   context.beginPath()
   context.moveTo(x + radius, y)
   context.arcTo(x + width, y, x + width, y + height, radius)
@@ -400,12 +342,9 @@ function drawRect (
   context.arcTo(x, y + height, x, y, radius)
   context.arcTo(x, y, x + width, y, radius)
   context.closePath()
-  if (styles.fill !== null) {
-    context.fill()
-  }
-  if (styles.stroke !== null) {
-    context.stroke()
-  }
+
+  if (styles.fill) context.fill()
+  if (styles.stroke) context.stroke()
   context.restore()
 }
 

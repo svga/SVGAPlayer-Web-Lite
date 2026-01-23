@@ -1,16 +1,18 @@
 import serve from 'rollup-plugin-serve'
 import livereload from 'rollup-plugin-livereload'
-import { terser } from 'rollup-plugin-terser'
-import banner from 'rollup-plugin-banner'
+import terser from '@rollup/plugin-terser'
+import bannerPlugin from 'rollup-plugin-banner'
 import { getBabelOutputPlugin } from '@rollup/plugin-babel'
-import typescript from 'rollup-plugin-typescript2'
+import typescript from '@rollup/plugin-typescript'
 import resolve from '@rollup/plugin-node-resolve'
 import commonjs from '@rollup/plugin-commonjs'
-import { inlineParser } from './scripts/plugins'
+import { inlineParser } from './scripts/plugins.mjs'
+
+const banner = bannerPlugin.default ?? bannerPlugin
 
 const FORMAT = process.env.FORMAT
 const IS_TEST_ENV = process.env.NODE_ENV === 'test'
-const DIST_FILE_NAME = 'index'
+const FILE_NAME = 'index'
 const TEST_DIR = '__test__'
 const DIST_DIR = 'dist'
 const UMD_NAME = 'SVGA'
@@ -23,64 +25,72 @@ const babelOutputPlugin = getBabelOutputPlugin({
       '@babel/preset-env',
       {
         targets: {
-          browsers: [
-            'Android >= 4.4',
-            'iOS >= 9.0'
-          ]
+          browsers: ['Android >= 10', 'iOS >= 14']
         }
       }
     ]
   ]
 })
 
+const onwarn = (warning, warn) => {
+  if (warning.code !== 'DEPRECATION') {
+    warn(warning)
+  }
+}
+
+const basePlugins = [
+  resolve({ preferBuiltins: true, browser: true }),
+  commonjs(),
+  typescript({
+    tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
+  }),
+  babelOutputPlugin
+]
+
 const config = [
   {
-    onwarn () {},
+    onwarn,
     input: IS_TEST_ENV ? 'src/test.ts' : 'src/index.ts',
     output: {
-      file: IS_TEST_ENV ? `${TEST_DIR}/${DIST_FILE_NAME}.js` : `${DIST_DIR}/${DIST_FILE_NAME}${FORMAT === 'umd' ? '' : `.${FORMAT}`}.min.js`,
+      file: IS_TEST_ENV
+        ? `${TEST_DIR}/${FILE_NAME}.js`
+        : `${DIST_DIR}/${FILE_NAME}${FORMAT === 'umd' ? '' : `.${FORMAT}`}.min.js`,
       format: FORMAT,
       name: UMD_NAME,
       sourcemap: false
     },
-    plugins: [
-      resolve({ jsnext: true, preferBuiltins: true, browser: true }),
-      commonjs(),
-      typescript({
-        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
-      }),
-      babelOutputPlugin,
-      IS_TEST_ENV && serve(TEST_DIR),
-      IS_TEST_ENV && livereload({
-        delay: 810,
-        watch: TEST_DIR,
-        verbose: false
-      }),
-      !IS_TEST_ENV && terser(),
-      !IS_TEST_ENV && banner('SVGA.Lite v<%= pkg.version %>'),
-      IS_TEST_ENV && inlineParser
-    ]
+    plugins: (() => {
+      const plugins = [...basePlugins]
+      if (IS_TEST_ENV) {
+        plugins.push(serve({ contentBase: TEST_DIR, port: 5500 }))
+        plugins.push(livereload({ delay: 810, watch: TEST_DIR, verbose: false }))
+        plugins.push(inlineParser)
+      } else {
+        plugins.push(terser())
+        plugins.push(banner('SVGA.Lite v<%= pkg.version %>'))
+      }
+      return plugins
+    })()
   }
 ]
 
 if (IS_TEST_ENV || FORMAT === 'umd') {
   config.unshift({
-    onwarn () {},
+    onwarn,
     input: 'src/parser/index.ts',
     output: {
       file: IS_TEST_ENV ? `${TEST_DIR}/parser.js` : `${DIST_DIR}/parser.js`,
       format: 'iife'
     },
-    plugins: [
-      resolve({ jsnext: true, preferBuiltins: true, browser: true }),
-      commonjs(),
-      typescript({
-        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
-      }),
-      babelOutputPlugin,
-      !IS_TEST_ENV && terser(),
-      IS_TEST_ENV && inlineParser
-    ]
+    plugins: (() => {
+      const plugins = [...basePlugins]
+      if (!IS_TEST_ENV) {
+        plugins.push(terser())
+      } else {
+        plugins.push(inlineParser)
+      }
+      return plugins
+    })()
   })
 }
 

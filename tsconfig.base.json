@@ -2,11 +2,14 @@
   "compilerOptions": {
     "baseUrl": "./src",
     "target": "es5",
+    "moduleResolution": "bundler",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "noImplicitThis": true,
     "alwaysStrict": true,
+    "noUncheckedSideEffectImports": true,
+    "strictBuiltinIteratorReturn": true,
     "lib": [
       "es2015",
       "dom",
@@ -15,9 +18,13 @@
     "skipLibCheck": true
   },
   "include": [
-    "**/*.ts"
+    "src/**/*.ts"
   ],
   "exclude": [
-    "node_modules", "dist"
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "vitest.config.ts"
   ]
 }

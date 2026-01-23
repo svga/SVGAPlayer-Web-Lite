@@ -11,7 +11,7 @@ export const injectParser = () => {
     queue.push({
       parserFile: '__test__/parser.js',
       indexFile: '__test__/index.js',
-      distFile: '__test__/test.js'
+      distFile: '__test__/index.js'
     })
   }
 
@@ -29,8 +29,8 @@ export const injectParser = () => {
     const parserCode = fs.readFileSync(item.parserFile, 'utf8')
     const indexCode = fs.readFileSync(item.indexFile, 'utf8')
     const distCode = JSON.stringify(parserCode).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
-    fs.writeFileSync(item.distFile, indexCode.replace('"#PARSER_V2_INLINE_WROKER#"', distCode).replace('\'#PARSER_V2_INLINE_WROKER#\'', distCode), 'utf8')
+    fs.writeFileSync(item.distFile, indexCode.replace('"#PARSER_V2_INLINE_WORKER#"', distCode).replace('\'#PARSER_V2_INLINE_WORKER#\'', distCode), 'utf8')
   }
 }
 
-if (IS_PRODUCTION_ENV) injectParser()
+if (IS_PRODUCTION_ENV || IS_TEST_ENV) injectParser()

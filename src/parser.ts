@@ -1,30 +1,28 @@
 import { Video, MockWebWorker, ParserConfigOptions } from './types'
 
-const INLINE_WORKER_FLAG = '#PARSER_V2_INLINE_WROKER#'
+const INLINE_WORKER_FLAG = '#PARSER_V2_INLINE_WORKER#'
 
 /**
  * SVGA 下载解析器
  */
 export class Parser {
   public worker: MockWebWorker | Worker
-  private readonly isDisableImageBitmapShim: boolean = false
+  private readonly isDisableImageBitmapShim: boolean
 
-  constructor (options: ParserConfigOptions = {
-    isDisableWebWorker: false,
-    isDisableImageBitmapShim: false
-  }) {
+  constructor (options: ParserConfigOptions = {}) {
     const { isDisableWebWorker, isDisableImageBitmapShim } = options
-    if (isDisableImageBitmapShim === true) {
-      this.isDisableImageBitmapShim = isDisableImageBitmapShim
-    }
+    this.isDisableImageBitmapShim = isDisableImageBitmapShim ?? false
+
     if (isDisableWebWorker === true) {
       // eslint-disable-next-line no-eval
       eval(INLINE_WORKER_FLAG)
-      if (window.SVGAParserMockWorker === undefined) throw new Error('SVGAParserMockWorker undefined')
-      this.worker = window.SVGAParserMockWorker
-    } else {
-      this.worker = new Worker(window.URL.createObjectURL(new Blob([INLINE_WORKER_FLAG])))
+      const mockWorker = window.SVGAParserMockWorker
+      this.worker = mockWorker ?? (() => { throw new Error('SVGAParserMockWorker undefined') })()
+      return
     }
+
+    const blob = new Blob([INLINE_WORKER_FLAG])
+    this.worker = new Worker(URL.createObjectURL(blob))
   }
 
   /**
@@ -35,32 +33,36 @@ export class Parser {
   async load (url: string): Promise<Video> {
     if (url === undefined) throw new Error('url undefined')
     if (this.worker === undefined) throw new Error('Parser Worker not found')
-    return await new Promise((resolve, reject) => {
-      if (url.indexOf('http') !== 0) {
-        const a = document.createElement('a')
-        a.href = url
-        url = a.href
+
+    const postData = { url: this.normalizeURL(url), options: { isDisableImageBitmapShim: this.isDisableImageBitmapShim } }
+
+    return new Promise<Video>((resolve, reject) => {
+      const onMessage = ({ data }: MessageEvent<Video | Error>) => {
+        data instanceof Error ? reject(data) : resolve(data)
       }
-      const { isDisableImageBitmapShim } = this
-      const postData = { url, options: { isDisableImageBitmapShim } }
+
       if (this.worker instanceof Worker) {
-        this.worker.onmessage = ({ data }: { data: Video | Error }) => {
-          data instanceof Error ? reject(data) : resolve(data)
-        }
+        this.worker.onmessage = onMessage
         this.worker.postMessage(postData)
-      } else {
-        this.worker.onmessageCallback = (data: Video | Error) => {
-          data instanceof Error ? reject(data) : resolve(data)
-        }
-        this.worker.onmessage({ data: postData })
+        return
       }
+
+      this.worker.onmessageCallback = (data: Video | Error) => data instanceof Error ? reject(data) : resolve(data)
+      this.worker.onmessage({ data: postData })
     })
   }
 
-  /**
-   * 销毁实例
-   */
+  private normalizeURL (url: string): string {
+    if (url.startsWith('http')) return url
+
+    const anchor = document.createElement('a')
+    anchor.href = url
+    return anchor.href
+  }
+
   public destroy (): void {
-    if (this.worker instanceof Worker) this.worker.terminate()
+    if (this.worker instanceof Worker) {
+      this.worker.terminate()
+    }
   }
 }

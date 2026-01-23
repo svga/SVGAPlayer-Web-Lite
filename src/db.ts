@@ -4,57 +4,56 @@ export class DB {
   private readonly storeName: string
   private readonly dbPromise: Promise<IDBDatabase>
 
-  constructor ({ name, version, storeName }: {
-    name: string
-    version: number
-    storeName: string
-  } = { name: 'SVGA.DB', version: 1.0, storeName: 'files' }) {
+  constructor ({ name = 'SVGA.DB', version = 1.0, storeName = 'files' }: {
+    name?: string
+    version?: number
+    storeName?: string
+  } = {}) {
     this.storeName = storeName
-    this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-      if (window.indexedDB !== undefined) {
-        const request = window.indexedDB.open(name, version)
-        request.onerror = error => reject(new Error(`[SVGA.DB] indexedDB open fail, ${error.type}`))
-        request.onsuccess = () => resolve(request.result)
-        request.onupgradeneeded = () => {
-          const db = request.result
-          db.createObjectStore(storeName)
-        }
-      } else {
-        throw new Error('[SVGA.DB] indexedDB not supported')
-      }
+    this.dbPromise = this.openDatabase(name, version, storeName)
+  }
+
+  private openDatabase (name: string, version: number, storeName: string): Promise<IDBDatabase> {
+    if (window.indexedDB === undefined) {
+      return Promise.reject(new Error('[SVGA.DB] indexedDB not supported'))
+    }
+
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const request = window.indexedDB.open(name, version)
+      request.onupgradeneeded = () => request.result.createObjectStore(storeName)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(new Error('[SVGA.DB] indexedDB open fail'))
     })
   }
 
   async find (id: IDBValidKey): Promise<Video | undefined> {
-    return await this.dbPromise.then(async db => await new Promise((resolve, reject) => {
-      const tx = db.transaction([this.storeName], 'readonly')
-      const request = tx.objectStore(this.storeName).get(id)
-      request.onsuccess = () => {
-        if (typeof request.result === 'string') {
-          resolve(JSON.parse(request.result))
-        } else {
-          resolve(undefined)
-        }
-      }
+    const db = await this.dbPromise
+    const tx = db.transaction([this.storeName], 'readonly')
+    const request = tx.objectStore(this.storeName).get(id)
+    const result = await new Promise<unknown>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(new Error('find error'))
-    }))
+    })
+    return typeof result === 'string' ? JSON.parse(result) : undefined
   }
 
   async insert (id: IDBValidKey, data: Video): Promise<void> {
-    return await this.dbPromise.then(async db => await new Promise((resolve, reject) => {
-      const tx = db.transaction([this.storeName], 'readwrite')
-      const request = tx.objectStore(this.storeName).put(JSON.stringify(data), id)
+    const db = await this.dbPromise
+    const tx = db.transaction([this.storeName], 'readwrite')
+    tx.objectStore(this.storeName).put(JSON.stringify(data), id)
+    return new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve()
-      request.onerror = () => reject(new Error('insert error'))
-    }))
+      tx.onerror = () => reject(new Error('insert error'))
+    })
   }
 
   async delete (id: IDBValidKey): Promise<void> {
-    return await this.dbPromise.then(async db => await new Promise((resolve, reject) => {
-      const tx = db.transaction([this.storeName], 'readwrite')
-      const request = tx.objectStore(this.storeName).delete(id)
+    const db = await this.dbPromise
+    const tx = db.transaction([this.storeName], 'readwrite')
+    const request = tx.objectStore(this.storeName).delete(id)
+    return new Promise<void>((resolve, reject) => {
       request.onsuccess = () => resolve()
       request.onerror = () => reject(new Error('delete error'))
-    }))
+    })
   }
 }

@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "off"
+  },
+  "ignore": [
+    "dist",
+    "node_modules",
+    "__test__"
+  ]
+}

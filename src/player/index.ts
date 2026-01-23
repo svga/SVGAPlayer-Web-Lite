@@ -12,7 +12,7 @@ import render from './render'
 const inBrowser = typeof window !== 'undefined'
 const hasIntersectionObserver = inBrowser && 'IntersectionObserver' in window
 
-type EventCallback = undefined | (() => void)
+type EventCallback = (() => void) | undefined
 
 /**
  * SVGA 播放器
@@ -57,18 +57,19 @@ export class Player {
 
   constructor (options: HTMLCanvasElement | PlayerConfigOptions) {
     this.animator = new Animator()
-    this.animator.onEnd = () => {
-      if (this.onEnd !== undefined) this.onEnd()
-    }
-    let container: HTMLCanvasElement | undefined
-    if (options instanceof HTMLCanvasElement) {
-      container = options
-    } else if (options.container !== undefined) {
-      container = options.container
+    this.animator.onEnd = () => this.onEnd?.()
+
+    const isCanvasElement = options instanceof HTMLCanvasElement
+    const container = isCanvasElement ? options : options.container
+
+    if (!isCanvasElement && options.container !== undefined) {
       this.setConfig(options)
     }
+
     this.config.container = container ?? this.config.container
-    this.ofsCanvas = window.OffscreenCanvas !== undefined ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height) : document.createElement('canvas')
+    this.ofsCanvas = window.OffscreenCanvas !== undefined
+      ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height)
+      : document.createElement('canvas')
   }
 
   /**
@@ -76,10 +77,8 @@ export class Player {
    * @param options 可配置项
    */
   public setConfig (options: PlayerConfigOptions): void {
-    if (options.startFrame !== undefined && options.endFrame !== undefined) {
-      if (options.startFrame > options.endFrame) {
-        throw new Error('StartFrame should > EndFrame')
-      }
+    if (options.startFrame !== undefined && options.endFrame !== undefined && options.startFrame > options.endFrame) {
+      throw new Error('StartFrame should > EndFrame')
     }
     this.config.container = options.container ?? this.config.container
     this.config.loop = options.loop ?? 0
@@ -97,16 +96,19 @@ export class Player {
   }
 
   private setIntersectionObserver (): void {
+    if (this.intersectionObserver !== null) {
+      this.intersectionObserver.disconnect()
+    }
+
     if (hasIntersectionObserver && this.config.isUseIntersectionObserver) {
       this.intersectionObserver = new IntersectionObserver(entries => {
-        this.isBeIntersection = !(entries[0].intersectionRatio <= 0)
+        this.isBeIntersection = entries[0].intersectionRatio > 0
       }, {
         rootMargin: '0px',
         threshold: [0, 0.5, 1]
       })
       this.intersectionObserver.observe(this.config.container)
     } else {
-      if (this.intersectionObserver !== null) this.intersectionObserver.disconnect()
       this.config.isUseIntersectionObserver = false
       this.isBeIntersection = true
     }
@@ -118,69 +120,49 @@ export class Player {
    * @returns Promise<void>
    */
   public async mount (videoEntity: Video): Promise<void> {
-    return await new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       this.currentFrame = 0
       this.totalFrames = videoEntity.frames - 1
       this.videoEntity = videoEntity
       this.clearContainer()
       this.setSize()
-      // base64 -> imageelement
       this.bitmapsCache = {}
-      if (this.videoEntity === undefined) {
+
+      const imageKeys = Object.keys(videoEntity.images)
+      if (imageKeys.length === 0) {
         resolve()
         return
       }
-      if (Object.keys(this.videoEntity.images).length === 0) {
-        resolve()
-        return
-      }
-      let totalCount = 0
+
       let loadedCount = 0
-      for (const key in this.videoEntity.images) {
-        const image = this.videoEntity.images[key]
+
+      const onImageLoad = () => {
+        loadedCount++
+        if (loadedCount === imageKeys.length) resolve()
+      }
+
+      for (const key of imageKeys) {
+        const image = videoEntity.images[key]
+
         if (typeof image === 'string') {
-          totalCount++
           const img = document.createElement('img')
           img.src = 'data:image/png;base64,' + image
           this.bitmapsCache[key] = img
-          img.onload = () => {
-            loadedCount++
-            loadedCount === totalCount && resolve()
-          }
+          img.onload = onImageLoad
         } else {
           this.bitmapsCache[key] = image
-          totalCount++
-          loadedCount++
-          loadedCount === totalCount && resolve()
+          onImageLoad()
         }
       }
     })
   }
 
-  /**
-   * 开始播放事件回调
-   */
-  public onStart: EventCallback
-  /**
-   * 重新播放事件回调
-   */
-  public onResume: EventCallback
-  /**
-   * 暂停播放事件回调
-   */
-  public onPause: EventCallback
-  /**
-   * 停止播放事件回调
-   */
-  public onStop: EventCallback
-  /**
-   * 播放中事件回调
-   */
-  public onProcess: EventCallback
-  /**
-   * 播放结束事件回调
-   */
-  public onEnd: EventCallback
+  public onStart: EventCallback = undefined
+  public onResume: EventCallback = undefined
+  public onPause: EventCallback = undefined
+  public onStop: EventCallback = undefined
+  public onProcess: EventCallback = undefined
+  public onEnd: EventCallback = undefined
 
   private clearContainer (): void {
     const width = this.config.container.width
@@ -194,7 +176,7 @@ export class Player {
     if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
     this.clearContainer()
     this.startAnimation()
-    if (this.onStart !== undefined) this.onStart()
+    this.onStart?.()
   }
 
   /**
@@ -202,7 +184,7 @@ export class Player {
    */
   public resume (): void {
     this.startAnimation()
-    if (this.onResume !== undefined) this.onResume()
+    this.onResume?.()
   }
 
   /**
@@ -210,7 +192,7 @@ export class Player {
    */
   public pause (): void {
     this.animator.stop()
-    if (this.onPause !== undefined) this.onPause()
+    this.onPause?.()
   }
 
   /**
@@ -220,7 +202,7 @@ export class Player {
     this.animator.stop()
     this.currentFrame = 0
     this.clearContainer()
-    if (this.onStop !== undefined) this.onStop()
+    this.onStop?.()
   }
 
   /**
@@ -251,33 +233,35 @@ export class Player {
       this.currentFrame = startFrame > 0 ? startFrame : 0
     }
 
+    const actualStartFrame = startFrame > 0 ? startFrame : 0
+    const actualEndFrame = endFrame > 0 ? endFrame : totalFrames
+
     if (playMode === PLAYER_PLAY_MODE.FORWARDS) {
-      this.animator.startValue = startFrame > 0 ? startFrame : 0
-      this.animator.endValue = endFrame > 0 ? endFrame : totalFrames
+      this.animator.startValue = actualStartFrame
+      this.animator.endValue = actualEndFrame
     } else {
-      // 倒播
-      this.animator.startValue = endFrame > 0 ? endFrame : totalFrames
-      this.animator.endValue = startFrame > 0 ? startFrame : 0
+      this.animator.startValue = actualEndFrame
+      this.animator.endValue = actualStartFrame
     }
 
     let frames = videoEntity.frames
 
     if (endFrame > 0 && endFrame > startFrame) {
       frames = endFrame - startFrame
-    } else if (endFrame <= 0 && startFrame > 0) {
+    } else if (startFrame > 0) {
       frames = videoEntity.frames - startFrame
     }
 
-    this.animator.duration = frames * (1.0 / videoEntity.fps) * 1000
-    this.animator.loopStart = loopStartFrame > startFrame ? (loopStartFrame - startFrame) * (1.0 / videoEntity.fps) * 1000 : 0
-    this.animator.loop = loop === true || loop <= 0 ? Infinity : (loop === false ? 1 : loop)
+    this.animator.duration = frames * (1000 / videoEntity.fps)
+    this.animator.loopStart = loopStartFrame > startFrame ? (loopStartFrame - startFrame) * (1000 / videoEntity.fps) : 0
+    this.animator.loop = loop === true || loop === 0 ? Infinity : (loop === false ? 1 : loop)
     this.animator.fillRule = fillMode === 'backwards' ? 1 : 0
 
     this.animator.onUpdate = (value: number) => {
       if (this.currentFrame === value) return
       this.currentFrame = value
       this.drawFrame(this.currentFrame)
-      if (this.onProcess !== undefined) this.onProcess()
+      this.onProcess?.()
     }
 
     this.animator.start()
@@ -300,20 +284,18 @@ export class Player {
     const context = this.config.container.getContext('2d')
     if (context === null) throw new Error('Canvas Context cannot be null')
 
-    if (this.config.isCacheFrames && this.cacheFrames[frame] !== undefined) {
-      const ofsFrame = this.cacheFrames[frame]
-      // ImageData
-      // context.putImageData(ofsFrame, 0, 0)
-      context.drawImage(ofsFrame, 0, 0, ofsFrame.width, ofsFrame.height, 0, 0, ofsFrame.width, ofsFrame.height)
-      return
+    if (this.config.isCacheFrames) {
+      const cachedFrame = this.cacheFrames[frame]
+      if (cachedFrame !== undefined) {
+        context.drawImage(cachedFrame, 0, 0)
+        return
+      }
     }
 
-    let ofsCanvas = this.ofsCanvas
-
-    // OffscreenCanvas 在 Firefox 浏览器无法被清理历史内容
-    if (window.OffscreenCanvas !== undefined && window.navigator.userAgent.includes('Firefox')) {
-      ofsCanvas = new window.OffscreenCanvas(this.config.container.width, this.config.container.height)
-    }
+    const isFirefox = window.OffscreenCanvas !== undefined && window.navigator.userAgent.includes('Firefox')
+    const ofsCanvas = isFirefox
+      ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height)
+      : this.ofsCanvas
 
     ofsCanvas.width = this.config.container.width
     ofsCanvas.height = this.config.container.height
@@ -327,21 +309,13 @@ export class Player {
       this.currentFrame
     )
 
-    context.drawImage(
-      ofsCanvas,
-      0, 0, ofsCanvas.width, ofsCanvas.height,
-      0, 0, ofsCanvas.width, ofsCanvas.height
-    )
+    context.drawImage(ofsCanvas, 0, 0)
 
     if (this.config.isCacheFrames) {
-      // ImageData
-      // const imageData = (ofsCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D).getImageData(0, 0, ofsCanvas.width, ofsCanvas.height)
-      // this.frames[frame] = imageData
       if ('toDataURL' in ofsCanvas) {
-        const ofsImageBase64 = ofsCanvas.toDataURL()
-        const ofsImage = new Image()
-        ofsImage.src = ofsImageBase64
-        this.cacheFrames[frame] = ofsImage
+        const image = new Image()
+        image.src = ofsCanvas.toDataURL()
+        this.cacheFrames[frame] = image
       } else {
         this.cacheFrames[frame] = ofsCanvas.transferToImageBitmap()
       }

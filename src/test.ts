@@ -1,5 +1,10 @@
-import { PLAYER_FILL_MODE, PLAYER_PLAY_MODE } from 'types'
+import { PLAYER_FILL_MODE, PLAYER_PLAY_MODE } from './types'
 import { Parser, Player, DB } from './index'
+
+// Expose to global scope for demo page
+window.Parser = Parser
+window.Player = Player
+window.DB = DB
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
 
@@ -9,10 +14,6 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
   const url = '/svga/shape-path-undefined.svga'
-  // const url = '/svga/11.svga'
-  // const url = '/svga/TwitterHeart.svga'
-  // const url = '/svga/loading-1.svga'
-  // const url = '/svga/kaola.svga'
   const parser = new Parser()
   const svga = await parser.load(url)
   console.log(svga)
@@ -47,17 +48,14 @@ const TESTCASE2 = async (): Promise<void> => {
   player.onStop = () => console.log('onStop')
   player.onProcess = () => console.log('onProcess')
   player.onEnd = () => console.log('onEnd')
-  ;(window as any).start = () => player.start()
-  ;(window as any).pause = () => player.pause()
-  ;(window as any).resume = () => player.resume()
-  ;(window as any).stop = () => player.stop()
-  ;(window as any).clear = () => player.clear()
-  ;(window as any).destroy = () => {
+  window.start = () => player.start()
+  window.pause = () => player.pause()
+  window.resume = () => player.resume()
+  window.stop = () => player.stop()
+  window.clear = () => player.clear()
+  window.destroy = () => {
     parser.destroy()
     player.destroy()
-    ;(svga as any) = null
-    ;(parser as any) = null
-    ;(player as any) = null
   }
 }
 
@@ -152,10 +150,11 @@ const TESTCASE6 = async (): Promise<void> => {
   player.start()
   player.onEnd = () => {
     console.log('onEnd', player.currentFrame)
-    const playMode = player.config.playMode === PLAYER_PLAY_MODE.FORWARDS ? PLAYER_PLAY_MODE.FALLBACKS : PLAYER_PLAY_MODE.FORWARDS
+    const currentPlayMode = player.config.playMode
+    const nextPlayMode = currentPlayMode === PLAYER_PLAY_MODE.FORWARDS ? PLAYER_PLAY_MODE.FALLBACKS : PLAYER_PLAY_MODE.FORWARDS
     player.setConfig({
       loop: 1,
-      playMode
+      playMode: nextPlayMode
     })
     player.start()
   }
@@ -169,7 +168,6 @@ const TESTCASE7 = async (): Promise<void> => {
   const url = '/svga/undefined.svga'
   try {
     const parser = new Parser()
-    // const parser = new Parser({ isDisableWebWorker: true })
     const svga = await parser.load(url)
     const player = new Player(canvas)
     await player.mount(svga)
@@ -207,13 +205,4 @@ const TESTCASE8 = async (): Promise<void> => {
   }, 5000)
 }
 
-Promise.all([
-  TESTCASE1()
-  // TESTCASE2()
-  // TESTCASE3()
-  // TESTCASE4()
-  // TESTCASE5()
-  // TESTCASE6()
-  // TESTCASE7()
-  // TESTCASE8()
-]).catch(error => console.error(error))
+Promise.resolve(TESTCASE1()).catch(error => console.error(error))
