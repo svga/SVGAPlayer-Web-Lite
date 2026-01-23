@@ -31,11 +31,13 @@ async function download (url: string): Promise<ArrayBuffer> {
     request.responseType = 'arraybuffer'
 
     request.onloadend = () => {
-      if (request.response !== undefined && (request.status === 200 || request.status === 304)) {
+      const isSuccess = request.response !== undefined && (request.status === 200 || request.status === 304)
+
+      if (isSuccess) {
         resolve(request.response)
-        return
+      } else {
+        reject(new Error(`XMLHttpRequest failed with status: ${request.status}`))
       }
-      reject(new Error(`XMLHttpRequest failed with status: ${request.status}`))
     }
 
     request.onerror = () => reject(new Error('XMLHttpRequest network error'))

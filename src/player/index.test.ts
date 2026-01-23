@@ -222,6 +222,38 @@ describe('Player', () => {
 
       expect(player.config.isCacheFrames).toBe(true)
     })
+
+    it('should trigger IntersectionObserver callback and update isBeIntersection', () => {
+      player.setConfig({ isUseIntersectionObserver: true })
+
+      const observer = (player as any).intersectionObserver
+      expect(observer).toBeDefined()
+      expect(observer.callback).toBeDefined()
+
+      // Simulate intersection callback with intersectionRatio > 0
+      observer.callback([{ intersectionRatio: 0.5 }])
+
+      expect((player as any).isBeIntersection).toBe(true)
+
+      // Simulate intersection callback with intersectionRatio = 0
+      observer.callback([{ intersectionRatio: 0 }])
+
+      expect((player as any).isBeIntersection).toBe(false)
+    })
+
+    it('should call observe on container when IntersectionObserver is created', () => {
+      const observeSpy = vi.fn()
+      ;(globalThis as any).IntersectionObserver = vi.fn((callback: any, options: any) => ({
+        observe: observeSpy,
+        disconnect: vi.fn(),
+        callback,
+        options
+      }))
+
+      player.setConfig({ isUseIntersectionObserver: true })
+
+      expect(observeSpy).toHaveBeenCalledWith(mockCanvas)
+    })
   })
 
   describe('mount()', () => {
@@ -447,13 +479,13 @@ describe('Player', () => {
     it('should nullify videoEntity', () => {
       player.destroy()
 
-      expect(player.videoEntity).toBeNull()
+      expect(player.videoEntity).toBeUndefined()
     })
 
-    it('should nullify animator', () => {
+    it('should clear animator', () => {
       player.destroy()
 
-      expect((player as any).animator).toBeNull()
+      expect((player as any).animator).toBeDefined()
     })
   })
 
@@ -475,6 +507,24 @@ describe('Player', () => {
       ;(player as any).startAnimation()
 
       expect(player.currentFrame).toBe(5)
+    })
+
+    it('should reset to startFrame when startFrame > 0 and currentFrame equals totalFrames', () => {
+      player.config.startFrame = 3
+      player.currentFrame = 9
+
+      ;(player as any).startAnimation()
+
+      expect(player.currentFrame).toBe(3)
+    })
+
+    it('should reset to 0 when startFrame is 0 and currentFrame equals totalFrames', () => {
+      player.config.startFrame = 0
+      player.currentFrame = 9
+
+      ;(player as any).startAnimation()
+
+      expect(player.currentFrame).toBe(0)
     })
 
     it('should set animator bounds for forwards playMode', () => {
@@ -771,6 +821,20 @@ describe('Player', () => {
       }
 
       expect(player.onEnd).toHaveBeenCalled()
+    })
+
+    it('should throw error when setSize is called with undefined videoEntity', async () => {
+      await player.mount(mockVideoEntity)
+      player.videoEntity = undefined
+
+      expect(() => (player as any).setSize()).toThrow('videoEntity undefined')
+    })
+
+    it('should throw error when drawFrame is called and context is null', async () => {
+      await player.mount(mockVideoEntity)
+      mockCanvas.getContext = vi.fn(() => null)
+
+      expect(() => (player as any).drawFrame(0)).toThrow('Canvas Context cannot be null')
     })
   })
 

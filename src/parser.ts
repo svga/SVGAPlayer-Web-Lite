@@ -27,24 +27,31 @@ export class Parser {
    */
   async load (url: string): Promise<Video> {
     if (url === undefined) throw new Error('url undefined')
-    if (this.worker === undefined) throw new Error('Parser Worker not found')
 
     const postData = { url: this.normalizeURL(url), options: { isDisableImageBitmapShim: this.isDisableImageBitmapShim } }
 
     return new Promise<Video>((resolve, reject) => {
-      const onMessage = ({ data }: MessageEvent<Video | Error>) => {
+      const handleMessage = (data: Video | Error) => {
         data instanceof Error ? reject(data) : resolve(data)
       }
 
-      if (this.worker instanceof Worker) {
-        this.worker.onmessage = onMessage
-        this.worker.postMessage(postData)
+      if (this.worker === undefined) {
+        reject(new Error('Parser Worker not found'))
         return
       }
 
-      this.worker.onmessageCallback = (data: Video | Error) => data instanceof Error ? reject(data) : resolve(data)
-      this.worker.onmessage({ data: postData })
+      this.postMessage(postData, handleMessage)
     })
+  }
+
+  private postMessage (postData: { url: string, options: { isDisableImageBitmapShim: boolean } }, callback: (data: Video | Error) => void): void {
+    if (this.worker instanceof Worker) {
+      this.worker.onmessage = (event: MessageEvent<Video | Error>) => callback(event.data)
+      this.worker.postMessage(postData)
+    } else {
+      this.worker.onmessageCallback = callback
+      this.worker.onmessage({ data: postData })
+    }
   }
 
   private normalizeURL (url: string): string {

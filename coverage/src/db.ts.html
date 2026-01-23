@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>51/51</span>
+                <span class='fraction'>48/48</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>23/23</span>
+                <span class='fraction'>24/24</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">92.3% </span>
+                <span class="strong">92.85% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>12/13</span>
+                <span class='fraction'>13/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>51/51</span>
+                <span class='fraction'>48/48</span>
             </div>
         
             
@@ -126,9 +126,21 @@
 <a name='L61'></a><a href='#L61'>61</a>
 <a name='L62'></a><a href='#L62'>62</a>
 <a name='L63'></a><a href='#L63'>63</a>
-<a name='L64'></a><a href='#L64'>64</a>
-<a name='L65'></a><a href='#L65'>65</a>
-<a name='L66'></a><a href='#L66'>66</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L64'></a><a href='#L64'>64</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -153,29 +165,13 @@
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">11x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -185,77 +181,75 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Video } from './types'
 &nbsp;
+function wrapRequest&lt;T&gt; (request: IDBRequest&lt;T&gt;): Promise&lt;T&gt; {
+  return new Promise&lt;T&gt;((resolve, reject) =&gt; {
+    request.onsuccess = () =&gt; resolve(request.result)
+    request.onerror = () =&gt; reject(new Error('[SVGA.DB] indexedDB operation failed'))
+  })
+}
+&nbsp;
+function wrapTransaction (tx: IDBTransaction): Promise&lt;void&gt; {
+  return new Promise&lt;void&gt;((resolve, reject) =&gt; {
+    tx.oncomplete = () =&gt; resolve()
+    tx.onerror = () =&gt; reject(new Error('[SVGA.DB] indexedDB operation failed'))
+  })
+}
+&nbsp;
 export class DB {
   private readonly storeName: string
   private readonly dbPromise: Promise&lt;IDBDatabase&gt;
 &nbsp;
-  constructor ({ name, version, storeName }: {
-    name: string
-    version: number
-    storeName: string
-  } = { name: 'SVGA.DB', version: 1.0, storeName: 'files' }) {
+  constructor ({ name = 'SVGA.DB', version = 1.0, storeName = 'files' }: {
+    name?: string
+    version?: number
+    storeName?: string
+  } = {}) {
     this.storeName = storeName
     this.dbPromise = this.openDatabase(name, version, storeName)
   }
 &nbsp;
   private openDatabase (name: string, version: number, storeName: string): Promise&lt;IDBDatabase&gt; {
-    if (window.indexedDB === undefined) {
+    if (indexedDB === undefined) {
       return Promise.reject(new Error('[SVGA.DB] indexedDB not supported'))
     }
 &nbsp;
     return new Promise&lt;IDBDatabase&gt;((resolve, reject) =&gt; {
-      const request = window.indexedDB.open(name, version)
-      request.onerror = <span class="fstat-no" title="function not covered" >error =&gt; reject(new Error(`[SVGA.DB] indexedDB open fail, ${error.type}`))</span>
+      const request = indexedDB.open(name, version)
+      request.onupgradeneeded = () =&gt; request.result.createObjectStore(storeName)
       request.onsuccess = () =&gt; resolve(request.result)
-      request.onupgradeneeded = () =&gt; {
-        request.result.createObjectStore(storeName)
-      }
-    })
-  }
-&nbsp;
-  private transaction&lt;T&gt; (
-    mode: IDBTransactionMode,
-    operationName: string,
-    callback: (store: IDBObjectStore) =&gt; IDBRequest&lt;T&gt;
-  ): Promise&lt;T&gt; {
-    return this.dbPromise.then(db =&gt; {
-      return new Promise&lt;T&gt;((resolve, reject) =&gt; {
-        const tx = db.transaction([this.storeName], mode)
-        const request = callback(tx.objectStore(this.storeName))
-        request.onsuccess = () =&gt; resolve(request.result)
-        request.onerror = () =&gt; reject(new Error(`${operationName} error`))
-      })
+      request.onerror = <span class="fstat-no" title="function not covered" >() =&gt; reject(new Error('[SVGA.DB] indexedDB open fail'))</span>
     })
   }
 &nbsp;
   async find (id: IDBValidKey): Promise&lt;Video | undefined&gt; {
-    return this.transaction('readonly', 'find', store =&gt; store.get(id)).then(result =&gt; {
-      return typeof result === 'string' ? JSON.parse(result) : undefined
-    })
+    const db = await this.dbPromise
+    const tx = db.transaction([this.storeName], 'readonly')
+    const result = await wrapRequest(tx.objectStore(this.storeName).get(id))
+    return result !== undefined ? JSON.parse(result) : undefined
   }
 &nbsp;
   async insert (id: IDBValidKey, data: Video): Promise&lt;void&gt; {
     const db = await this.dbPromise
-    return new Promise&lt;void&gt;((resolve, reject) =&gt; {
-      const tx = db.transaction([this.storeName], 'readwrite')
-      tx.objectStore(this.storeName).put(JSON.stringify(data), id)
-      tx.oncomplete = () =&gt; resolve()
-      tx.onerror = () =&gt; reject(new Error('insert error'))
-    })
+    const tx = db.transaction([this.storeName], 'readwrite')
+    tx.objectStore(this.storeName).put(JSON.stringify(data), id)
+    await wrapTransaction(tx)
   }
 &nbsp;
   async delete (id: IDBValidKey): Promise&lt;void&gt; {
-    return this.transaction('readwrite', 'delete', store =&gt; store.delete(id)).then()
+    const db = await this.dbPromise
+    const tx = db.transaction([this.storeName], 'readwrite')
+    const request = tx.objectStore(this.storeName).delete(id)
+    await wrapRequest(request)
   }
 }
 &nbsp;</pre></td></tr></table></pre>
@@ -265,7 +259,7 @@ export class DB {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-18T13:12:40.014Z
+                at 2026-01-23T10:57:14.711Z
             </div>
         <script src="../prettify.js"></script>
         <script>

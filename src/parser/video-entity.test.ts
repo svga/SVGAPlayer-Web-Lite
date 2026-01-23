@@ -569,6 +569,31 @@ describe('VideoEntity', () => {
       const frame = videoEntity.sprites[0].frames[0]
       expect(frame.shapes[0].styles.lineCap).toBeNull()
     })
+
+    it('should handle unknown lineCap value', () => {
+      const movie = createMockMovie({
+        sprites: [
+          createMockSprite({
+            frames: [
+              createMockFrame({
+                shapes: [
+                  createMockShape({
+                    styles: createMockStyles({ lineCap: 999 })
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+      const images: RawImages = {}
+
+      const videoEntity = new VideoEntity(movie, images)
+
+      const frame = videoEntity.sprites[0].frames[0]
+      // Unknown lineCap values should return null
+      expect(frame.shapes[0].styles.lineCap).toBeNull()
+    })
   })
 
   describe('LineJoin enum mapping', () => {
@@ -642,6 +667,31 @@ describe('VideoEntity', () => {
 
       const frame = videoEntity.sprites[0].frames[0]
       expect(frame.shapes[0].styles.lineJoin).toBe('bevel')
+    })
+
+    it('should handle unknown lineJoin value', () => {
+      const movie = createMockMovie({
+        sprites: [
+          createMockSprite({
+            frames: [
+              createMockFrame({
+                shapes: [
+                  createMockShape({
+                    styles: createMockStyles({ lineJoin: 999 })
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+      const images: RawImages = {}
+
+      const videoEntity = new VideoEntity(movie, images)
+
+      const frame = videoEntity.sprites[0].frames[0]
+      // Unknown lineJoin values should return null
+      expect(frame.shapes[0].styles.lineJoin).toBeNull()
     })
   })
 

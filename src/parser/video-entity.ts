@@ -9,11 +9,40 @@ import {
   SHAPE_TYPE,
   SHAPE_TYPE_CODE,
   VideoFrameShapes,
+  VideoFrameShape,
   LINE_CAP_CODE,
   LINE_JOIN_CODE,
   RGBA,
-  RGBA_CODE
+  RGBA_CODE,
+  Transform,
+  Rect,
+  VideoStyles,
+  MovieShape
 } from '../types'
+
+function calculateTransformedX (transform: Transform, layout: Rect): number {
+  const { a, c, tx } = transform
+  const { x, y, width, height } = layout
+
+  return Math.min(
+    a * x + c * y + tx,
+    a * (x + width) + c * y + tx,
+    a * x + c * (y + height) + tx,
+    a * (x + width) + c * (y + height) + tx
+  )
+}
+
+function calculateTransformedY (transform: Transform, layout: Rect): number {
+  const { b, d, ty } = transform
+  const { x, y, width, height } = layout
+
+  return Math.min(
+    b * x + d * y + ty,
+    b * (x + width) + d * y + ty,
+    b * x + d * (y + height) + ty,
+    b * (x + width) + d * (y + height) + ty
+  )
+}
 
 const LINE_CAP_MAP: Record<LINE_CAP_CODE, CanvasLineCap> = {
   [LINE_CAP_CODE.BUTT]: 'butt',
@@ -27,8 +56,63 @@ const LINE_JOIN_MAP: Record<LINE_JOIN_CODE, CanvasLineJoin> = {
   [LINE_JOIN_CODE.MITER]: 'miter'
 }
 
+function createTransform (transform: Transform | null | undefined): Transform {
+  return {
+    a: transform?.a ?? 1,
+    b: transform?.b ?? 0,
+    c: transform?.c ?? 0,
+    d: transform?.d ?? 1,
+    tx: transform?.tx ?? 0,
+    ty: transform?.ty ?? 0
+  }
+}
+
 function rgbaToString (color: RGBA_CODE): RGBA<number, number, number, number> {
   return `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, ${color.a})`
+}
+
+function buildLineDash (lineDashI: number | null, lineDashII: number | null, lineDashIII: number | null): number[] {
+  const lineDash: number[] = []
+
+  if (lineDashI !== null && lineDashI > 0) {
+    lineDash.push(lineDashI)
+  }
+
+  if (lineDashII !== null && lineDashII > 0) {
+    if (lineDash.length < 1) {
+      lineDash.push(0)
+    }
+    lineDash.push(lineDashII)
+  }
+
+  if (lineDashIII !== null && lineDashIII > 0) {
+    while (lineDash.length < 2) {
+      lineDash.push(0)
+    }
+    lineDash[2] = lineDashIII
+  }
+
+  return lineDash
+}
+
+function createVideoShape (
+  mShape: MovieShape,
+  styles: VideoStyles,
+  transform: Transform
+): VideoFrameShape | null {
+  const { type, shape, rect, ellipse } = mShape
+
+  if (type === SHAPE_TYPE_CODE.SHAPE && shape !== null) {
+    return { type: SHAPE_TYPE.SHAPE, path: shape, styles, transform }
+  }
+  if (type === SHAPE_TYPE_CODE.RECT && rect !== null) {
+    return { type: SHAPE_TYPE.RECT, path: rect, styles, transform }
+  }
+  if (type === SHAPE_TYPE_CODE.ELLIPSE && ellipse !== null) {
+    return { type: SHAPE_TYPE.ELLIPSE, path: ellipse, styles, transform }
+  }
+
+  return null
 }
 
 export class VideoEntity implements Video {
@@ -67,14 +151,7 @@ export class VideoEntity implements Video {
           height: mFrame.layout?.height ?? 0
         }
 
-        const transform = {
-          a: mFrame.transform?.a ?? 1,
-          b: mFrame.transform?.b ?? 0,
-          c: mFrame.transform?.c ?? 0,
-          d: mFrame.transform?.d ?? 1,
-          tx: mFrame.transform?.tx ?? 0,
-          ty: mFrame.transform?.ty ?? 0
-        }
+        const transform = createTransform(mFrame.transform)
 
         const clipPath = mFrame.clipPath ?? ''
 
@@ -84,27 +161,9 @@ export class VideoEntity implements Video {
           const mStyles = mShape.styles
           if (mStyles === null) return
 
-          const lineDash: number[] = []
-          if (mStyles.lineDashI !== null && mStyles.lineDashI > 0) {
-            lineDash.push(mStyles.lineDashI)
-          }
-          if (mStyles.lineDashII !== null && mStyles.lineDashII > 0) {
-            if (lineDash.length < 1) {
-              lineDash.push(0)
-            }
-            lineDash.push(mStyles.lineDashII)
-          }
-          if (mStyles.lineDashIII !== null && mStyles.lineDashIII > 0) {
-            if (lineDash.length < 2) {
-              lineDash.push(0)
-              lineDash.push(0)
-            }
-            lineDash[2] = mStyles.lineDashIII
-          }
-
+          const lineDash = buildLineDash(mStyles.lineDashI, mStyles.lineDashII, mStyles.lineDashIII)
           const lineCap = mStyles.lineCap === null ? null : LINE_CAP_MAP[mStyles.lineCap] ?? null
           const lineJoin = mStyles.lineJoin === null ? null : LINE_JOIN_MAP[mStyles.lineJoin] ?? null
-
           const fill = mStyles.fill !== null ? rgbaToString(mStyles.fill) : null
           const stroke = mStyles.stroke !== null ? rgbaToString(mStyles.stroke) : null
 
@@ -118,36 +177,11 @@ export class VideoEntity implements Video {
             miterLimit: mStyles.miterLimit
           }
 
-          const transform = {
-            a: mShape.transform?.a ?? 1,
-            b: mShape.transform?.b ?? 0,
-            c: mShape.transform?.c ?? 0,
-            d: mShape.transform?.d ?? 1,
-            tx: mShape.transform?.tx ?? 0,
-            ty: mShape.transform?.ty ?? 0
-          }
+          const transform = createTransform(mShape.transform)
 
-          if (mShape.type === SHAPE_TYPE_CODE.SHAPE && mShape.shape !== null) {
-            shapes.push({
-              type: SHAPE_TYPE.SHAPE,
-              path: mShape.shape,
-              styles,
-              transform
-            })
-          } else if (mShape.type === SHAPE_TYPE_CODE.RECT && mShape.rect !== null) {
-            shapes.push({
-              type: SHAPE_TYPE.RECT,
-              path: mShape.rect,
-              styles,
-              transform
-            })
-          } else if (mShape.type === SHAPE_TYPE_CODE.ELLIPSE && mShape.ellipse !== null) {
-            shapes.push({
-              type: SHAPE_TYPE.ELLIPSE,
-              path: mShape.ellipse,
-              styles,
-              transform
-            })
+          const shape = createVideoShape(mShape, styles, transform)
+          if (shape !== null) {
+            shapes.push(shape)
           }
         })
 
@@ -157,30 +191,24 @@ export class VideoEntity implements Video {
           lastShapes = shapes
         }
 
-        const llx = transform.a * layout.x + transform.c * layout.y + transform.tx
-        const lrx = transform.a * (layout.x + layout.width) + transform.c * layout.y + transform.tx
-        const lbx = transform.a * layout.x + transform.c * (layout.y + layout.height) + transform.tx
-        const rbx = transform.a * (layout.x + layout.width) + transform.c * (layout.y + layout.height) + transform.tx
-        const lly = transform.b * layout.x + transform.d * layout.y + transform.ty
-        const lry = transform.b * (layout.x + layout.width) + transform.d * layout.y + transform.ty
-        const lby = transform.b * layout.x + transform.d * (layout.y + layout.height) + transform.ty
-        const rby = transform.b * (layout.x + layout.width) + transform.d * (layout.y + layout.height) + transform.ty
-        const nx = Math.min(Math.min(lbx, rbx), Math.min(llx, lrx))
-        const ny = Math.min(Math.min(lby, rby), Math.min(lly, lry))
+        const nx = calculateTransformedX(transform, layout)
+        const ny = calculateTransformedY(transform, layout)
 
-        const maskPath = clipPath.length > 0 ? {
-          d: clipPath,
-          transform: undefined,
-          styles: {
-            fill: 'rgba(0, 0, 0, 0)' as RGBA<0, 0, 0, 0>,
-            stroke: null,
-            strokeWidth: null,
-            lineCap: null,
-            lineJoin: null,
-            miterLimit: null,
-            lineDash: null
-          }
-        } : null
+        const maskPath = clipPath.length > 0
+          ? {
+              d: clipPath,
+              transform: undefined,
+              styles: {
+                fill: 'rgba(0, 0, 0, 0)' as RGBA<0, 0, 0, 0>,
+                stroke: null,
+                strokeWidth: null,
+                lineCap: null,
+                lineJoin: null,
+                miterLimit: null,
+                lineDash: null
+              }
+            }
+          : null
 
         vSprite.frames.push({
           alpha: mFrame.alpha ?? 0,

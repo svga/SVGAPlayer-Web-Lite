@@ -235,7 +235,7 @@ describe('DB (IndexedDB)', () => {
       const findPromise = db.find('test-key')
       queueMicrotask(() => mockGetRequest.onerror?.())
 
-      await expect(findPromise).rejects.toThrow('find error')
+      await expect(findPromise).rejects.toThrow('[SVGA.DB] indexedDB operation failed')
 
       // Cleanup happens in afterEach
     })
@@ -300,7 +300,7 @@ describe('DB (IndexedDB)', () => {
         }
       })
 
-      await expect(insertPromise).rejects.toThrow('insert error')
+      await expect(insertPromise).rejects.toThrow('[SVGA.DB] indexedDB operation failed')
 
       // Cleanup happens in afterEach
     })
@@ -354,7 +354,7 @@ describe('DB (IndexedDB)', () => {
 
       queueMicrotask(() => mockDeleteRequest.onerror?.())
 
-      await expect(deletePromise).rejects.toThrow('delete error')
+      await expect(deletePromise).rejects.toThrow('[SVGA.DB] indexedDB operation failed')
 
       // Cleanup happens in afterEach
     })

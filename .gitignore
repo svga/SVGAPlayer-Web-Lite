@@ -3,3 +3,4 @@ dist
 __test__/*.js
 openspec
 test-results/
+coverage
