@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>48/48</span>
+                <span class='fraction'>55/55</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>24/24</span>
+                <span class='fraction'>25/25</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">92.85% </span>
+                <span class="strong">93.33% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>13/14</span>
+                <span class='fraction'>14/15</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>48/48</span>
+                <span class='fraction'>55/55</span>
             </div>
         
             
@@ -126,7 +126,21 @@
 <a name='L61'></a><a href='#L61'>61</a>
 <a name='L62'></a><a href='#L62'>62</a>
 <a name='L63'></a><a href='#L63'>63</a>
-<a name='L64'></a><a href='#L64'>64</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-yes">5x</span>
@@ -188,20 +202,29 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Video } from './types'
+&nbsp;
+const DEFAULT_STORE_NAME = 'files'
+const ERROR_OPERATION_FAILED = '[SVGA.DB] indexedDB operation failed'
+const ERROR_OPEN_FAILED = '[SVGA.DB] indexedDB open fail'
+const ERROR_NOT_SUPPORTED = '[SVGA.DB] indexedDB not supported'
 &nbsp;
 function wrapRequest&lt;T&gt; (request: IDBRequest&lt;T&gt;): Promise&lt;T&gt; {
   return new Promise&lt;T&gt;((resolve, reject) =&gt; {
     request.onsuccess = () =&gt; resolve(request.result)
-    request.onerror = () =&gt; reject(new Error('[SVGA.DB] indexedDB operation failed'))
+    request.onerror = () =&gt; reject(new Error(ERROR_OPERATION_FAILED))
   })
 }
 &nbsp;
 function wrapTransaction (tx: IDBTransaction): Promise&lt;void&gt; {
   return new Promise&lt;void&gt;((resolve, reject) =&gt; {
     tx.oncomplete = () =&gt; resolve()
-    tx.onerror = () =&gt; reject(new Error('[SVGA.DB] indexedDB operation failed'))
+    tx.onerror = () =&gt; reject(new Error(ERROR_OPERATION_FAILED))
   })
 }
 &nbsp;
@@ -209,7 +232,7 @@ export class DB {
   private readonly storeName: string
   private readonly dbPromise: Promise&lt;IDBDatabase&gt;
 &nbsp;
-  constructor ({ name = 'SVGA.DB', version = 1.0, storeName = 'files' }: {
+  constructor ({ name = 'SVGA.DB', version = 1.0, storeName = DEFAULT_STORE_NAME }: {
     name?: string
     version?: number
     storeName?: string
@@ -220,36 +243,40 @@ export class DB {
 &nbsp;
   private openDatabase (name: string, version: number, storeName: string): Promise&lt;IDBDatabase&gt; {
     if (indexedDB === undefined) {
-      return Promise.reject(new Error('[SVGA.DB] indexedDB not supported'))
+      return Promise.reject(new Error(ERROR_NOT_SUPPORTED))
     }
 &nbsp;
     return new Promise&lt;IDBDatabase&gt;((resolve, reject) =&gt; {
       const request = indexedDB.open(name, version)
       request.onupgradeneeded = () =&gt; request.result.createObjectStore(storeName)
       request.onsuccess = () =&gt; resolve(request.result)
-      request.onerror = <span class="fstat-no" title="function not covered" >() =&gt; reject(new Error('[SVGA.DB] indexedDB open fail'))</span>
+      request.onerror = <span class="fstat-no" title="function not covered" >() =&gt; reject(new Error(ERROR_OPEN_FAILED))</span>
     })
   }
 &nbsp;
   async find (id: IDBValidKey): Promise&lt;Video | undefined&gt; {
     const db = await this.dbPromise
-    const tx = db.transaction([this.storeName], 'readonly')
+    const tx = this.createTransaction(db, 'readonly')
     const result = await wrapRequest(tx.objectStore(this.storeName).get(id))
     return result !== undefined ? JSON.parse(result) : undefined
   }
 &nbsp;
   async insert (id: IDBValidKey, data: Video): Promise&lt;void&gt; {
     const db = await this.dbPromise
-    const tx = db.transaction([this.storeName], 'readwrite')
+    const tx = this.createTransaction(db, 'readwrite')
     tx.objectStore(this.storeName).put(JSON.stringify(data), id)
     await wrapTransaction(tx)
   }
 &nbsp;
   async delete (id: IDBValidKey): Promise&lt;void&gt; {
     const db = await this.dbPromise
-    const tx = db.transaction([this.storeName], 'readwrite')
+    const tx = this.createTransaction(db, 'readwrite')
     const request = tx.objectStore(this.storeName).delete(id)
     await wrapRequest(request)
+  }
+&nbsp;
+  private createTransaction (db: IDBDatabase, mode: IDBTransactionMode): IDBTransaction {
+    return db.transaction([this.storeName], mode)
   }
 }
 &nbsp;</pre></td></tr></table></pre>
@@ -259,7 +286,7 @@ export class DB {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-24T23:22:37.222Z
+                at 2026-01-25T01:49:54.359Z
             </div>
         <script src="../prettify.js"></script>
         <script>

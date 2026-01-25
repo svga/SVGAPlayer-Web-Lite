@@ -12,6 +12,8 @@ import render from './render'
 const inBrowser = typeof window !== 'undefined'
 const hasIntersectionObserver = inBrowser && 'IntersectionObserver' in window
 
+const MAX_CACHE_FRAMES = 100
+
 type EventCallback = (() => void) | undefined
 
 /**
@@ -53,7 +55,7 @@ export class Player {
   private isBeIntersection = true
   private intersectionObserver: IntersectionObserver | null = null
   private bitmapsCache: BitmapsCache = {}
-  private readonly cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap} = {}
+  private cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap} = {}
 
   constructor (options: HTMLCanvasElement | PlayerConfigOptions) {
     this.animator = new Animator()
@@ -67,7 +69,8 @@ export class Player {
     }
 
     this.config.container = container ?? this.config.container
-    this.ofsCanvas = window.OffscreenCanvas !== undefined
+    const supportsOffscreenCanvas = window.OffscreenCanvas !== undefined
+    this.ofsCanvas = supportsOffscreenCanvas
       ? new window.OffscreenCanvas(this.config.container.width, this.config.container.height)
       : document.createElement('canvas')
   }
@@ -75,7 +78,7 @@ export class Player {
   /**
    * 设置配置项
    * @param options 可配置项
-   */
+  */
   public setConfig (options: PlayerConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined && options.startFrame > options.endFrame) {
       throw new Error('StartFrame should > EndFrame')
@@ -141,7 +144,7 @@ export class Player {
     this.videoEntity = videoEntity
     this.clearContainer()
     this.setSize()
-    this.bitmapsCache = {}
+    this.clearCache()
 
     const imageKeys = Object.keys(videoEntity.images)
     if (imageKeys.length === 0) {
@@ -155,10 +158,17 @@ export class Player {
   private loadImage (key: string, image: string | HTMLImageElement | ImageBitmap): Promise<void> {
     return new Promise<void>(resolve => {
       if (typeof image === 'string') {
+        // Validate base64 format
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(image)) {
+          resolve()
+          return
+        }
+
         const img = document.createElement('img')
         img.src = `data:image/png;base64,${image}`
         this.bitmapsCache[key] = img
         img.onload = () => resolve()
+        img.onerror = () => resolve()
       } else {
         this.bitmapsCache[key] = image
         resolve()
@@ -174,15 +184,17 @@ export class Player {
   public onEnd: EventCallback = undefined
 
   private clearContainer (): void {
-    const width = this.config.container.width
-    this.config.container.width = width
+    const context = this.config.container.getContext('2d')
+    if (context !== null) {
+      context.clearRect(0, 0, this.config.container.width, this.config.container.height)
+    }
   }
 
   /**
    * 开始播放
    */
   public start (): void {
-    if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
+    this.requireVideoEntity()
     this.clearContainer()
     this.startAnimation()
     this.onStart?.()
@@ -227,21 +239,59 @@ export class Player {
   public destroy (): void {
     this.animator.stop()
     this.clearContainer()
+    this.clearCache()
     this.videoEntity = undefined
   }
 
-  private startAnimation (): void {
-    if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
+  /**
+   * 清理缓存资源，释放 ImageBitmap 显存
+   */
+  private clearCache (): void {
+    // 清理帧缓存中的 ImageBitmap
+    Object.values(this.cacheFrames).forEach(frame => {
+      if (frame instanceof ImageBitmap) {
+        frame.close()
+      }
+    })
+    this.cacheFrames = {}
 
-    const { config, totalFrames, videoEntity } = this
+    // 清理 bitmapsCache 中的 ImageBitmap
+    Object.values(this.bitmapsCache).forEach(bitmap => {
+      if (bitmap instanceof ImageBitmap) {
+        bitmap.close()
+      }
+    })
+    this.bitmapsCache = {}
+  }
+
+  private startAnimation (): void {
+    this.requireVideoEntity()
+
+    const { config, totalFrames } = this
     const { playMode, startFrame, endFrame, loopStartFrame, fillMode, loop } = config
-    const { fps, frames } = videoEntity
+    const videoEntity = this.videoEntity!
 
     // 如果开始动画的当前帧是最后一帧，重置为第 0 帧
     if (this.currentFrame === totalFrames) {
       this.currentFrame = startFrame > 0 ? startFrame : 0
     }
 
+    this.configureAnimator(playMode, startFrame, endFrame, totalFrames, videoEntity, loopStartFrame, fillMode, loop)
+    this.configureOnUpdateCallback()
+    this.animator.start()
+  }
+
+  private configureAnimator (
+    playMode: string,
+    startFrame: number,
+    endFrame: number,
+    totalFrames: number,
+    videoEntity: Video,
+    loopStartFrame: number,
+    fillMode: string,
+    loop: number | boolean
+  ): void {
+    const { fps, frames } = videoEntity
     const actualStartFrame = startFrame > 0 ? startFrame : 0
     const actualEndFrame = endFrame > 0 ? endFrame : totalFrames
 
@@ -260,15 +310,15 @@ export class Player {
     this.animator.loopStart = this.calculateLoopStart(loopStartFrame, startFrame, frameDuration)
     this.animator.loop = this.calculateLoopCount(loop)
     this.animator.fillRule = fillMode === 'backwards' ? 1 : 0
+  }
 
+  private configureOnUpdateCallback (): void {
     this.animator.onUpdate = (value: number) => {
       if (this.currentFrame === value) return
       this.currentFrame = value
       this.drawFrame(this.currentFrame)
       this.onProcess?.()
     }
-
-    this.animator.start()
   }
 
   private calculateAnimationFrames (endFrame: number, startFrame: number, totalFrames: number): number {
@@ -299,57 +349,100 @@ export class Player {
   }
 
   private setSize (): void {
-    if (this.videoEntity === undefined) throw new Error('videoEntity undefined')
-    const size = this.videoEntity.size
+    this.requireVideoEntity()
+    const size = this.videoEntity!.size
     this.config.container.width = size.width
     this.config.container.height = size.height
   }
 
+  private requireVideoEntity (errorMessage: string = 'videoEntity undefined'): void {
+    if (this.videoEntity === undefined) {
+      throw new Error(errorMessage)
+    }
+  }
+
   /// ----------- 描绘一帧 -----------
   private drawFrame (frame: number): void {
-    if (this.videoEntity === undefined) throw new Error('Player VideoEntity undefined')
+    this.requireVideoEntity('Player VideoEntity undefined')
     if (this.config.isUseIntersectionObserver && !this.isBeIntersection) return
 
     this.clearContainer()
 
-    const context = this.config.container.getContext('2d')
-    if (context === null) throw new Error('Canvas Context cannot be null')
-
-    if (this.config.isCacheFrames) {
-      const cachedFrame = this.cacheFrames[frame]
-      if (cachedFrame !== undefined) {
-        context.drawImage(cachedFrame, 0, 0)
-        return
-      }
+    const context = this.getCanvasContext()
+    if (this.shouldUseCachedFrame(frame)) {
+      this.drawCachedFrame(context, frame)
+      return
     }
 
+    this.renderFrame(context)
+  }
+
+  private getCanvasContext (): CanvasRenderingContext2D {
+    const context = this.config.container.getContext('2d')
+    if (context === null) {
+      throw new Error('Canvas Context cannot be null')
+    }
+    return context
+  }
+
+  private shouldUseCachedFrame (frame: number): boolean {
+    return this.config.isCacheFrames && this.cacheFrames[frame] !== undefined
+  }
+
+  private drawCachedFrame (context: CanvasRenderingContext2D, frame: number): void {
+    const cachedFrame = this.cacheFrames[frame]
+    if (cachedFrame !== undefined) {
+      context.drawImage(cachedFrame, 0, 0)
+    }
+  }
+
+  private renderFrame (context: CanvasRenderingContext2D): void {
     const canvas = this.getRenderCanvas()
     const { width, height } = this.config.container
 
     canvas.width = width
     canvas.height = height
 
+    const videoEntity = this.videoEntity!
     render(
       canvas,
       this.bitmapsCache,
-      this.videoEntity.dynamicElements,
-      this.videoEntity.replaceElements,
-      this.videoEntity,
+      videoEntity.dynamicElements,
+      videoEntity.replaceElements,
+      videoEntity,
       this.currentFrame
     )
 
     context.drawImage(canvas, 0, 0)
 
     if (this.config.isCacheFrames) {
-      this.cacheFrames[frame] = this.cacheCanvas(canvas)
+      this.addToCache(this.currentFrame, canvas)
     }
   }
 
+  private addToCache (frame: number, canvas: HTMLCanvasElement | OffscreenCanvas): void {
+    const keys = Object.keys(this.cacheFrames)
+    if (keys.length >= MAX_CACHE_FRAMES) {
+      const oldestKey = keys[0]
+      const oldestFrame = this.cacheFrames[oldestKey]
+      // 释放 ImageBitmap 显存
+      if (oldestFrame instanceof ImageBitmap) {
+        oldestFrame.close()
+      }
+      delete this.cacheFrames[oldestKey]
+    }
+    this.cacheFrames[frame] = this.cacheCanvas(canvas)
+  }
+
   private getRenderCanvas (): HTMLCanvasElement | OffscreenCanvas {
-    const isFirefox = OffscreenCanvas !== undefined && navigator.userAgent.includes('Firefox')
-    return isFirefox
+    const needsNewCanvas = this.shouldRecreateOffscreenCanvas()
+    return needsNewCanvas
       ? new OffscreenCanvas(this.config.container.width, this.config.container.height)
       : this.ofsCanvas
+  }
+
+  private shouldRecreateOffscreenCanvas (): boolean {
+    return OffscreenCanvas !== undefined && navigator.userAgent.includes('Firefox')
   }
 
   private cacheCanvas (canvas: HTMLCanvasElement | OffscreenCanvas): ImageBitmap | HTMLImageElement {

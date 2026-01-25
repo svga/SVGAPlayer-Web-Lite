@@ -3,7 +3,8 @@ import {
   Movie,
   ParserPostMessageArgs,
   RawImages,
-  Video
+  Video,
+  AUDIO_PREFIX
 } from '../types'
 // @ts-ignore - protobufjs types may not be available
 import { Root } from 'protobufjs'
@@ -12,6 +13,11 @@ import Zlib from 'zlibjs/bin/inflate.min.js'
 import SVGA_PROTO from './svga-proto'
 import { VideoEntity } from './video-entity'
 import { Utils } from '../utils'
+
+const HTTP_STATUS_OK = 200
+const HTTP_STATUS_NOT_MODIFIED = 304
+const ERROR_NETWORK = 'XMLHttpRequest network error'
+const ERROR_HTTP_FAILED = 'XMLHttpRequest failed with status'
 
 export interface ParserWorkerHost {
   postMessage: (data: Video | Error) => void
@@ -24,6 +30,10 @@ function uint8ArrayToString (u8a: Uint8Array): string {
 const proto = Root.fromJSON(SVGA_PROTO)
 const message = proto.lookupType('com.opensource.svga.MovieEntity')
 
+function isHttpRequestSuccessful (status: number, response: any): boolean {
+  return response !== undefined && (status === HTTP_STATUS_OK || status === HTTP_STATUS_NOT_MODIFIED)
+}
+
 async function download (url: string): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
@@ -31,16 +41,14 @@ async function download (url: string): Promise<ArrayBuffer> {
     request.responseType = 'arraybuffer'
 
     request.onloadend = () => {
-      const isSuccess = request.response !== undefined && (request.status === 200 || request.status === 304)
-
-      if (isSuccess) {
+      if (isHttpRequestSuccessful(request.status, request.response)) {
         resolve(request.response)
       } else {
-        reject(new Error(`XMLHttpRequest failed with status: ${request.status}`))
+        reject(new Error(`${ERROR_HTTP_FAILED}: ${request.status}`))
       }
     }
 
-    request.onerror = () => reject(new Error('XMLHttpRequest network error'))
+    request.onerror = () => reject(new Error(ERROR_NETWORK))
 
     request.send()
   })
@@ -65,24 +73,35 @@ export const createParserOnMessage = (host: ParserWorkerHost) => async (event: {
   const uint8ArrayBuffer = new Uint8Array(buffer)
   const inflateData = new Zlib.Inflate(uint8ArrayBuffer).decompress()
   const movie = message.decode(inflateData) as unknown as Movie
+  const images = await processMovieImages(movie, options.isDisableImageBitmapShim)
+
+  host.postMessage(new VideoEntity(movie, images))
+}
+
+async function processMovieImages (movie: Movie, isDisableImageBitmapShim: boolean): Promise<RawImages> {
   const images: RawImages = {}
-  const shouldCreateBitmap = !options.isDisableImageBitmapShim && createImageBitmap !== undefined
+  const shouldCreateBitmap = !isDisableImageBitmapShim && createImageBitmap !== undefined
 
   for (const key in movie.images) {
-    if (key.startsWith('audio')) continue
+    if (key.startsWith(AUDIO_PREFIX)) continue
 
     const image = movie.images[key]
 
     try {
-      images[key] = shouldCreateBitmap
-        ? await createImageBitmap(new Blob([extractImageBytes(image)]))
-        : btoa(uint8ArrayToString(image))
+      images[key] = await createImageFromBytes(image, shouldCreateBitmap)
     } catch {
       // Skip corrupted or invalid image
     }
   }
 
-  host.postMessage(new VideoEntity(movie, images))
+  return images
+}
+
+async function createImageFromBytes (image: Uint8Array, useBitmap: boolean): Promise<string | ImageBitmap> {
+  if (useBitmap) {
+    return await createImageBitmap(new Blob([extractImageBytes(image)]))
+  }
+  return btoa(uint8ArrayToString(image))
 }
 
 export const createParserMockWorker = (): MockWebWorker => {

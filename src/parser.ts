@@ -25,8 +25,14 @@ export class Parser {
    * @param url SVGA 文件的下载链接
    * @returns Promise<SVGA 数据源>
    */
-  async load (url: string): Promise<Video> {
-    if (url === undefined) throw new Error('url undefined')
+  async load (url?: string): Promise<Video> {
+    if (url === undefined) {
+      throw new Error('url undefined')
+    }
+
+    if (this.worker === undefined) {
+      throw new Error('Parser Worker not found')
+    }
 
     const postData = { url: this.normalizeURL(url), options: { isDisableImageBitmapShim: this.isDisableImageBitmapShim } }
 
@@ -35,23 +41,22 @@ export class Parser {
         data instanceof Error ? reject(data) : resolve(data)
       }
 
-      if (this.worker === undefined) {
-        reject(new Error('Parser Worker not found'))
-        return
-      }
-
       this.postMessage(postData, handleMessage)
     })
   }
 
   private postMessage (postData: { url: string, options: { isDisableImageBitmapShim: boolean } }, callback: (data: Video | Error) => void): void {
-    if (this.worker instanceof Worker) {
+    if (this.isRealWorker(this.worker)) {
       this.worker.onmessage = (event: MessageEvent<Video | Error>) => callback(event.data)
       this.worker.postMessage(postData)
     } else {
       this.worker.onmessageCallback = callback
       this.worker.onmessage({ data: postData })
     }
+  }
+
+  private isRealWorker (worker: Worker | MockWebWorker): worker is Worker {
+    return worker instanceof Worker
   }
 
   private normalizeURL (url: string): string {

@@ -24,6 +24,27 @@ interface CurrentPoint {
 
 const validMethods = 'MLHVCSQRZmlhvcsqrz'
 
+interface PathSegment {
+  method: string
+  args: string[]
+}
+
+function parsePathData (d: string): PathSegment[] {
+  const pathData = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
+  const segments: PathSegment[] = []
+
+  pathData.split('|||').forEach(segment => {
+    if (segment.length === 0) return
+
+    const method = segment.charAt(0)
+    const args = segment.slice(1).trim().split(' ').filter(arg => arg.length > 0)
+
+    segments.push({ method, args })
+  })
+
+  return segments
+}
+
 function render (
   canvas: HTMLCanvasElement | OffscreenCanvas,
   bitmapsCache: BitmapsCache,
@@ -160,13 +181,11 @@ function drawBezier (
       context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
     }
 
-    const pathData = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
-    pathData.split('|||').forEach(segment => {
-      if (segment.length === 0) return
-      const firstLetter = segment.charAt(0)
-      if (validMethods.includes(firstLetter)) {
-        const args = segment.slice(1).trim().split(' ')
-        drawBezierElement(context, currentPoint, firstLetter, args)
+    const pathSegments = parsePathData(d)
+    pathSegments.forEach(segment => {
+      const { method, args } = segment
+      if (validMethods.includes(method)) {
+        drawBezierElement(context, currentPoint, method, args)
       }
     })
   }
@@ -210,79 +229,96 @@ function drawBezierElement (
   method: string,
   args: string[]
 ): void {
+  const [arg0, arg1, arg2, arg3, arg4, arg5] = args.map(Number)
+
   switch (method) {
     case 'M':
-      updateCurrentPoint(currentPoint, Number(args[0]), Number(args[1]))
+      updateCurrentPoint(currentPoint, arg0, arg1)
       context.moveTo(currentPoint.x, currentPoint.y)
       break
     case 'm':
-      updateCurrentPointRelative(currentPoint, Number(args[0]), Number(args[1]))
+      updateCurrentPointRelative(currentPoint, arg0, arg1)
       context.moveTo(currentPoint.x, currentPoint.y)
       break
     case 'L':
-      updateCurrentPoint(currentPoint, Number(args[0]), Number(args[1]))
+      updateCurrentPoint(currentPoint, arg0, arg1)
       context.lineTo(currentPoint.x, currentPoint.y)
       break
     case 'l':
-      updateCurrentPointRelative(currentPoint, Number(args[0]), Number(args[1]))
+      updateCurrentPointRelative(currentPoint, arg0, arg1)
       context.lineTo(currentPoint.x, currentPoint.y)
       break
     case 'H':
-      updateCurrentPoint(currentPoint, Number(args[0]), currentPoint.y)
+      updateCurrentPoint(currentPoint, arg0, currentPoint.y)
       context.lineTo(currentPoint.x, currentPoint.y)
       break
     case 'h':
-      updateCurrentPointRelative(currentPoint, Number(args[0]), 0)
+      updateCurrentPointRelative(currentPoint, arg0, 0)
       context.lineTo(currentPoint.x, currentPoint.y)
       break
     case 'V':
-      updateCurrentPoint(currentPoint, currentPoint.x, Number(args[0]))
+      updateCurrentPoint(currentPoint, currentPoint.x, arg0)
       context.lineTo(currentPoint.x, currentPoint.y)
       break
     case 'v':
-      updateCurrentPointRelative(currentPoint, 0, Number(args[0]))
+      updateCurrentPointRelative(currentPoint, 0, arg0)
       context.lineTo(currentPoint.x, currentPoint.y)
       break
     case 'C':
-      updateBezierPoint(currentPoint, Number(args[0]), Number(args[1]), Number(args[2]), Number(args[3]), Number(args[4]), Number(args[5]), false)
+      updateBezierPoint(currentPoint, arg0, arg1, arg2, arg3, arg4, arg5, false)
       context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 'c':
-      updateBezierPoint(currentPoint, Number(args[0]), Number(args[1]), Number(args[2]), Number(args[3]), Number(args[4]), Number(args[5]), true)
+      updateBezierPoint(currentPoint, arg0, arg1, arg2, arg3, arg4, arg5, true)
       context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 'S':
-      currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-      currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-      updateCurrentPoint(currentPoint, Number(args[2]), Number(args[3]))
-      currentPoint.x2 = Number(args[0])
-      currentPoint.y2 = Number(args[1])
+      updateSmoothBezierPoint(currentPoint, arg0, arg1, arg2, arg3, false)
       context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 's':
-      currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-      currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-      updateCurrentPointRelative(currentPoint, Number(args[2]), Number(args[3]))
-      currentPoint.x2 = currentPoint.x + Number(args[0])
-      currentPoint.y2 = currentPoint.y + Number(args[1])
+      updateSmoothBezierPoint(currentPoint, arg0, arg1, arg2, arg3, true)
       context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
       break
     case 'Q':
-      currentPoint.x1 = Number(args[0])
-      currentPoint.y1 = Number(args[1])
-      updateCurrentPoint(currentPoint, Number(args[2]), Number(args[3]))
+      updateQuadraticPoint(currentPoint, arg0, arg1, arg2, arg3, false)
       context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
       break
     case 'q':
-      currentPoint.x1 = currentPoint.x + Number(args[0])
-      currentPoint.y1 = currentPoint.y + Number(args[1])
-      updateCurrentPointRelative(currentPoint, Number(args[2]), Number(args[3]))
+      updateQuadraticPoint(currentPoint, arg0, arg1, arg2, arg3, true)
       context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
       break
     case 'Z':
     case 'z':
       context.closePath()
       break
+  }
+}
+
+function updateSmoothBezierPoint (currentPoint: CurrentPoint, x2: number, y2: number, x: number, y: number, isRelative: boolean): void {
+  currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
+  currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
+
+  if (isRelative) {
+    updateCurrentPointRelative(currentPoint, x, y)
+    currentPoint.x2 = currentPoint.x + x2
+    currentPoint.y2 = currentPoint.y + y2
+  } else {
+    updateCurrentPoint(currentPoint, x, y)
+    currentPoint.x2 = x2
+    currentPoint.y2 = y2
+  }
+}
+
+function updateQuadraticPoint (currentPoint: CurrentPoint, x1: number, y1: number, x: number, y: number, isRelative: boolean): void {
+  if (isRelative) {
+    currentPoint.x1 = currentPoint.x + x1
+    currentPoint.y1 = currentPoint.y + y1
+    updateCurrentPointRelative(currentPoint, x, y)
+  } else {
+    currentPoint.x1 = x1
+    currentPoint.y1 = y1
+    updateCurrentPoint(currentPoint, x, y)
   }
 }
 

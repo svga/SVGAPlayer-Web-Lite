@@ -1,4 +1,8 @@
-const WORKER_CODE = 'onmessage = function() { setTimeout(function() { postMessage(null) }, 1000 / 60) }'
+const FRAME_INTERVAL_MS = 1000 / 60
+const WORKER_CODE = `onmessage = function() { setTimeout(function() { postMessage(null) }, ${FRAME_INTERVAL_MS}) }`
+
+const FILL_MODE_FORWARDS = 0
+const FILL_MODE_BACKWARDS = 1
 
 export class Animator {
   public isOpenNoExecutionDelay = false
@@ -20,11 +24,14 @@ export class Animator {
   private startTime = 0
   private currentFrication = 0.0
   private worker: Worker | null = null
+  private boundDoFrame: (() => void) | null = null
 
   public start (): void {
+    this.stop()
     this.isRunning = true
     this.startTime = this.currentTimeMillsecond()
     this.currentFrication = 0.0
+    this.boundDoFrame = this.doFrame.bind(this)
 
     if (this.isOpenNoExecutionDelay && this.worker === null) {
       this.worker = new Worker(window.URL.createObjectURL(new Blob([WORKER_CODE])))
@@ -56,18 +63,18 @@ export class Animator {
 
   private scheduleNextFrame (): void {
     if (this.worker !== null) {
-      this.worker.onmessage = this.doFrame.bind(this)
+      this.worker.onmessage = this.boundDoFrame!
       this.worker.postMessage(null)
     } else {
-      window.requestAnimationFrame(this.doFrame.bind(this))
+      window.requestAnimationFrame(this.boundDoFrame!)
     }
   }
 
   private doDeltaTime (deltaTime: number): void {
-    const totalDuration = this.loopStart + (this.duration - this.loopStart) * this.loop
+    const totalDuration = this.calculateTotalDuration()
 
     if (deltaTime >= totalDuration) {
-      this.currentFrication = this.fillRule === 1 ? 0 : 1
+      this.currentFrication = this.fillRule === FILL_MODE_BACKWARDS ? 0 : 1
       this.isRunning = false
     } else {
       this.currentFrication = this.calculateFrication(deltaTime)
@@ -81,11 +88,19 @@ export class Animator {
     }
   }
 
+  private calculateTotalDuration (): number {
+    const loopDuration = this.duration - this.loopStart
+    return this.loopStart + loopDuration * this.loop
+  }
+
   private calculateFrication (deltaTime: number): number {
-    if (deltaTime <= this.duration) {
+    if (deltaTime < this.duration) {
       return deltaTime / this.duration
     }
-    return ((deltaTime - this.loopStart) % (this.duration - this.loopStart) + this.loopStart) / this.duration
+
+    const loopDuration = this.duration - this.loopStart
+    const timeInLoop = (deltaTime - this.loopStart) % loopDuration
+    return (timeInLoop + this.loopStart) / this.duration
   }
 
   private terminateWorker (): void {

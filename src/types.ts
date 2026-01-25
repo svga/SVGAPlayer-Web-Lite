@@ -257,6 +257,12 @@ export const enum PLAYER_PLAY_MODE {
   FALLBACKS = 'fallbacks'
 }
 
+/**
+ * SVGA 文件音频图片前缀
+ * 解析时需要跳过以音频为前缀的图片
+ */
+export const AUDIO_PREFIX = 'audio'
+
 export interface PlayerConfig {
   /**
    * 播放动画的 Canvas 元素
