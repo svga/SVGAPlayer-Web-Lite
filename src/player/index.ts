@@ -81,7 +81,7 @@ export class Player {
   */
   public setConfig (options: PlayerConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined && options.startFrame > options.endFrame) {
-      throw new Error('StartFrame should > EndFrame')
+      throw new Error('startFrame must be less than or equal to endFrame')
     }
 
     const {
@@ -247,18 +247,22 @@ export class Player {
    * 清理缓存资源，释放 ImageBitmap 显存
    */
   private clearCache (): void {
-    // 清理帧缓存中的 ImageBitmap
+    // 清理帧缓存中的资源
     Object.values(this.cacheFrames).forEach(frame => {
       if (frame instanceof ImageBitmap) {
         frame.close()
+      } else if (frame instanceof HTMLImageElement) {
+        frame.src = ''
       }
     })
     this.cacheFrames = {}
 
-    // 清理 bitmapsCache 中的 ImageBitmap
+    // 清理 bitmapsCache 中的资源
     Object.values(this.bitmapsCache).forEach(bitmap => {
       if (bitmap instanceof ImageBitmap) {
         bitmap.close()
+      } else if (bitmap instanceof HTMLImageElement) {
+        bitmap.src = ''
       }
     })
     this.bitmapsCache = {}
@@ -425,9 +429,11 @@ export class Player {
     if (keys.length >= MAX_CACHE_FRAMES) {
       const oldestKey = keys[0]
       const oldestFrame = this.cacheFrames[oldestKey]
-      // 释放 ImageBitmap 显存
+      // 释放资源（ImageBitmap 显存或 HTMLImageElement 内存）
       if (oldestFrame instanceof ImageBitmap) {
         oldestFrame.close()
+      } else if (oldestFrame instanceof HTMLImageElement) {
+        oldestFrame.src = ''
       }
       delete this.cacheFrames[oldestKey]
     }

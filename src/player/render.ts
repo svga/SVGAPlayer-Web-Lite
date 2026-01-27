@@ -24,6 +24,8 @@ interface CurrentPoint {
 
 const validMethods = 'MLHVCSQRZmlhvcsqrz'
 
+const ALPHA_THRESHOLD = 0.05
+
 interface PathSegment {
   method: string
   args: string[]
@@ -76,7 +78,7 @@ function drawSprite (
 ): void {
   const frame = sprite.frames[currentFrame]
 
-  if (frame.alpha < 0.05) return
+  if (frame.alpha < ALPHA_THRESHOLD) return
 
   const transform = frame.transform
   context.save()
