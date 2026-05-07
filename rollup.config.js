@@ -47,7 +47,8 @@ const config = [
       resolve({ jsnext: true, preferBuiltins: true, browser: true }),
       commonjs(),
       typescript({
-        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
+        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json',
+        include: ['**/*.ts']
       }),
       babelOutputPlugin,
       IS_TEST_ENV && serve(TEST_DIR),
@@ -75,7 +76,8 @@ if (IS_TEST_ENV || FORMAT === 'umd') {
       resolve({ jsnext: true, preferBuiltins: true, browser: true }),
       commonjs(),
       typescript({
-        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json'
+        tsconfig: IS_TEST_ENV ? 'tsconfig.test.json' : 'tsconfig.json',
+        include: ['**/*.ts']
       }),
       babelOutputPlugin,
       !IS_TEST_ENV && terser(),

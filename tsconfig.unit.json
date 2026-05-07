@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "module": "commonjs",
+    "outDir": "__test__/unit-dist"
+  },
+  "include": [
+    "src/**/*.ts",
+    "__test__/unit/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__test__/unit-dist"
+  ]
+}

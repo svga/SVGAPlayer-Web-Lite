@@ -46,23 +46,26 @@ npm i svga
 ```
 
 ```js
-import { Parser, Player } from 'svga'
+import { SVGAPlayer } from 'svga'
 
-const parser = new Parser()
-const svga = await parser.load('xx.svga')
+const player = new SVGAPlayer({
+  container: document.getElementById('canvas'),
+  renderMode: 'auto'
+})
 
-const player = new Player(document.getElementById('canvas'))
-await player.mount(svga)
+await player.parse('xx.svga')
+await player.compile()
 
-player.onStart = () => console.log('onStart')
-player.onResume = () => console.log('onResume')
-player.onPause = () => console.log('onPause')
-player.onStop = () => console.log('onStop')
-player.onProcess = () => console.log('onProcess', player.progress)
-player.onEnd = () => console.log('onEnd')
+player.on('start', () => console.log('onStart'))
+player.on('resume', () => console.log('onResume'))
+player.on('pause', () => console.log('onPause'))
+player.on('stop', () => console.log('onStop'))
+player.on('process', ({ currentFrame, progress }) => console.log('onProcess', currentFrame, progress))
+player.on('end', () => console.log('onEnd'))
+player.on('error', error => console.error(error))
 
 // 开始播放动画
-player.start()
+player.play()
 
 // 暂停播放动画
 // player.pause()
@@ -77,19 +80,21 @@ player.start()
 // player.clear()
 
 // 销毁
-// parser.destroy()
 // player.destroy()
 ```
 
 ### ParserConfigOptions
 
 ```ts
-new Parser({
-  // 是否取消使用 WebWorker，默认值 false
-  isDisableWebWorker: false,
+new SVGAPlayer({
+  container: document.getElementById('canvas'),
+  parserOptions: {
+    // 是否取消使用 WebWorker，默认值 false
+    isDisableWebWorker: false,
 
-  // 是否取消使用 ImageBitmap 垫片，默认值 false
-  isDisableImageBitmapShim: false
+    // 是否取消使用 ImageBitmap 垫片，默认值 false
+    isDisableImageBitmapShim: false
+  }
 })
 ```
 
@@ -110,9 +115,12 @@ const enum PLAYER_PLAY_MODE {
   FALLBACKS = 'fallbacks'
 }
 
-new Player({
+new SVGAPlayer({
   // 播放动画的 Canvas 元素
   container?: HTMLCanvasElement
+
+  // 渲染模式，默认值 auto。auto 会优先尝试 WebGL，能力不满足时整体退回 Canvas
+  renderMode?: 'auto' | 'canvas' | 'webgl'
 
   // 循环次数，默认值 0（无限循环）
   loop?: number | boolean
@@ -155,7 +163,7 @@ new Player({
 可通过修改解析后的数据元，从而实现修改元素、插入动态元素功能
 
 ```js
-const svga = await parser.load('xx.svga')
+const svga = await player.parse('xx.svga')
 
 // 替换元素
 const image = new Image()
@@ -174,7 +182,7 @@ fontContext.fillStyle = '#000'
 fontContext.fillText(text, fontCanvas.clientWidth / 2, fontCanvas.clientHeight / 2)
 svga.dynamicElements['key'] = fontCanvas
 
-await player.mount(svga)
+await player.compile()
 ```
 
 ### DB
@@ -182,19 +190,27 @@ await player.mount(svga)
 利用 [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) 进行持久化缓存已下载并解析的数据元，可避免重复消耗资源对相同 SVGA 下载和解析
 
 ```js
-import { DB } from 'svga'
+import { DB, SVGAPlayer } from 'svga'
 
 try {
   const url = 'xx.svga'
   const db = new DB()
+  const player = new SVGAPlayer({
+    container: document.getElementById('canvas'),
+    parserOptions: {
+      // ImageBitmap 数据无法直接存储到 DB 内
+      isDisableImageBitmapShim: true
+    }
+  })
   let svga = await db.find(url)
   if (!svga) {
-    // Parser 需要配置取消使用 ImageBitmap 特性，ImageBitmap 数据无法直接存储到 DB 内
-    const parser = new Parser({ isDisableImageBitmapShim: true })
-    svga = await parser.load(url)
+    svga = await player.parse(url)
     await db.insert(url, svga)
+  } else {
+    await player.parse(svga)
   }
-  await player.mount(svga)
+  await player.compile()
+  player.play()
 } catch (error) {
   console.error(error)
 }
@@ -225,10 +241,12 @@ module.exports = {
 }
 
 // js
-import { Parser } from 'svga'
+import { SVGAPlayer } from 'svga'
 import xx from './xx.svga'
-const parser = new Parser()
-const svga = await parser.load(xx)
+const player = new SVGAPlayer(document.getElementById('canvas'))
+await player.parse(xx)
+await player.compile()
+player.play()
 ```
 
 ## Vite SVGA
@@ -244,10 +262,12 @@ export default defineConfig({
 })
 
 // js
-import { Parser } from 'svga'
+import { SVGAPlayer } from 'svga'
 import xx from './xx.svga?url'
-const parser = new Parser()
-const svga = await parser.load(xx)
+const player = new SVGAPlayer(document.getElementById('canvas'))
+await player.parse(xx)
+await player.compile()
+player.play()
 ```
 
 ## [VSCode Plugin SVGA Preview](https://marketplace.visualstudio.com/items?itemName=svga-perview.svga-perview)

@@ -1,6 +1,7 @@
 node_modules
 dist
 __test__/*.js
+__test__/unit-dist
 .omx/
 .codex/*
 !.codex/agents/
@@ -10,3 +11,4 @@ __test__/*.js
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+.npm-cache

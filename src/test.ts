@@ -1,5 +1,5 @@
 import { PLAYER_FILL_MODE, PLAYER_PLAY_MODE } from 'types'
-import { Parser, Player, DB } from './index'
+import { DB, SVGAPlayer } from './index'
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
 
@@ -13,17 +13,14 @@ const TESTCASE1 = async (): Promise<void> => {
   // const url = '/svga/TwitterHeart.svga'
   // const url = '/svga/loading-1.svga'
   // const url = '/svga/kaola.svga'
-  const parser = new Parser()
-  const svga = await parser.load(url)
+  const player = new SVGAPlayer({
+    container: canvas,
+    loop: 1
+  })
+  const svga = await player.parse(url)
   console.log(svga)
-  if (canvas !== null) {
-    const player = new Player({
-      container: canvas,
-      loop: 1
-    })
-    await player.mount(svga)
-    player.start()
-  }
+  await player.compile()
+  player.play()
 }
 
 /**
@@ -32,31 +29,27 @@ const TESTCASE1 = async (): Promise<void> => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  let parser = new Parser()
-  let player = new Player(canvas)
+  let player = new SVGAPlayer(canvas)
   console.time('load')
-  let svga = await parser.load(url)
+  await player.parse(url)
   console.timeEnd('load')
-  console.time('load')
-  console.time('mount')
-  await player.mount(svga)
-  console.timeEnd('mount')
-  player.onStart = () => console.log('onStart')
-  player.onResume = () => console.log('onResume')
-  player.onPause = () => console.log('onPause')
-  player.onStop = () => console.log('onStop')
-  player.onProcess = () => console.log('onProcess')
-  player.onEnd = () => console.log('onEnd')
-  ;(window as any).start = () => player.start()
+  console.time('compile')
+  await player.compile()
+  console.timeEnd('compile')
+  player.on('start', () => console.log('onStart'))
+  player.on('resume', () => console.log('onResume'))
+  player.on('pause', () => console.log('onPause'))
+  player.on('stop', () => console.log('onStop'))
+  player.on('process', () => console.log('onProcess'))
+  player.on('end', () => console.log('onEnd'))
+  player.on('error', error => console.error(error))
+  ;(window as any).start = () => player.play()
   ;(window as any).pause = () => player.pause()
   ;(window as any).resume = () => player.resume()
   ;(window as any).stop = () => player.stop()
   ;(window as any).clear = () => player.clear()
   ;(window as any).destroy = () => {
-    parser.destroy()
     player.destroy()
-    ;(svga as any) = null
-    ;(parser as any) = null
     ;(player as any) = null
   }
 }
@@ -82,15 +75,14 @@ const TESTCASE3 = async (): Promise<void> => {
   image.src = 'https://ovo-oss.duowan.com/upload/1626079061448.png'
 
   const url = '/svga/kingset.svga'
-  const parser = new Parser()
-  const svga = await parser.load(url)
+  const player = new SVGAPlayer(canvas)
+  const svga = await player.parse(url)
 
   svga.replaceElements['99'] = image
   svga.dynamicElements.banner = fontCanvas
 
-  const player = new Player(canvas)
-  await player.mount(svga)
-  player.start()
+  await player.compile()
+  player.play()
 }
 
 /**
@@ -100,16 +92,22 @@ const TESTCASE3 = async (): Promise<void> => {
 const TESTCASE4 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const db = new DB()
+  const player = new SVGAPlayer({
+    container: canvas,
+    parserOptions: {
+      isDisableImageBitmapShim: true
+    }
+  })
   let svga = await db.find(url)
   console.log('db', svga)
   if (svga === undefined) {
-    const parser = new Parser({ isDisableImageBitmapShim: true })
-    svga = await parser.load(url)
+    svga = await player.parse(url)
     await db.insert(url, svga)
+  } else {
+    await player.parse(svga)
   }
-  const player = new Player(canvas)
-  await player.mount(svga)
-  player.start()
+  await player.compile()
+  player.play()
 }
 
 /**
@@ -118,9 +116,7 @@ const TESTCASE4 = async (): Promise<void> => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE5 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  const parser = new Parser()
-  const svga = await parser.load(url)
-  const player = new Player({
+  const player = new SVGAPlayer({
     container: canvas,
     loop: 0,
     isCacheFrames: true,
@@ -130,8 +126,9 @@ const TESTCASE5 = async (): Promise<void> => {
     startFrame: 10,
     endFrame: 40
   })
-  await player.mount(svga)
-  player.start()
+  await player.parse(url)
+  await player.compile()
+  player.play()
 }
 
 /**
@@ -140,25 +137,24 @@ const TESTCASE5 = async (): Promise<void> => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE6 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  const parser = new Parser()
-  const svga = await parser.load(url)
-  console.log(svga)
-  const player = new Player({
+  const player = new SVGAPlayer({
     container: canvas,
     loop: 1,
     playMode: PLAYER_PLAY_MODE.FORWARDS
   })
-  await player.mount(svga)
-  player.start()
-  player.onEnd = () => {
+  const svga = await player.parse(url)
+  console.log(svga)
+  await player.compile()
+  player.play()
+  player.on('end', () => {
     console.log('onEnd', player.currentFrame)
     const playMode = player.config.playMode === PLAYER_PLAY_MODE.FORWARDS ? PLAYER_PLAY_MODE.FALLBACKS : PLAYER_PLAY_MODE.FORWARDS
     player.setConfig({
       loop: 1,
       playMode
     })
-    player.start()
-  }
+    player.play()
+  })
 }
 
 /**
@@ -168,12 +164,10 @@ const TESTCASE6 = async (): Promise<void> => {
 const TESTCASE7 = async (): Promise<void> => {
   const url = '/svga/undefined.svga'
   try {
-    const parser = new Parser()
-    // const parser = new Parser({ isDisableWebWorker: true })
-    const svga = await parser.load(url)
-    const player = new Player(canvas)
-    await player.mount(svga)
-    player.start()
+    const player = new SVGAPlayer(canvas)
+    await player.parse(url)
+    await player.compile()
+    player.play()
   } catch (error) {
     console.error('Catch >>>>', error)
   }
@@ -185,16 +179,15 @@ const TESTCASE7 = async (): Promise<void> => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE8 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  const parser = new Parser()
-  const svga = await parser.load(url)
-  const player = new Player(canvas)
-  await player.mount(svga)
+  const player = new SVGAPlayer(canvas)
+  await player.parse(url)
+  await player.compile()
   player.setConfig({
     loop: 1,
     startFrame: 0,
     endFrame: 1
   })
-  player.start()
+  player.play()
 
   setTimeout(() => {
     console.log('start')
@@ -203,7 +196,7 @@ const TESTCASE8 = async (): Promise<void> => {
       startFrame: 0,
       endFrame: 0
     })
-    player.start()
+    player.play()
   }, 5000)
 }
 
