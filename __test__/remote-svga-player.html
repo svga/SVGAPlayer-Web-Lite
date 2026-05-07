@@ -37,6 +37,29 @@
       cursor: pointer;
     }
 
+    select,
+    input {
+      height: 34px;
+      padding: 0 10px;
+      border: 1px solid #b8c2cc;
+      border-radius: 6px;
+      background: #fff;
+      color: #17202a;
+      font-size: 14px;
+    }
+
+    input {
+      min-width: min(520px, 100%);
+      flex: 1 1 320px;
+    }
+
+    label {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 14px;
+    }
+
     .summary {
       margin: 12px 0 16px;
       min-height: 24px;
@@ -113,6 +136,21 @@
   <main>
     <h1>SVGAPlayer Remote Playback</h1>
     <div class="toolbar">
+      <label>
+        Source
+        <select id="sourcePreset"></select>
+      </label>
+      <input id="customSource" type="url" placeholder="Custom SVGA URL">
+      <label>
+        Mode
+        <select id="renderMode">
+          <option value="all">all</option>
+          <option value="canvas">canvas</option>
+          <option value="auto">auto</option>
+          <option value="webgl">webgl</option>
+        </select>
+      </label>
+      <button id="runSelected">Run Selected</button>
       <button id="runAll">Run All Modes</button>
       <button id="playAll">Play All</button>
       <button id="pauseAll">Pause All</button>
@@ -122,7 +160,7 @@
       <button id="restoreContext">Restore WebGL Context</button>
       <button id="destroyAll">Destroy All</button>
     </div>
-    <div id="summary" class="summary">Ready. Run canvas, auto, and webgl together; all three must play for PASS.</div>
+    <div id="summary" class="summary">Ready. Choose a source and mode, or run canvas, auto, and webgl together.</div>
     <div class="grid">
       <section class="panel" data-mode="canvas">
         <h2>canvas</h2>
@@ -145,7 +183,32 @@
 
   <script src="../dist/index.min.js"></script>
   <script>
-    const source = 'https://static-web.bigolive.tv/as/fhab-static/84747/half-common.svga'
+    const sourcePresets = [
+      {
+        label: 'Local rect fill',
+        value: 'svga/rect-fill.svga'
+      },
+      {
+        label: 'Local rect stroke',
+        value: 'svga/rect-stroke.svga'
+      },
+      {
+        label: 'Local rounded rect fill',
+        value: 'svga/rounded-rect-fill.svga'
+      },
+      {
+        label: 'Local rounded rect stroke',
+        value: 'svga/rounded-rect-stroke.svga'
+      },
+      {
+        label: 'Remote half common',
+        value: 'https://static-web.bigolive.tv/as/fhab-static/84747/half-common.svga'
+      },
+      {
+        label: 'Custom URL',
+        value: 'custom'
+      }
+    ]
     const modes = ['canvas', 'auto', 'webgl']
     const tests = {}
     let loseContext = null
@@ -252,24 +315,45 @@
     }
 
     function applyCanvasReplacements(player, video, mode) {
+      const keys = video.sprites.map(item => item.imageKey)
+      if (!keys.includes('image') && !keys.includes('title')) {
+        write(`${mode} no image/title replacement targets`)
+        return
+      }
+
       const imageLayout = getReplaceLayout(video, 'image')
       const titleLayout = getReplaceLayout(video, 'title')
-      player.replace('image', createImageReplacement(mode, imageLayout))
-      player.replace('title', createTitleReplacement(mode, titleLayout))
+      if (keys.includes('image')) player.replace('image', createImageReplacement(mode, imageLayout))
+      if (keys.includes('title')) player.replace('title', createTitleReplacement(mode, titleLayout))
       write(`${mode} replaced image ${imageLayout.width}x${imageLayout.height} and title ${titleLayout.width}x${titleLayout.height}`)
     }
 
-    function updateSummary() {
-      const values = modes.map(mode => tests[mode])
+    function selectedModes() {
+      const mode = document.getElementById('renderMode').value
+      return mode === 'all' ? modes : [mode]
+    }
+
+    function selectedSource() {
+      const preset = document.getElementById('sourcePreset').value
+      if (preset !== 'custom') return preset
+
+      const custom = document.getElementById('customSource').value.trim()
+      if (!custom) throw new Error('Custom SVGA URL is empty')
+      return custom
+    }
+
+    function updateSummary(activeModes) {
+      const expectedModes = activeModes || selectedModes()
+      const values = expectedModes.map(mode => tests[mode])
       if (values.some(test => test && test.failed)) {
         setSummary('FAIL: at least one render mode failed.', 'fail')
         return
       }
       if (values.every(test => test && test.passed)) {
-        setSummary('PASS: canvas, auto, and webgl are all playing.', 'pass')
+        setSummary(`PASS: ${expectedModes.join(', ')} ${expectedModes.length === 1 ? 'is' : 'are'} playing.`, 'pass')
         return
       }
-      setSummary('Running: waiting for canvas, auto, and webgl to all render frames.', '')
+      setSummary(`Running: waiting for ${expectedModes.join(', ')} to render frames.`, '')
     }
 
     function destroyAll() {
@@ -285,13 +369,22 @@
 
     function markFailure(mode, error) {
       const message = error instanceof Error ? error.message : String(error)
-      tests[mode].failed = true
+      const test = tests[mode] || {
+        mode,
+        player: null,
+        backendType: 'unknown',
+        framesSeen: 0,
+        passed: false,
+        failed: false
+      }
+      tests[mode] = test
+      test.failed = true
       setStatus(mode, `failed: ${message}`, 'fail')
       write(`${mode} failed: ${message}`)
       updateSummary()
     }
 
-    async function runMode(mode) {
+    async function runMode(mode, source, activeModes) {
       const canvas = document.getElementById(`canvas-${mode}`)
       const test = {
         mode,
@@ -321,7 +414,7 @@
           `frame ${currentFrame}, progress ${(progress * 100).toFixed(1)}%, backend ${test.backendType}`,
           test.passed ? 'pass' : ''
         )
-        updateSummary()
+        updateSummary(activeModes)
       })
 
       await test.player.load(source)
@@ -337,16 +430,56 @@
       setStatus(mode, `compiled ${video.frames} frames, ${video.fps}fps, backend ${compiled.backendType}`, '')
       test.player.start()
       write(`${mode} started via backend ${compiled.backendType}`)
+      if (video.frames <= 1 && !test.passed) {
+        if (typeof test.player.drawFrame === 'function') test.player.drawFrame(0)
+        test.passed = true
+        setStatus(mode, `single frame rendered, backend ${test.backendType}`, 'pass')
+        updateSummary(activeModes)
+      }
+    }
+
+    async function runModes(activeModes) {
+      const source = selectedSource()
+      destroyAll()
+      setSummary(`Running: loading ${activeModes.join(', ')}.`, '')
+      write(`loading ${source}`)
+      await Promise.all(activeModes.map(mode => runMode(mode, source, activeModes).catch(error => markFailure(mode, error))))
+      updateSummary(activeModes)
+    }
+
+    async function runSelectedModes() {
+      try {
+        await runModes(selectedModes())
+      } catch (error) {
+        setSummary(error instanceof Error ? error.message : String(error), 'fail')
+        write(`run failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
 
     async function runAllModes() {
-      destroyAll()
-      setSummary('Running: loading canvas, auto, and webgl.', '')
-      write(`loading ${source}`)
-      await Promise.all(modes.map(mode => runMode(mode).catch(error => markFailure(mode, error))))
-      updateSummary()
+      try {
+        await runModes(modes)
+      } catch (error) {
+        setSummary(error instanceof Error ? error.message : String(error), 'fail')
+        write(`run failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
 
+    const sourcePreset = document.getElementById('sourcePreset')
+    sourcePresets.forEach(item => {
+      const option = document.createElement('option')
+      option.value = item.value
+      option.textContent = item.label
+      sourcePreset.appendChild(option)
+    })
+    sourcePreset.onchange = () => {
+      const customSource = document.getElementById('customSource')
+      customSource.disabled = sourcePreset.value !== 'custom'
+      if (sourcePreset.value !== 'custom') customSource.value = sourcePreset.value
+    }
+    sourcePreset.onchange()
+
+    document.getElementById('runSelected').onclick = () => runSelectedModes()
     document.getElementById('runAll').onclick = () => runAllModes()
     document.getElementById('playAll').onclick = () => modes.forEach(mode => tests[mode] && tests[mode].player.play())
     document.getElementById('pauseAll').onclick = () => modes.forEach(mode => tests[mode] && tests[mode].player.pause())
@@ -377,7 +510,7 @@
       write('requested webgl mode context restore')
     }
 
-    runAllModes()
+    runSelectedModes()
   </script>
 </body>
 </html>

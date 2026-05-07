@@ -86,32 +86,6 @@ export class VideoEntity implements Video {
             lineDash[2] = mStyles.lineDashIII
           }
 
-          let lineCap: CanvasLineCap | null = null
-          switch (mStyles.lineCap) {
-            case LINE_CAP_CODE.BUTT:
-              lineCap = 'butt'
-              break
-            case LINE_CAP_CODE.ROUND:
-              lineCap = 'round'
-              break
-            case LINE_CAP_CODE.SQUARE:
-              lineCap = 'square'
-              break
-          }
-
-          let lineJoin: CanvasLineJoin | null = null
-          switch (mStyles.lineJoin) {
-            case LINE_JOIN_CODE.BEVEL:
-              lineJoin = 'bevel'
-              break
-            case LINE_JOIN_CODE.ROUND:
-              lineJoin = 'round'
-              break
-            case LINE_JOIN_CODE.MITER:
-              lineJoin = 'miter'
-              break
-          }
-
           let fill: RGBA<number, number, number, number> | null = null
           if (mStyles.fill !== null) {
             fill = `rgba(${parseInt((mStyles.fill.r * 255).toString())}, ${parseInt((mStyles.fill.g * 255).toString())}, ${parseInt((mStyles.fill.b * 255).toString())}, ${parseInt((mStyles.fill.a * 1).toString())})`
@@ -122,7 +96,44 @@ export class VideoEntity implements Video {
             stroke = `rgba(${parseInt((mStyles.stroke.r * 255).toString())}, ${parseInt((mStyles.stroke.g * 255).toString())}, ${parseInt((mStyles.stroke.b * 255).toString())}, ${parseInt((mStyles.stroke.a * 1).toString())})`
           }
 
-          const { strokeWidth, miterLimit } = mStyles
+          const strokeWidth = mStyles.strokeWidth !== null && mStyles.strokeWidth > 0
+            ? mStyles.strokeWidth
+            : null
+          const miterLimit = mStyles.miterLimit !== null && mStyles.miterLimit > 0
+            ? mStyles.miterLimit
+            : null
+          const hasStrokeStyle = stroke !== null || strokeWidth !== null
+          const hasLineCap = Object.prototype.hasOwnProperty.call(mStyles, 'lineCap')
+          const hasLineJoin = Object.prototype.hasOwnProperty.call(mStyles, 'lineJoin')
+          let lineCap: CanvasLineCap | null = null
+          if (hasStrokeStyle && hasLineCap) {
+            switch (mStyles.lineCap) {
+              case LINE_CAP_CODE.BUTT:
+                lineCap = 'butt'
+                break
+              case LINE_CAP_CODE.ROUND:
+                lineCap = 'round'
+                break
+              case LINE_CAP_CODE.SQUARE:
+                lineCap = 'square'
+                break
+            }
+          }
+
+          let lineJoin: CanvasLineJoin | null = null
+          if (hasStrokeStyle && hasLineJoin) {
+            switch (mStyles.lineJoin) {
+              case LINE_JOIN_CODE.BEVEL:
+                lineJoin = 'bevel'
+                break
+              case LINE_JOIN_CODE.ROUND:
+                lineJoin = 'round'
+                break
+              case LINE_JOIN_CODE.MITER:
+                lineJoin = 'miter'
+                break
+            }
+          }
 
           const styles = {
             lineDash,

@@ -285,6 +285,10 @@ export class SVGAPlayer {
     this.backend.clear()
   }
 
+  public snapshot (): HTMLCanvasElement | ImageBitmap | null {
+    return this.backend.snapshot?.() ?? null
+  }
+
   public replace (
     elementKey: string,
     texture: ReplaceElement | DynamicElement,

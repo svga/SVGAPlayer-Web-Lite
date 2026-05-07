@@ -1,5 +1,12 @@
 import * as assert from 'assert'
+import * as fs from 'fs'
+import * as path from 'path'
+import * as zlib from 'zlib'
+import { Root } from 'protobufjs'
+import SVGA_PROTO from '../../src/parser/svga-proto'
+import { VideoEntity } from '../../src/parser/video-entity'
 import {
+  Movie,
   PLAYER_FILL_MODE,
   PLAYER_PLAY_MODE,
   SHAPE_TYPE,
@@ -156,10 +163,14 @@ class FakeWebGLRenderingContext {
   public deleteProgram (): void { this.calls.push('deleteProgram') }
   public createBuffer (): WebGLBuffer { return {} as WebGLBuffer }
   public deleteBuffer (): void { this.calls.push('deleteBuffer') }
-  public getAttribLocation (): number { return 1 }
+  public getAttribLocation (_program: WebGLProgram, name: string): number {
+    return name === 'a_texCoord' ? 2 : 1
+  }
   public getUniformLocation (): WebGLUniformLocation { return {} as WebGLUniformLocation }
   public bindBuffer (): void {}
-  public bufferData (): void {}
+  public bufferData (_target: number, data: BufferSource): void {
+    this.calls.push(`bufferData:${data.byteLength}`)
+  }
   public viewport (): void {}
   public useProgram (): void {}
   public enable (): void {}
@@ -169,10 +180,15 @@ class FakeWebGLRenderingContext {
   public clear (): void {}
   public bindTexture (): void {}
   public enableVertexAttribArray (): void {}
+  public disableVertexAttribArray (): void { this.calls.push('disableVertexAttribArray') }
   public vertexAttribPointer (): void {}
   public uniformMatrix3fv (): void {}
   public uniform1f (): void {}
-  public drawArrays (): void { this.calls.push('drawArrays') }
+  public uniform4f (): void { this.calls.push('uniform4f') }
+  public drawArrays (_mode: number, _first: number, count: number): void {
+    this.calls.push('drawArrays')
+    this.calls.push(`drawArrays:${count}`)
+  }
   public createTexture (): WebGLTexture { return {} as WebGLTexture }
   public deleteTexture (): void { this.calls.push('deleteTexture') }
   public texParameteri (): void {}
@@ -197,6 +213,32 @@ class FakeWebGLRenderingContext {
 const parserWorkerPosts: Array<{ url: string }> = []
 const parserWorkerResponders: Array<(response: Video | Error) => void> = []
 let fakeWebGLAvailable = true
+
+function decodeMovieFixture (fixturePath: string): Movie {
+  const message = Root.fromJSON(SVGA_PROTO).lookupType('com.opensource.svga.MovieEntity')
+  const buffer = fs.readFileSync(fixturePath)
+  return message.decode(zlib.inflateSync(buffer)) as unknown as Movie
+}
+
+function loadRectFillFixtureVideo (): Video {
+  const fixturePath = path.resolve(process.cwd(), '__test__/svga/rect-fill.svga')
+  return new VideoEntity(decodeMovieFixture(fixturePath), {})
+}
+
+function loadRectStrokeFixtureVideo (): Video {
+  const fixturePath = path.resolve(process.cwd(), '__test__/svga/rect-stroke.svga')
+  return new VideoEntity(decodeMovieFixture(fixturePath), {})
+}
+
+function loadRoundedRectFillFixtureVideo (): Video {
+  const fixturePath = path.resolve(process.cwd(), '__test__/svga/rounded-rect-fill.svga')
+  return new VideoEntity(decodeMovieFixture(fixturePath), {})
+}
+
+function loadRoundedRectStrokeFixtureVideo (): Video {
+  const fixturePath = path.resolve(process.cwd(), '__test__/svga/rounded-rect-stroke.svga')
+  return new VideoEntity(decodeMovieFixture(fixturePath), {})
+}
 
 function resolveNextParserLoad (response: Video | Error = createVideo({ withImage: true })): void {
   const responder = parserWorkerResponders.shift()
@@ -282,14 +324,20 @@ function createVideo (options: {
   withHole?: boolean
   withMask?: boolean
   withDash?: boolean
+  withStroke?: boolean
+  withoutFill?: boolean
+  strokeWidth?: number
+  cornerRadius?: number
+  withLineJoin?: boolean
   withUnsupportedPath?: boolean
 } = {}): Video {
+  const hasStroke = options.withDash === true || options.withStroke === true
   const styles = {
-    fill: 'rgba(255, 0, 0, 1)' as const,
-    stroke: options.withDash === true ? 'rgba(0, 0, 0, 1)' as const : null,
-    strokeWidth: options.withDash === true ? 2 : null,
+    fill: options.withoutFill === true ? null : 'rgba(255, 0, 0, 1)' as const,
+    stroke: hasStroke ? 'rgba(0, 0, 0, 1)' as const : null,
+    strokeWidth: hasStroke ? options.strokeWidth ?? 2 : null,
     lineCap: null,
-    lineJoin: null,
+    lineJoin: options.withLineJoin === true ? 'round' as const : null,
     miterLimit: null,
     lineDash: options.withDash === true ? [2, 2] : null
   }
@@ -309,7 +357,13 @@ function createVideo (options: {
     : shapeType === 'rect' || shapeType === 'roundedRect'
       ? {
           type: SHAPE_TYPE.RECT,
-          path: { x: 0, y: 0, width: 10, height: 12, cornerRadius: shapeType === 'roundedRect' ? 4 : 0 },
+          path: {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 12,
+            cornerRadius: shapeType === 'roundedRect' ? options.cornerRadius ?? 4 : 0
+          },
           styles,
           transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
         }
@@ -537,6 +591,7 @@ async function testPublicEntrySurface (): Promise<void> {
 
   assert.equal(typeof entry.SVGAPlayer, 'function')
   assert.equal(entry.default, entry.SVGAPlayer)
+  assert.equal(typeof (entry.SVGAPlayer as any).prototype.snapshot, 'function')
   assert.equal(typeof entry.DB, 'function')
   removedExports.forEach(name => {
     assert.equal(Object.prototype.hasOwnProperty.call(entry, name), false)
@@ -592,6 +647,119 @@ async function testCompilerMetadata (): Promise<void> {
   assert.equal(rectAnimation.requiredCapabilities.shape.rect.fill, true)
   assert.equal(roundedRectAnimation.requiredCapabilities.shape.roundedRect.fill, true)
   assert.equal(ellipseAnimation.requiredCapabilities.shape.ellipse.fill, true)
+  assert.equal(
+    diffRenderCapabilities(rectAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.rect.fill'),
+    false
+  )
+  assert.equal(
+    diffRenderCapabilities(roundedRectAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.roundedRect.fill'),
+    false
+  )
+}
+
+async function testRectFillFixtureDecodeAndCompile (): Promise<void> {
+  installBrowserFakes()
+  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const video = loadRectFillFixtureVideo()
+  const shape = video.sprites[0].frames[0].shapes[0]
+  assert.equal(Object.keys(video.images).length, 0)
+  assert.equal(shape.type, SHAPE_TYPE.RECT)
+  if (shape.type !== SHAPE_TYPE.RECT) throw new Error('rect-fill fixture did not decode a RECT shape')
+  assert.equal(shape.path.cornerRadius, 0)
+  assert.equal(shape.styles.fill, 'rgba(255, 0, 0, 1)')
+  assert.equal(shape.styles.stroke, null)
+  assert.equal(shape.styles.strokeWidth, null)
+  assert.equal(shape.styles.lineCap, null)
+  assert.equal(shape.styles.lineJoin, null)
+  assert.equal(shape.styles.miterLimit, null)
+
+  const animation = new RenderCompiler().compile(video)
+  assert.equal(animation.requiredCapabilities.shape.rect.fill, true)
+  assert.equal(animation.requiredCapabilities.shape.rect.stroke, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.miterLimit, false)
+}
+
+async function testRectStrokeFixtureDecodeAndCompile (): Promise<void> {
+  installBrowserFakes()
+  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const video = loadRectStrokeFixtureVideo()
+  const shape = video.sprites[0].frames[0].shapes[0]
+  assert.equal(Object.keys(video.images).length, 0)
+  assert.equal(shape.type, SHAPE_TYPE.RECT)
+  if (shape.type !== SHAPE_TYPE.RECT) throw new Error('rect-stroke fixture did not decode a RECT shape')
+  assert.equal(shape.path.cornerRadius, 0)
+  assert.equal(shape.styles.fill, null)
+  assert.equal(shape.styles.stroke, 'rgba(0, 0, 0, 1)')
+  assert.equal(shape.styles.strokeWidth, 10)
+  assert.equal(shape.styles.lineCap, null)
+  assert.equal(shape.styles.lineJoin, null)
+  assert.equal(shape.styles.miterLimit, null)
+  assert.deepEqual(shape.styles.lineDash, [])
+
+  const animation = new RenderCompiler().compile(video)
+  assert.equal(animation.requiredCapabilities.shape.rect.fill, false)
+  assert.equal(animation.requiredCapabilities.shape.rect.stroke, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.miterLimit, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, false)
+}
+
+async function testRoundedRectFillFixtureDecodeAndCompile (): Promise<void> {
+  installBrowserFakes()
+  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const video = loadRoundedRectFillFixtureVideo()
+  const shape = video.sprites[0].frames[0].shapes[0]
+  assert.equal(Object.keys(video.images).length, 0)
+  assert.equal(shape.type, SHAPE_TYPE.RECT)
+  if (shape.type !== SHAPE_TYPE.RECT) throw new Error('rounded-rect-fill fixture did not decode a RECT shape')
+  assert.equal(shape.path.cornerRadius > 0, true)
+  assert.equal(shape.styles.fill, 'rgba(0, 114, 255, 1)')
+  assert.equal(shape.styles.stroke, null)
+  assert.equal(shape.styles.strokeWidth, null)
+  assert.equal(shape.styles.lineCap, null)
+  assert.equal(shape.styles.lineJoin, null)
+  assert.equal(shape.styles.miterLimit, null)
+
+  const animation = new RenderCompiler().compile(video)
+  assert.equal(animation.requiredCapabilities.shape.roundedRect.fill, true)
+  assert.equal(animation.requiredCapabilities.shape.roundedRect.stroke, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.miterLimit, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, false)
+}
+
+async function testRoundedRectStrokeFixtureDecodeAndCompile (): Promise<void> {
+  installBrowserFakes()
+  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const video = loadRoundedRectStrokeFixtureVideo()
+  const shape = video.sprites[0].frames[0].shapes[0]
+  assert.equal(Object.keys(video.images).length, 0)
+  assert.equal(shape.type, SHAPE_TYPE.RECT)
+  if (shape.type !== SHAPE_TYPE.RECT) throw new Error('rounded-rect-stroke fixture did not decode a RECT shape')
+  assert.equal(shape.path.cornerRadius > 0, true)
+  assert.equal(shape.styles.fill, null)
+  assert.equal(shape.styles.stroke, 'rgba(0, 0, 0, 1)')
+  assert.equal(shape.styles.strokeWidth, 10)
+  assert.equal(shape.styles.lineCap, null)
+  assert.equal(shape.styles.lineJoin, null)
+  assert.equal(shape.styles.miterLimit, null)
+  assert.deepEqual(shape.styles.lineDash, [])
+
+  const animation = new RenderCompiler().compile(video)
+  assert.equal(animation.requiredCapabilities.shape.roundedRect.fill, false)
+  assert.equal(animation.requiredCapabilities.shape.roundedRect.stroke, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.miterLimit, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, false)
 }
 
 async function testBackendResolver (): Promise<void> {
@@ -602,13 +770,27 @@ async function testBackendResolver (): Promise<void> {
   assert.equal(canvasBackend.type, 'canvas')
   assert.equal(canvasBackend.capabilities.shape.path.fill, true)
   assert.equal(canvasBackend.capabilities.masks, true)
+  assert.equal(canvasBackend.capabilities.snapshot, true)
 
   const webglBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'webgl')
   assert.equal(webglBackend.type, 'webgl')
   assert.equal(webglBackend.capabilities.texture.static, true)
   assert.equal(webglBackend.capabilities.texture.dynamic, true)
+  assert.equal(webglBackend.capabilities.shape.rect.fill, true)
+  assert.equal(webglBackend.capabilities.shape.rect.stroke, true)
+  assert.equal(webglBackend.capabilities.shape.roundedRect.fill, true)
+  assert.equal(webglBackend.capabilities.shape.roundedRect.stroke, true)
+  assert.equal(webglBackend.capabilities.shape.ellipse.fill, false)
+  assert.equal(webglBackend.capabilities.shape.ellipse.stroke, false)
   assert.equal(webglBackend.capabilities.shape.path.fill, false)
+  assert.equal(webglBackend.capabilities.shape.path.stroke, false)
+  assert.equal(webglBackend.capabilities.shape.strokeStyle.width, true)
+  assert.equal(webglBackend.capabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(webglBackend.capabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(webglBackend.capabilities.shape.strokeStyle.miterLimit, false)
+  assert.equal(webglBackend.capabilities.shape.strokeStyle.lineDash, false)
   assert.equal(webglBackend.capabilities.masks, false)
+  assert.equal(webglBackend.capabilities.snapshot, true)
 
   const autoBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'auto')
   assert.equal(autoBackend.type, 'webgl')
@@ -638,6 +820,48 @@ async function testCanvasBackendRender (): Promise<void> {
 
   backend.renderFrame(animation, 0)
   assert.ok(canvas.context2d.calls.some(call => call.startsWith('drawImage')))
+}
+
+async function testPlayerSnapshot (): Promise<void> {
+  installBrowserFakes()
+  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+
+  const canvas = new FakeCanvas() as any as HTMLCanvasElement
+  const canvasPlayer = new SVGAPlayer({
+    container: canvas,
+    renderMode: 'canvas'
+  })
+  await canvasPlayer.load(createVideo({ withImage: true }))
+  await canvasPlayer.prepare()
+  assert.equal(canvasPlayer.snapshot(), canvas)
+  canvasPlayer.destroy()
+
+  const webglCanvas = new FakeCanvas() as any as HTMLCanvasElement
+  const webglPlayer = new SVGAPlayer({
+    container: webglCanvas,
+    renderMode: 'webgl'
+  })
+  await webglPlayer.load(createVideo({ withImage: true }))
+  await webglPlayer.play()
+  const activeKey = (webglPlayer as any).activeKey
+  const preparedKey = (webglPlayer as any).preparedKey
+  const currentFrame = webglPlayer.currentFrame
+  const snapshot = webglPlayer.snapshot()
+  assert.equal(snapshot, webglCanvas)
+  assert.equal((webglPlayer as any).activeKey, activeKey)
+  assert.equal((webglPlayer as any).preparedKey, preparedKey)
+  assert.equal(webglPlayer.currentFrame, currentFrame)
+  webglPlayer.stop()
+  webglPlayer.destroy()
+
+  const unsupportedCanvas = new FakeCanvas() as any as HTMLCanvasElement
+  const unsupportedPlayer = new SVGAPlayer({
+    container: unsupportedCanvas,
+    renderMode: 'canvas'
+  })
+  ;(unsupportedPlayer as any).backend.snapshot = undefined
+  assert.equal(unsupportedPlayer.snapshot(), null)
+  unsupportedPlayer.destroy()
 }
 
 async function testWebGLBackendLifecycle (): Promise<void> {
@@ -680,14 +904,159 @@ async function testWebGLBackendLifecycle (): Promise<void> {
   await unsupportedBackend.prepare(unsupportedAnimation)
   assert.doesNotThrow(() => unsupportedBackend.renderFrame(unsupportedAnimation, 0))
 
-  const shapeOnlyCanvas = new FakeCanvas()
-  const shapeOnlyAnimation = new RenderCompiler().compile(createVideo({
+  const pathOnlyCanvas = new FakeCanvas()
+  const pathOnlyAnimation = new RenderCompiler().compile(createVideo({
     withShape: true
   }))
-  const shapeOnlyBackend = createBackend(shapeOnlyCanvas as any as HTMLCanvasElement, 'webgl')
-  await shapeOnlyBackend.prepare(shapeOnlyAnimation)
-  assert.doesNotThrow(() => shapeOnlyBackend.renderFrame(shapeOnlyAnimation, 0))
-  assert.equal(shapeOnlyCanvas.webglContext?.calls.includes('drawArrays'), false)
+  const pathOnlyBackend = createBackend(pathOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await pathOnlyBackend.prepare(pathOnlyAnimation)
+  assert.doesNotThrow(() => pathOnlyBackend.renderFrame(pathOnlyAnimation, 0))
+  assert.equal(pathOnlyCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const rectOnlyCanvas = new FakeCanvas()
+  const rectOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'rect'
+  }))
+  const rectOnlyBackend = createBackend(rectOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await rectOnlyBackend.prepare(rectOnlyAnimation)
+  assert.doesNotThrow(() => rectOnlyBackend.renderFrame(rectOnlyAnimation, 0))
+  assert.equal(rectOnlyCanvas.webglContext?.calls.includes('drawArrays'), true)
+  assert.equal(rectOnlyCanvas.webglContext?.calls.includes('uniform4f'), true)
+  assert.equal(rectOnlyCanvas.webglContext?.calls.includes('disableVertexAttribArray'), true)
+
+  const strokeOnlyCanvas = new FakeCanvas()
+  const strokeOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'rect',
+    withStroke: true,
+    withoutFill: true
+  }))
+  const strokeOnlyBackend = createBackend(strokeOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await strokeOnlyBackend.prepare(strokeOnlyAnimation)
+  assert.doesNotThrow(() => strokeOnlyBackend.renderFrame(strokeOnlyAnimation, 0))
+  assert.equal(strokeOnlyCanvas.webglContext?.calls.includes('drawArrays:24'), true)
+
+  const fillStrokeCanvas = new FakeCanvas()
+  const fillStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'rect',
+    withStroke: true
+  }))
+  const fillStrokeBackend = createBackend(fillStrokeCanvas as any as HTMLCanvasElement, 'webgl')
+  await fillStrokeBackend.prepare(fillStrokeAnimation)
+  assert.doesNotThrow(() => fillStrokeBackend.renderFrame(fillStrokeAnimation, 0))
+  const solidDraws = fillStrokeCanvas.webglContext?.calls.filter(call => call.startsWith('drawArrays:')) ?? []
+  assert.deepEqual(solidDraws.slice(-2), ['drawArrays:6', 'drawArrays:24'])
+
+  const dashedRectCanvas = new FakeCanvas()
+  const dashedRectAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'rect',
+    withDash: true,
+    withoutFill: true
+  }))
+  const dashedRectBackend = createBackend(dashedRectCanvas as any as HTMLCanvasElement, 'webgl')
+  await dashedRectBackend.prepare(dashedRectAnimation)
+  assert.doesNotThrow(() => dashedRectBackend.renderFrame(dashedRectAnimation, 0))
+  assert.equal(dashedRectCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const degenerateStrokeCanvas = new FakeCanvas()
+  const degenerateStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'rect',
+    withStroke: true,
+    withoutFill: true,
+    strokeWidth: 20
+  }))
+  const degenerateStrokeBackend = createBackend(degenerateStrokeCanvas as any as HTMLCanvasElement, 'webgl')
+  await degenerateStrokeBackend.prepare(degenerateStrokeAnimation)
+  assert.doesNotThrow(() => degenerateStrokeBackend.renderFrame(degenerateStrokeAnimation, 0))
+  assert.equal(degenerateStrokeCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const roundedRectOnlyCanvas = new FakeCanvas()
+  const roundedRectOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect'
+  }))
+  const roundedRectOnlyBackend = createBackend(roundedRectOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await roundedRectOnlyBackend.prepare(roundedRectOnlyAnimation)
+  assert.doesNotThrow(() => roundedRectOnlyBackend.renderFrame(roundedRectOnlyAnimation, 0))
+  assert.equal(roundedRectOnlyCanvas.webglContext?.calls.includes('drawArrays'), true)
+
+  const roundedStrokeOnlyCanvas = new FakeCanvas()
+  const roundedStrokeOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withStroke: true,
+    withoutFill: true
+  }))
+  const roundedStrokeOnlyBackend = createBackend(roundedStrokeOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await roundedStrokeOnlyBackend.prepare(roundedStrokeOnlyAnimation)
+  assert.doesNotThrow(() => roundedStrokeOnlyBackend.renderFrame(roundedStrokeOnlyAnimation, 0))
+  assert.equal(roundedStrokeOnlyCanvas.webglContext?.calls.includes('drawArrays'), true)
+
+  const roundedFillStrokeCanvas = new FakeCanvas()
+  const roundedFillStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withStroke: true
+  }))
+  const roundedFillStrokeBackend = createBackend(roundedFillStrokeCanvas as any as HTMLCanvasElement, 'webgl')
+  await roundedFillStrokeBackend.prepare(roundedFillStrokeAnimation)
+  assert.doesNotThrow(() => roundedFillStrokeBackend.renderFrame(roundedFillStrokeAnimation, 0))
+  const roundedSolidDraws = roundedFillStrokeCanvas.webglContext?.calls.filter(call => call.startsWith('drawArrays:')) ?? []
+  assert.equal(roundedSolidDraws.length >= 2, true)
+  assert.equal(roundedSolidDraws[roundedSolidDraws.length - 2] < roundedSolidDraws[roundedSolidDraws.length - 1], true)
+
+  const clampedRoundedCanvas = new FakeCanvas()
+  const clampedRoundedAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    cornerRadius: 100
+  }))
+  const clampedRoundedBackend = createBackend(clampedRoundedCanvas as any as HTMLCanvasElement, 'webgl')
+  await clampedRoundedBackend.prepare(clampedRoundedAnimation)
+  assert.doesNotThrow(() => clampedRoundedBackend.renderFrame(clampedRoundedAnimation, 0))
+  assert.equal(clampedRoundedCanvas.webglContext?.calls.includes('drawArrays'), true)
+
+  const degenerateRoundedStrokeCanvas = new FakeCanvas()
+  const degenerateRoundedStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withStroke: true,
+    withoutFill: true,
+    strokeWidth: 20
+  }))
+  const degenerateRoundedStrokeBackend = createBackend(degenerateRoundedStrokeCanvas as any as HTMLCanvasElement, 'webgl')
+  await degenerateRoundedStrokeBackend.prepare(degenerateRoundedStrokeAnimation)
+  assert.doesNotThrow(() => degenerateRoundedStrokeBackend.renderFrame(degenerateRoundedStrokeAnimation, 0))
+  assert.equal(degenerateRoundedStrokeCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const dashedRoundedCanvas = new FakeCanvas()
+  const dashedRoundedAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withDash: true,
+    withoutFill: true
+  }))
+  const dashedRoundedBackend = createBackend(dashedRoundedCanvas as any as HTMLCanvasElement, 'webgl')
+  await dashedRoundedBackend.prepare(dashedRoundedAnimation)
+  assert.doesNotThrow(() => dashedRoundedBackend.renderFrame(dashedRoundedAnimation, 0))
+  assert.equal(dashedRoundedCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const joinedRoundedCanvas = new FakeCanvas()
+  const joinedRoundedAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withStroke: true,
+    withoutFill: true,
+    withLineJoin: true
+  }))
+  const joinedRoundedBackend = createBackend(joinedRoundedCanvas as any as HTMLCanvasElement, 'webgl')
+  await joinedRoundedBackend.prepare(joinedRoundedAnimation)
+  assert.doesNotThrow(() => joinedRoundedBackend.renderFrame(joinedRoundedAnimation, 0))
+  assert.equal(joinedRoundedCanvas.webglContext?.calls.includes('drawArrays'), false)
 
   const maskedAnimation = new RenderCompiler().compile(createVideo({
     withImage: true,
@@ -750,6 +1119,84 @@ async function testUnsupportedCapabilitiesErrorAndWarning (): Promise<void> {
   assert.equal(errors[0].message.includes('masks'), true)
 }
 
+async function testRoundedRectFixturesDoNotWarnInWebGL (): Promise<void> {
+  installBrowserFakes()
+  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const warnings: unknown[][] = []
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args)
+  }
+
+  const player = new SVGAPlayer({
+    container: new FakeCanvas() as any as HTMLCanvasElement,
+    renderMode: 'webgl'
+  })
+
+  try {
+    await player.load(loadRoundedRectFillFixtureVideo(), 'fill')
+    await player.prepare('fill')
+    await player.load(loadRoundedRectStrokeFixtureVideo(), 'stroke')
+    await player.prepare('stroke')
+  } finally {
+    console.warn = originalWarn
+    player.destroy()
+  }
+
+  assert.equal(warnings.length, 0)
+}
+
+async function testUnsupportedStrokeCapabilities (): Promise<void> {
+  installBrowserFakes()
+  const {
+    diffRenderCapabilities,
+    RenderCompiler,
+    createWebGLRenderCapabilities
+  } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+
+  const dashedRectAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'rect',
+    withDash: true,
+    withoutFill: true
+  }))
+  const roundedRectStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withStroke: true,
+    withoutFill: true
+  }))
+  const roundedRectJoinedStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'roundedRect',
+    withStroke: true,
+    withoutFill: true,
+    withLineJoin: true
+  }))
+  const pathStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    withStroke: true,
+    withoutFill: true
+  }))
+
+  assert.deepEqual(
+    diffRenderCapabilities(dashedRectAnimation.requiredCapabilities, createWebGLRenderCapabilities()),
+    ['shape.strokeStyle.lineDash']
+  )
+  assert.equal(
+    diffRenderCapabilities(roundedRectStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.roundedRect.stroke'),
+    false
+  )
+  assert.equal(
+    diffRenderCapabilities(roundedRectJoinedStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.strokeStyle.lineJoin'),
+    true
+  )
+  assert.equal(
+    diffRenderCapabilities(pathStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.path.stroke'),
+    true
+  )
+}
+
 async function testErrorEventTypesAndBlockingFlag (): Promise<void> {
   installBrowserFakes()
   const {
@@ -792,10 +1239,17 @@ async function main (): Promise<void> {
     ['replace modes, delete cleanup, and cache helper', testReplaceDeleteAndCache],
     ['delete during prepare does not restore stale prepared state', testDeleteDuringPrepareDoesNotRestorePreparedState],
     ['compiler command/capability/path/geometry metadata', testCompilerMetadata],
+    ['rect-fill fixture decodes and compiles cleanly', testRectFillFixtureDecodeAndCompile],
+    ['rect-stroke fixture decodes and compiles cleanly', testRectStrokeFixtureDecodeAndCompile],
+    ['rounded-rect-fill fixture decodes and compiles cleanly', testRoundedRectFillFixtureDecodeAndCompile],
+    ['rounded-rect-stroke fixture decodes and compiles cleanly', testRoundedRectStrokeFixtureDecodeAndCompile],
     ['backend resolver canvas/webgl/auto fallback', testBackendResolver],
     ['CanvasBackend render regression smoke', testCanvasBackendRender],
+    ['player snapshot returns current backend surface', testPlayerSnapshot],
     ['WebGLBackend context/render/unsupported/cleanup smoke', testWebGLBackendLifecycle],
     ['unsupported capabilities error and warning', testUnsupportedCapabilitiesErrorAndWarning],
+    ['rounded-rect fixtures do not warn in WebGL', testRoundedRectFixturesDoNotWarnInWebGL],
+    ['unsupported stroke capabilities stay precise', testUnsupportedStrokeCapabilities],
     ['error event types and blocking flag', testErrorEventTypesAndBlockingFlag]
   ]
 

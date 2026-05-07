@@ -116,6 +116,12 @@ export function createWebGLRenderCapabilities (): RenderCapabilities {
   const capabilities = createRenderCapabilities(false)
   capabilities.texture.static = true
   capabilities.texture.dynamic = true
+  capabilities.shape.rect.fill = true
+  capabilities.shape.rect.stroke = true
+  capabilities.shape.roundedRect.fill = true
+  capabilities.shape.roundedRect.stroke = true
+  capabilities.shape.strokeStyle.width = true
+  capabilities.snapshot = true
   return capabilities
 }
 
