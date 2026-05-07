@@ -6,6 +6,7 @@ export {
   SVGAPlayerEventCallback,
   SVGAPlayerEventMap,
   SVGAPlayerEventName,
+  SVGAPlayerErrorType,
   SVGAPlayerInitOptions,
   SVGAPlayerPlaybackConfigOptions,
   SVGAPlayerProcessPayload,

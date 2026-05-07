@@ -8,24 +8,13 @@ import { parsePath } from './path'
 import {
   CompiledAnimation,
   CompiledGeometry,
+  createEmptyRenderCapabilities,
   FrameRenderCommand,
+  PathCommand,
+  RenderCompileDiagnostics,
   RenderCapabilities,
   ShapeRenderCommand
 } from './types'
-
-function emptyCapabilities (): RenderCapabilities {
-  return {
-    imageRendering: false,
-    dynamicTextures: false,
-    shapeFill: false,
-    shapeFillHoles: false,
-    shapeStroke: false,
-    lineDash: false,
-    masks: false,
-    snapshot: false,
-    unsupportedPathCommands: false
-  }
-}
 
 function geometryKeyForShape (shape: VideoFrameShape): string {
   return `${shape.type}:${JSON.stringify(shape.path)}`
@@ -42,11 +31,20 @@ function hasStrokeDetails (styles: VideoStyles): boolean {
     styles.miterLimit !== null
 }
 
+function hasStroke (styles: VideoStyles): boolean {
+  return styles.stroke !== null ||
+    hasStrokeDetails(styles) ||
+    (styles.lineDash !== null && styles.lineDash.length > 0)
+}
+
 export class RenderCompiler {
   private geometryIndex = 0
   private readonly geometryKeyToId: { [key: string]: string } = {}
   private readonly geometries: { [id: string]: CompiledGeometry } = {}
-  private readonly requiredCapabilities: RenderCapabilities = emptyCapabilities()
+  private readonly requiredCapabilities: RenderCapabilities = createEmptyRenderCapabilities()
+  private readonly diagnostics: RenderCompileDiagnostics = {
+    unsupportedPathCommands: []
+  }
 
   public compile (video: Video): CompiledAnimation {
     const frames: FrameRenderCommand[][] = []
@@ -64,10 +62,10 @@ export class RenderCompiler {
         const hasDynamicElement = video.dynamicElements[sprite.imageKey] !== undefined
 
         if (hasBitmap || hasReplaceElement) {
-          this.requiredCapabilities.imageRendering = true
+          this.requiredCapabilities.texture.static = true
         }
-        if (hasDynamicElement || hasReplaceElement) {
-          this.requiredCapabilities.dynamicTextures = true
+        if (hasDynamicElement) {
+          this.requiredCapabilities.texture.dynamic = true
         }
 
         frameCommands.push({
@@ -107,6 +105,7 @@ export class RenderCompiler {
       },
       geometries: this.geometries,
       requiredCapabilities: this.requiredCapabilities,
+      diagnostics: this.diagnostics,
       backendType: null
     }
   }
@@ -114,15 +113,8 @@ export class RenderCompiler {
   private compileShape (shape: VideoFrameShape): ShapeRenderCommand {
     const styles = shape.styles
 
-    if (styles.fill !== null) {
-      this.requiredCapabilities.shapeFill = true
-    }
-    if (styles.stroke !== null || hasStrokeDetails(styles)) {
-      this.requiredCapabilities.shapeStroke = true
-    }
-    if (styles.lineDash !== null && styles.lineDash.length > 0) {
-      this.requiredCapabilities.lineDash = true
-    }
+    this.markShapeCapabilities(shape)
+    this.markStrokeStyleCapabilities(styles)
 
     return {
       type: 'shape',
@@ -150,11 +142,8 @@ export class RenderCompiler {
         hasHoles: parsedPath.hasHoles,
         hasUnsupportedCommands: parsedPath.hasUnsupportedCommands
       }
-      if (parsedPath.hasHoles) {
-        this.requiredCapabilities.shapeFillHoles = true
-      }
       if (parsedPath.hasUnsupportedCommands) {
-        this.requiredCapabilities.unsupportedPathCommands = true
+        this.recordUnsupportedPathCommands('shape', id, parsedPath.commands, shape.path.d)
       }
     } else if (shape.type === SHAPE_TYPE.ELLIPSE) {
       this.geometries[id] = {
@@ -197,14 +186,59 @@ export class RenderCompiler {
       hasUnsupportedCommands: parsedPath.hasUnsupportedCommands
     }
 
-    if (parsedPath.hasHoles) {
-      this.requiredCapabilities.shapeFillHoles = true
-    }
     if (parsedPath.hasUnsupportedCommands) {
-      this.requiredCapabilities.unsupportedPathCommands = true
+      this.recordUnsupportedPathCommands('mask', id, parsedPath.commands, d)
     }
 
     return id
+  }
+
+  private markShapeCapabilities (shape: VideoFrameShape): void {
+    const styles = shape.styles
+    if (shape.type === SHAPE_TYPE.ELLIPSE) {
+      if (styles.fill !== null) this.requiredCapabilities.shape.ellipse.fill = true
+      if (hasStroke(styles)) this.requiredCapabilities.shape.ellipse.stroke = true
+      return
+    }
+
+    if (shape.type === SHAPE_TYPE.SHAPE) {
+      if (styles.fill !== null) this.requiredCapabilities.shape.path.fill = true
+      if (hasStroke(styles)) this.requiredCapabilities.shape.path.stroke = true
+      return
+    }
+
+    const rectCapabilities = (shape.path.cornerRadius ?? 0) > 0
+      ? this.requiredCapabilities.shape.roundedRect
+      : this.requiredCapabilities.shape.rect
+    if (styles.fill !== null) rectCapabilities.fill = true
+    if (hasStroke(styles)) rectCapabilities.stroke = true
+  }
+
+  private markStrokeStyleCapabilities (styles: VideoStyles): void {
+    if (styles.strokeWidth !== null) this.requiredCapabilities.shape.strokeStyle.width = true
+    if (styles.lineCap !== null) this.requiredCapabilities.shape.strokeStyle.lineCap = true
+    if (styles.lineJoin !== null) this.requiredCapabilities.shape.strokeStyle.lineJoin = true
+    if (styles.miterLimit !== null) this.requiredCapabilities.shape.strokeStyle.miterLimit = true
+    if (styles.lineDash !== null && styles.lineDash.length > 0) {
+      this.requiredCapabilities.shape.strokeStyle.lineDash = true
+    }
+  }
+
+  private recordUnsupportedPathCommands (
+    owner: 'shape' | 'mask',
+    geometryId: string,
+    commands: PathCommand[],
+    rawPath: string | undefined
+  ): void {
+    commands.forEach(command => {
+      if (command.type !== 'unsupported') return
+      this.diagnostics.unsupportedPathCommands.push({
+        owner,
+        geometryId,
+        method: command.method,
+        rawPath
+      })
+    })
   }
 
   private nextGeometryId (): string {

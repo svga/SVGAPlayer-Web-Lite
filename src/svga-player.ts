@@ -12,6 +12,10 @@ import {
 import { createBackend, RenderBackend } from './player/backend'
 import {
   CompiledAnimation,
+  diffRenderCapabilities,
+  RenderBackendType,
+  RenderCapabilities,
+  RenderCapabilityPath,
   RenderCompiler,
   RenderMode
 } from './player/compiler'
@@ -24,6 +28,27 @@ const DEFAULT_KEY = 'default'
 export interface SVGAPlayerProcessPayload {
   currentFrame: number
   progress: number
+}
+
+interface SVGAPlayerUnsupportedCapabilitiesPayload {
+  backendType: RenderBackendType
+  unsupportedCapabilities: RenderCapabilityPath[]
+  requiredCapabilities: RenderCapabilities
+  backendCapabilities: RenderCapabilities
+}
+
+export enum SVGAPlayerErrorType {
+  CONFIG = 'config',
+  LOAD = 'load',
+  PREPARE = 'prepare',
+  PLAY = 'play',
+  START = 'start',
+  RESUME = 'resume',
+  REPLACE = 'replace',
+  REFRESH = 'refresh',
+  CACHE = 'cache',
+  RENDER = 'render',
+  UNSUPPORTED_CAPABILITIES = 'unsupportedCapabilities'
 }
 
 export interface SVGAPlayerEventMap {
@@ -39,9 +64,11 @@ export interface SVGAPlayerEventMap {
 export type SVGAPlayerEventName = keyof SVGAPlayerEventMap
 
 export type SVGAPlayerEventCallback<T extends SVGAPlayerEventName> =
-  SVGAPlayerEventMap[T] extends undefined
-    ? () => void
-    : (payload: SVGAPlayerEventMap[T]) => void
+  T extends 'error'
+    ? (error: Error, errorType: SVGAPlayerErrorType, blocking: boolean) => void
+    : SVGAPlayerEventMap[T] extends undefined
+      ? () => void
+      : (payload: SVGAPlayerEventMap[T]) => void
 
 export interface SVGAPlayerPlaybackConfigOptions {
   loop?: PlayerConfig['loop']
@@ -148,7 +175,9 @@ export class SVGAPlayer {
 
   public setConfig (options: SVGAPlayerPlaybackConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined && options.startFrame > options.endFrame) {
-      throw new Error('StartFrame should > EndFrame')
+      const error = new Error('StartFrame should > EndFrame')
+      this.emitError(error, SVGAPlayerErrorType.CONFIG)
+      throw error
     }
 
     this.config.loop = options.loop ?? 0
@@ -192,7 +221,7 @@ export class SVGAPlayer {
         this.storeLoadedSlot(slotKey, video, version)
       })
     } catch (error) {
-      this.emitError(error)
+      this.emitError(error, SVGAPlayerErrorType.LOAD)
       throw error
     }
   }
@@ -202,7 +231,7 @@ export class SVGAPlayer {
     try {
       await this.prepareSlot(slotKey)
     } catch (error) {
-      this.emitError(error)
+      this.emitError(error, SVGAPlayerErrorType.PREPARE)
       throw error
     }
   }
@@ -211,26 +240,32 @@ export class SVGAPlayer {
     const slotKey = normalizeKey(key)
     try {
       await this.prepareSlot(slotKey)
-      this.start(slotKey)
+      this.startPreparedSlot(slotKey)
     } catch (error) {
-      this.emitError(error)
+      this.emitError(error, SVGAPlayerErrorType.PLAY)
       throw error
     }
   }
 
   public start (key?: string): void {
     const slotKey = normalizeKey(key)
-    this.assertPrepared(slotKey)
-    this.activeKey = slotKey
-    this.backend.clear()
-    this.startAnimation(false)
-    this.emit('start', undefined)
+    try {
+      this.startPreparedSlot(slotKey)
+    } catch (error) {
+      this.emitError(error, SVGAPlayerErrorType.START)
+      throw error
+    }
   }
 
   public resume (): void {
-    this.assertActiveCompiled()
-    this.startAnimation(true)
-    this.emit('resume', undefined)
+    try {
+      this.assertActiveCompiled()
+      this.startAnimation(true)
+      this.emit('resume', undefined)
+    } catch (error) {
+      this.emitError(error, SVGAPlayerErrorType.RESUME)
+      throw error
+    }
   }
 
   public pause (): void {
@@ -266,13 +301,16 @@ export class SVGAPlayer {
       }
 
       if (slot.compiledAnimation !== null) {
+        slot.compiledAnimation = this.compileSlot(slot)
         slot.dirty = true
         if (this.preparedKey === slotKey) {
-          this.refreshPreparedSlot(slotKey, slot).catch(error => this.emitError(error))
+          this.refreshPreparedSlot(slotKey, slot).catch(error => {
+            this.emitError(error, SVGAPlayerErrorType.REFRESH)
+          })
         }
       }
     } catch (error) {
-      this.emitError(error)
+      this.emitError(error, SVGAPlayerErrorType.REPLACE)
       throw error
     }
   }
@@ -297,7 +335,7 @@ export class SVGAPlayer {
       const slot = this.getLoadedSlot(slotKey)
       await db.insert(options.id, slot.video)
     } catch (error) {
-      this.emitError(error)
+      this.emitError(error, SVGAPlayerErrorType.CACHE)
       throw error
     }
   }
@@ -370,14 +408,49 @@ export class SVGAPlayer {
 
   private async prepareBackend (animation: CompiledAnimation): Promise<void> {
     this.backend.resize(animation.size.width, animation.size.height)
+    this.reportUnsupportedCapabilities(animation)
     await this.backend.prepare(animation)
   }
 
   private async refreshPreparedSlot (slotKey: string, slot: SlotState): Promise<void> {
     if (this.preparedKey !== slotKey || slot.compiledAnimation === null) return
+    this.reportUnsupportedCapabilities(slot.compiledAnimation)
     await this.backend.refresh(slot.compiledAnimation)
     if (!this.isCurrentSlot(slotKey, slot)) return
     slot.dirty = false
+  }
+
+  private startPreparedSlot (slotKey: string): void {
+    this.assertPrepared(slotKey)
+    this.activeKey = slotKey
+    this.backend.clear()
+    this.startAnimation(false)
+    this.emit('start', undefined)
+  }
+
+  private reportUnsupportedCapabilities (animation: CompiledAnimation): void {
+    const unsupportedCapabilities = diffRenderCapabilities(
+      animation.requiredCapabilities,
+      this.backend.capabilities
+    )
+    if (unsupportedCapabilities.length === 0) return
+
+    const payload: SVGAPlayerUnsupportedCapabilitiesPayload = {
+      backendType: this.backend.type,
+      unsupportedCapabilities,
+      requiredCapabilities: animation.requiredCapabilities,
+      backendCapabilities: this.backend.capabilities
+    }
+
+    this.emitError(
+      new Error(`[SVGAPlayer] ${this.backend.type} backend does not support required capabilities: ${unsupportedCapabilities.join(', ')}`),
+      SVGAPlayerErrorType.UNSUPPORTED_CAPABILITIES,
+      false
+    )
+    console.warn(
+      `[SVGAPlayer] ${this.backend.type} backend does not support required capabilities: ${unsupportedCapabilities.join(', ')}. Unsupported parts will be skipped during rendering.`,
+      payload
+    )
   }
 
   private isCurrentSlot (key: string, slot: SlotState): boolean {
@@ -389,18 +462,14 @@ export class SVGAPlayer {
   private assertPrepared (slotKey: string): void {
     const slot = this.getLoadedSlot(slotKey)
     if (slot.compiledAnimation === null || this.preparedKey !== slotKey) {
-      const error = new Error(`SVGAPlayer.prepare('${slotKey}') is required before start()`)
-      this.emitError(error)
-      throw error
+      throw new Error(`SVGAPlayer.prepare('${slotKey}') is required before start()`)
     }
   }
 
   private assertActiveCompiled (): void {
     const slot = this.activeKey === null ? null : this.slots.get(this.activeKey)
     if (slot?.compiledAnimation === undefined || slot.compiledAnimation === null) {
-      const error = new Error('SVGAPlayer.play() is required before resume()')
-      this.emitError(error)
-      throw error
+      throw new Error('SVGAPlayer.play() is required before resume()')
     }
   }
 
@@ -452,7 +521,7 @@ export class SVGAPlayer {
       this.backend.renderFrame(animation, frame)
     } catch (error) {
       this.animator.stop()
-      this.emitError(error)
+      this.emitError(error, SVGAPlayerErrorType.RENDER)
       throw error
     }
   }
@@ -520,18 +589,31 @@ export class SVGAPlayer {
     }
   }
 
-  private emitError (error: unknown): void {
-    this.emit('error', error instanceof Error ? error : new Error(String(error)))
+  private emitError (
+    error: unknown,
+    errorType: SVGAPlayerErrorType,
+    blocking: boolean = true
+  ): void {
+    this.emit(
+      'error',
+      error instanceof Error ? error : new Error(String(error)),
+      errorType,
+      blocking
+    )
   }
 
   private emit<T extends SVGAPlayerEventName> (
     event: T,
-    payload: SVGAPlayerEventMap[T]
+    ...args: T extends 'error'
+      ? [Error, SVGAPlayerErrorType, boolean]
+      : SVGAPlayerEventMap[T] extends undefined
+        ? [undefined]
+        : [SVGAPlayerEventMap[T]]
   ): void {
     const callbacks = this.listeners[event]
     if (callbacks === undefined) return
     callbacks.forEach(callback => {
-      ;(callback as any)(payload)
+      ;(callback as any)(...args)
     })
   }
 }

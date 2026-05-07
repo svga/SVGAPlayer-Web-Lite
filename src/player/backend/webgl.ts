@@ -7,6 +7,7 @@ import {
 } from '../../types'
 import {
   CompiledAnimation,
+  createWebGLRenderCapabilities,
   FrameRenderCommand,
   RenderCapabilities
 } from '../compiler/types'
@@ -21,17 +22,7 @@ interface TextureEntry {
 type WebGLContextState = 'ready' | 'lost' | 'failed' | 'destroyed'
 
 function webglCapabilities (): RenderCapabilities {
-  return {
-    imageRendering: true,
-    dynamicTextures: true,
-    shapeFill: false,
-    shapeFillHoles: false,
-    shapeStroke: false,
-    lineDash: false,
-    masks: false,
-    snapshot: false,
-    unsupportedPathCommands: false
-  }
+  return createWebGLRenderCapabilities()
 }
 
 async function loadBitmap (image: string | Bitmap): Promise<Bitmap> {
@@ -325,10 +316,6 @@ export class WebGLBackend implements RenderBackend {
   }
 
   private drawCommand (animation: CompiledAnimation, command: FrameRenderCommand): void {
-    if (command.mask !== null || command.shapes.length > 0) {
-      throw new Error('[SVGA WebGL Unsupported] Shapes and masks require CanvasBackend fallback')
-    }
-
     const replaceElement = animation.resources.replaceElements[command.imageKey]
     const dynamicElement = animation.resources.dynamicElements[command.imageKey]
     const baseTexture = replaceElement !== undefined ? this.createTexture(replaceElement) : this.textures[command.imageKey]

@@ -276,10 +276,13 @@ function installBrowserFakes (): void {
 
 function createVideo (options: {
   withImage?: boolean
+  withDynamicElement?: boolean
   withShape?: boolean
+  shapeType?: 'path' | 'rect' | 'roundedRect' | 'ellipse'
   withHole?: boolean
   withMask?: boolean
   withDash?: boolean
+  withUnsupportedPath?: boolean
 } = {}): Video {
   const styles = {
     fill: 'rgba(255, 0, 0, 1)' as const,
@@ -290,9 +293,32 @@ function createVideo (options: {
     miterLimit: null,
     lineDash: options.withDash === true ? [2, 2] : null
   }
-  const path = options.withHole === true
+  const path = options.withUnsupportedPath === true
+    ? 'M0 0 A10 10 0 0 1 20 20 Z'
+    : options.withHole === true
     ? 'M0 0 L10 0 L10 10 L0 10 Z M2 2 L8 2 L8 8 L2 8 Z'
     : 'M0 0 L10 0 L10 10 L0 10 Z'
+  const shapeType = options.shapeType ?? 'path'
+  const shape = shapeType === 'ellipse'
+    ? {
+        type: SHAPE_TYPE.ELLIPSE,
+        path: { x: 0, y: 0, radiusX: 10, radiusY: 8 },
+        styles,
+        transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+      }
+    : shapeType === 'rect' || shapeType === 'roundedRect'
+      ? {
+          type: SHAPE_TYPE.RECT,
+          path: { x: 0, y: 0, width: 10, height: 12, cornerRadius: shapeType === 'roundedRect' ? 4 : 0 },
+          styles,
+          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+        }
+      : {
+          type: SHAPE_TYPE.SHAPE,
+          path: { d: path },
+          styles,
+          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+        }
 
   return {
     version: '2.0',
@@ -301,7 +327,7 @@ function createVideo (options: {
     frames: 3,
     images: options.withImage === true ? { image: new FakeImage() as any } : {},
     replaceElements: {},
-    dynamicElements: {},
+    dynamicElements: options.withDynamicElement === true ? { image: new FakeCanvas() as any } : {},
     sprites: [
       {
         imageKey: 'image',
@@ -319,16 +345,7 @@ function createVideo (options: {
                 styles
               }
             : null,
-          shapes: options.withShape === true
-            ? [
-                {
-                  type: SHAPE_TYPE.SHAPE,
-                  path: { d: path },
-                  styles,
-                  transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
-                }
-              ]
-            : []
+          shapes: options.withShape === true ? [shape as any] : []
         }))
       }
     ]
@@ -356,9 +373,12 @@ async function testFacadeEventsAndParserWorker (): Promise<void> {
   const events: string[] = []
   const offStart = player.on('start', () => events.push('start'))
   player.on('process', payload => events.push(`process:${payload.currentFrame}`))
-  player.on('error', error => events.push(`error:${error.message}`))
+  player.on('error', (error, errorType, blocking) => {
+    events.push(`error:${error.message}:${errorType}:${blocking ? 'blocking' : 'non-blocking'}`)
+  })
 
   await assert.rejects(async () => await player.play(), /load\('default'\) is required/)
+  assert.ok(events.some(event => event.includes(':play:blocking')))
 
   const loadPromise = player.load('https://example.com/fake.svga')
   await nextMicrotask()
@@ -525,27 +545,53 @@ async function testPublicEntrySurface (): Promise<void> {
 
 async function testCompilerMetadata (): Promise<void> {
   installBrowserFakes()
-  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const {
+    diffRenderCapabilities,
+    RenderCompiler,
+    createWebGLRenderCapabilities
+  } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
   const compiler = new RenderCompiler()
   const animation = compiler.compile(createVideo({
+    withImage: true,
+    withDynamicElement: true,
     withShape: true,
     withHole: true,
     withMask: true,
-    withDash: true
+    withDash: true,
+    withUnsupportedPath: true
   }))
 
   assert.equal(animation.frames.length, 3)
   assert.equal(animation.frames[0][0].type, 'sprite')
-  assert.equal(animation.requiredCapabilities.shapeFill, true)
-  assert.equal(animation.requiredCapabilities.shapeFillHoles, true)
-  assert.equal(animation.requiredCapabilities.shapeStroke, true)
-  assert.equal(animation.requiredCapabilities.lineDash, true)
+  assert.equal(animation.requiredCapabilities.texture.static, true)
+  assert.equal(animation.requiredCapabilities.texture.dynamic, true)
+  assert.equal(animation.requiredCapabilities.shape.path.fill, true)
+  assert.equal(animation.requiredCapabilities.shape.path.stroke, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, true)
   assert.equal(animation.requiredCapabilities.masks, true)
+  assert.equal(animation.diagnostics.unsupportedPathCommands.length > 0, true)
+
+  assert.equal(
+    diffRenderCapabilities(animation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.path.fill'),
+    true
+  )
+  assert.equal(
+    diffRenderCapabilities(animation.requiredCapabilities, createWebGLRenderCapabilities()).includes('texture.static'),
+    false
+  )
 
   const firstGeometryId = animation.frames[0][0].shapes[0].geometryId
   const secondGeometryId = animation.frames[1][0].shapes[0].geometryId
   assert.equal(firstGeometryId, secondGeometryId)
   assert.equal(animation.geometries[firstGeometryId].type, 'path')
+
+  const rectAnimation = new RenderCompiler().compile(createVideo({ withShape: true, shapeType: 'rect' }))
+  const roundedRectAnimation = new RenderCompiler().compile(createVideo({ withShape: true, shapeType: 'roundedRect' }))
+  const ellipseAnimation = new RenderCompiler().compile(createVideo({ withShape: true, shapeType: 'ellipse' }))
+  assert.equal(rectAnimation.requiredCapabilities.shape.rect.fill, true)
+  assert.equal(roundedRectAnimation.requiredCapabilities.shape.roundedRect.fill, true)
+  assert.equal(ellipseAnimation.requiredCapabilities.shape.ellipse.fill, true)
 }
 
 async function testBackendResolver (): Promise<void> {
@@ -554,9 +600,15 @@ async function testBackendResolver (): Promise<void> {
 
   const canvasBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'canvas')
   assert.equal(canvasBackend.type, 'canvas')
+  assert.equal(canvasBackend.capabilities.shape.path.fill, true)
+  assert.equal(canvasBackend.capabilities.masks, true)
 
   const webglBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'webgl')
   assert.equal(webglBackend.type, 'webgl')
+  assert.equal(webglBackend.capabilities.texture.static, true)
+  assert.equal(webglBackend.capabilities.texture.dynamic, true)
+  assert.equal(webglBackend.capabilities.shape.path.fill, false)
+  assert.equal(webglBackend.capabilities.masks, false)
 
   const autoBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'auto')
   assert.equal(autoBackend.type, 'webgl')
@@ -626,7 +678,109 @@ async function testWebGLBackendLifecycle (): Promise<void> {
   }))
   const unsupportedBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'webgl')
   await unsupportedBackend.prepare(unsupportedAnimation)
-  assert.throws(() => unsupportedBackend.renderFrame(unsupportedAnimation, 0), /Shapes and masks/)
+  assert.doesNotThrow(() => unsupportedBackend.renderFrame(unsupportedAnimation, 0))
+
+  const shapeOnlyCanvas = new FakeCanvas()
+  const shapeOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true
+  }))
+  const shapeOnlyBackend = createBackend(shapeOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await shapeOnlyBackend.prepare(shapeOnlyAnimation)
+  assert.doesNotThrow(() => shapeOnlyBackend.renderFrame(shapeOnlyAnimation, 0))
+  assert.equal(shapeOnlyCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const maskedAnimation = new RenderCompiler().compile(createVideo({
+    withImage: true,
+    withMask: true
+  }))
+  const maskedCanvas = new FakeCanvas()
+  const maskedBackend = createBackend(maskedCanvas as any as HTMLCanvasElement, 'webgl')
+  await maskedBackend.prepare(maskedAnimation)
+  assert.doesNotThrow(() => maskedBackend.renderFrame(maskedAnimation, 0))
+  assert.equal(maskedCanvas.webglContext?.calls.includes('drawArrays'), true)
+}
+
+async function testUnsupportedCapabilitiesErrorAndWarning (): Promise<void> {
+  installBrowserFakes()
+  const {
+    SVGAPlayer,
+    SVGAPlayerErrorType
+  } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const canvas = new FakeCanvas() as any as HTMLCanvasElement
+  const player = new SVGAPlayer({
+    container: canvas,
+    renderMode: 'webgl'
+  })
+  const warnings: unknown[][] = []
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args)
+  }
+  const errors: Array<{
+    message: string
+    errorType: string
+    blocking: boolean
+  }> = []
+  player.on('error', (error, errorType, blocking) => {
+    errors.push({
+      message: error.message,
+      errorType,
+      blocking
+    })
+  })
+
+  try {
+    await player.load(createVideo({
+      withImage: true,
+      withShape: true,
+      withMask: true
+    }))
+    await player.prepare()
+  } finally {
+    console.warn = originalWarn
+    player.destroy()
+  }
+
+  assert.equal(warnings.length, 1)
+  assert.equal(String(warnings[0][0]).includes('Unsupported parts will be skipped'), true)
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].errorType, SVGAPlayerErrorType.UNSUPPORTED_CAPABILITIES)
+  assert.equal(errors[0].blocking, false)
+  assert.equal(errors[0].message.includes('shape.path.fill'), true)
+  assert.equal(errors[0].message.includes('masks'), true)
+}
+
+async function testErrorEventTypesAndBlockingFlag (): Promise<void> {
+  installBrowserFakes()
+  const {
+    SVGAPlayer,
+    SVGAPlayerErrorType
+  } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const player = new SVGAPlayer({
+    container: new FakeCanvas() as any as HTMLCanvasElement,
+    renderMode: 'canvas'
+  })
+  const errors: Array<{
+    errorType: string
+    blocking: boolean
+  }> = []
+  player.on('error', (_error, errorType, blocking) => {
+    errors.push({ errorType, blocking })
+  })
+
+  assert.throws(() => player.start(), /load\('default'\) is required/)
+  assert.throws(() => player.resume(), /play\(\) is required/)
+  assert.throws(() => player.setConfig({ startFrame: 2, endFrame: 1 }), /StartFrame should > EndFrame/)
+  await assert.rejects(async () => await player.cache({ insert: async () => {} } as any, { id: 'x' }), /load\('default'\) is required/)
+
+  assert.deepEqual(errors.map(error => error.errorType), [
+    SVGAPlayerErrorType.START,
+    SVGAPlayerErrorType.RESUME,
+    SVGAPlayerErrorType.CONFIG,
+    SVGAPlayerErrorType.CACHE
+  ])
+  assert.deepEqual(errors.map(error => error.blocking), [true, true, true, true])
+  player.destroy()
 }
 
 async function main (): Promise<void> {
@@ -640,7 +794,9 @@ async function main (): Promise<void> {
     ['compiler command/capability/path/geometry metadata', testCompilerMetadata],
     ['backend resolver canvas/webgl/auto fallback', testBackendResolver],
     ['CanvasBackend render regression smoke', testCanvasBackendRender],
-    ['WebGLBackend context/render/unsupported/cleanup smoke', testWebGLBackendLifecycle]
+    ['WebGLBackend context/render/unsupported/cleanup smoke', testWebGLBackendLifecycle],
+    ['unsupported capabilities error and warning', testUnsupportedCapabilitiesErrorAndWarning],
+    ['error event types and blocking flag', testErrorEventTypesAndBlockingFlag]
   ]
 
   for (const [name, test] of tests) {

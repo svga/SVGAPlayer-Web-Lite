@@ -9,6 +9,7 @@ import {
 import {
   CompiledAnimation,
   CompiledGeometry,
+  createCanvasRenderCapabilities,
   FrameRenderCommand,
   PathCommand,
   RenderCapabilities,
@@ -17,17 +18,7 @@ import {
 import { RenderBackend } from './types'
 
 function canvasCapabilities (): RenderCapabilities {
-  return {
-    imageRendering: true,
-    dynamicTextures: true,
-    shapeFill: true,
-    shapeFillHoles: true,
-    shapeStroke: true,
-    lineDash: true,
-    masks: true,
-    snapshot: true,
-    unsupportedPathCommands: true
-  }
+  return createCanvasRenderCapabilities()
 }
 
 function applyTransform (
