@@ -53,8 +53,7 @@ const player = new SVGAPlayer({
   renderMode: 'auto'
 })
 
-await player.parse('xx.svga')
-await player.compile()
+await player.load('xx.svga')
 
 player.on('start', () => console.log('onStart'))
 player.on('resume', () => console.log('onResume'))
@@ -65,7 +64,7 @@ player.on('end', () => console.log('onEnd'))
 player.on('error', error => console.error(error))
 
 // 开始播放动画
-player.play()
+await player.play()
 
 // 暂停播放动画
 // player.pause()
@@ -98,7 +97,7 @@ new SVGAPlayer({
 })
 ```
 
-### PlayerConfigOptions
+### SVGAPlayerInitOptions / Playback Config
 
 ```ts
 const enum PLAYER_FILL_MODE {
@@ -116,10 +115,10 @@ const enum PLAYER_PLAY_MODE {
 }
 
 new SVGAPlayer({
-  // 播放动画的 Canvas 元素
-  container?: HTMLCanvasElement
+  // 播放动画的 Canvas 元素，构造时必填
+  container: HTMLCanvasElement
 
-  // 渲染模式，默认值 auto。auto 会优先尝试 WebGL，能力不满足时整体退回 Canvas
+  // 构造期渲染模式，默认值 auto。auto 只按浏览器 WebGL 可用性选择 WebGL 或 Canvas
   renderMode?: 'auto' | 'canvas' | 'webgl'
 
   // 循环次数，默认值 0（无限循环）
@@ -158,17 +157,19 @@ new SVGAPlayer({
 })
 ```
 
+`setConfig()` 只接受播放配置：`loop`、`fillMode`、`playMode`、`startFrame`、`endFrame`、`loopStartFrame`、`isOpenNoExecutionDelay`。`container`、`renderMode`、`parserOptions`、`isCacheFrames`、`isUseIntersectionObserver` 都是构造期配置。
+
 ### 替换元素 / 插入动态元素
 
-可通过修改解析后的数据元，从而实现修改元素、插入动态元素功能
+使用 `replace()` 对指定 keyed slot 写入替换元素或动态元素，不需要直接修改解析后的数据元。
 
 ```js
-const svga = await player.parse('xx.svga')
+await player.load('xx.svga', 'gift')
 
 // 替换元素
 const image = new Image()
 image.src = 'https://xxx.com/xxx.png'
-svga.replaceElements['key'] = image
+player.replace('key', image, { key: 'gift' })
 
 // 动态元素
 const text = 'hello gg'
@@ -180,9 +181,9 @@ fontContext.textAlign = 'center'
 fontContext.textBaseline = 'middle'
 fontContext.fillStyle = '#000'
 fontContext.fillText(text, fontCanvas.clientWidth / 2, fontCanvas.clientHeight / 2)
-svga.dynamicElements['key'] = fontCanvas
+player.replace('key', fontCanvas, { key: 'gift', mode: 'dynamic' })
 
-await player.compile()
+await player.play('gift')
 ```
 
 ### DB
@@ -204,13 +205,12 @@ try {
   })
   let svga = await db.find(url)
   if (!svga) {
-    svga = await player.parse(url)
-    await db.insert(url, svga)
+    await player.load(url)
+    await player.cache(db, { id: url })
   } else {
-    await player.parse(svga)
+    await player.load(svga)
   }
-  await player.compile()
-  player.play()
+  await player.play()
 } catch (error) {
   console.error(error)
 }
@@ -243,10 +243,11 @@ module.exports = {
 // js
 import { SVGAPlayer } from 'svga'
 import xx from './xx.svga'
-const player = new SVGAPlayer(document.getElementById('canvas'))
-await player.parse(xx)
-await player.compile()
-player.play()
+const player = new SVGAPlayer({
+  container: document.getElementById('canvas')
+})
+await player.load(xx)
+await player.play()
 ```
 
 ## Vite SVGA
@@ -264,10 +265,11 @@ export default defineConfig({
 // js
 import { SVGAPlayer } from 'svga'
 import xx from './xx.svga?url'
-const player = new SVGAPlayer(document.getElementById('canvas'))
-await player.parse(xx)
-await player.compile()
-player.play()
+const player = new SVGAPlayer({
+  container: document.getElementById('canvas')
+})
+await player.load(xx)
+await player.play()
 ```
 
 ## [VSCode Plugin SVGA Preview](https://marketplace.visualstudio.com/items?itemName=svga-perview.svga-perview)

@@ -45,6 +45,7 @@ class FakeCanvas {
   public getContext (type: string): any {
     if (type === '2d') return this.context2d
     if (type === 'webgl' || type === 'experimental-webgl') {
+      if (!fakeWebGLAvailable) return null
       if (this.webglContext === null) this.webglContext = new FakeWebGLRenderingContext(this)
       return this.webglContext
     }
@@ -99,7 +100,9 @@ class FakeWorker {
 
   public postMessage (data: { url: string }): void {
     parserWorkerPosts.push(data)
-    setTimeout(() => this.onmessage?.({ data: createVideo({ withImage: true }) }), 0)
+    parserWorkerResponders.push((response: Video | Error) => {
+      this.onmessage?.({ data: response })
+    })
   }
 
   public terminate (): void {
@@ -192,6 +195,18 @@ class FakeWebGLRenderingContext {
 }
 
 const parserWorkerPosts: Array<{ url: string }> = []
+const parserWorkerResponders: Array<(response: Video | Error) => void> = []
+let fakeWebGLAvailable = true
+
+function resolveNextParserLoad (response: Video | Error = createVideo({ withImage: true })): void {
+  const responder = parserWorkerResponders.shift()
+  if (responder === undefined) throw new Error('No pending parser load')
+  responder(response)
+}
+
+async function nextMicrotask (): Promise<void> {
+  await Promise.resolve()
+}
 
 function createFakeContext2D (): FakeContext2D {
   const calls: string[] = []
@@ -224,6 +239,9 @@ function createFakeContext2D (): FakeContext2D {
 }
 
 function installBrowserFakes (): void {
+  parserWorkerPosts.length = 0
+  parserWorkerResponders.length = 0
+  fakeWebGLAvailable = true
   const fakeDocument = {
     createElement: (tag: string): any => {
       if (tag === 'canvas') return new FakeCanvas()
@@ -329,28 +347,158 @@ async function testFacadeEventsAndParserWorker (): Promise<void> {
       isDisableImageBitmapShim: false
     }
   })
+  if (false) {
+    // @ts-expect-error constructor requires an options object
+    new SVGAPlayer(canvas)
+    // @ts-expect-error setConfig is playback-only and does not accept init fields
+    player.setConfig({ container: canvas })
+  }
   const events: string[] = []
   const offStart = player.on('start', () => events.push('start'))
   player.on('process', payload => events.push(`process:${payload.currentFrame}`))
   player.on('error', error => events.push(`error:${error.message}`))
 
-  assert.throws(() => player.play(), /compile\(\) is required/)
-  assert.ok(events.some(event => event.startsWith('error:')))
+  await assert.rejects(async () => await player.play(), /load\('default'\) is required/)
 
-  const video = await player.parse('https://example.com/fake.svga')
+  const loadPromise = player.load('https://example.com/fake.svga')
+  await nextMicrotask()
   assert.equal(parserWorkerPosts.length, 1)
   assert.equal(parserWorkerPosts[0].url, 'https://example.com/fake.svga')
-  assert.equal(video.frames, 3)
+  resolveNextParserLoad()
+  await loadPromise
 
-  await player.compile()
-  player.play()
+  await player.play()
   assert.ok(events.includes('start'))
 
   offStart()
   player.stop()
   events.length = 0
-  player.play()
+  await player.play()
   assert.ok(!events.includes('start'))
+  player.destroy()
+}
+
+async function testKeyedLoadPreparePlayAndSwitch (): Promise<void> {
+  installBrowserFakes()
+  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const player = new SVGAPlayer({
+    container: new FakeCanvas() as any as HTMLCanvasElement,
+    renderMode: 'canvas'
+  })
+
+  await player.load(createVideo({ withImage: true }), 'idle')
+  await player.load(createVideo({ withImage: true, withShape: true }), 'gift')
+  await player.prepare('idle')
+  assert.equal((player as any).preparedKey, 'idle')
+
+  await player.play('idle')
+  assert.equal((player as any).activeKey, 'idle')
+  await player.play('gift')
+  assert.equal((player as any).activeKey, 'gift')
+  assert.equal((player as any).preparedKey, 'gift')
+  player.destroy()
+}
+
+async function testParserQueueVersionAndDelete (): Promise<void> {
+  installBrowserFakes()
+  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const player = new SVGAPlayer({
+    container: new FakeCanvas() as any as HTMLCanvasElement,
+    renderMode: 'canvas'
+  })
+
+  const first = player.load('https://example.com/a.svga', 'gift')
+  const second = player.load('https://example.com/b.svga', 'gift')
+  await nextMicrotask()
+  assert.equal(parserWorkerPosts.length, 1)
+  resolveNextParserLoad(createVideo({ withImage: true }))
+  await first
+  assert.equal((player as any).slots.has('gift'), false)
+  await nextMicrotask()
+  assert.equal(parserWorkerPosts.length, 2)
+  resolveNextParserLoad(createVideo({ withImage: true, withShape: true }))
+  await second
+  assert.equal((player as any).slots.get('gift').video.sprites[0].frames[0].shapes.length, 1)
+
+  const failed = player.load('https://example.com/fail.svga', 'bad')
+  await nextMicrotask()
+  assert.equal(parserWorkerPosts.length, 3)
+  resolveNextParserLoad(new Error('parse failed'))
+  await assert.rejects(async () => await failed, /parse failed/)
+
+  const recovered = player.load('https://example.com/recovered.svga', 'ok')
+  await nextMicrotask()
+  assert.equal(parserWorkerPosts.length, 4)
+  resolveNextParserLoad(createVideo({ withImage: true }))
+  await recovered
+  assert.equal((player as any).slots.has('ok'), true)
+
+  const deleted = player.load('https://example.com/delete.svga', 'deleted')
+  await nextMicrotask()
+  assert.equal(parserWorkerPosts.length, 5)
+  player.delete('deleted')
+  resolveNextParserLoad(createVideo({ withImage: true }))
+  await deleted
+  assert.equal((player as any).slots.has('deleted'), false)
+  player.destroy()
+}
+
+async function testReplaceDeleteAndCache (): Promise<void> {
+  installBrowserFakes()
+  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const player = new SVGAPlayer({
+    container: new FakeCanvas() as any as HTMLCanvasElement,
+    renderMode: 'canvas',
+    isCacheFrames: true
+  })
+  const video = createVideo({ withImage: true })
+  const image = new FakeImage() as any as HTMLImageElement
+  const canvas = new FakeCanvas() as any as HTMLCanvasElement
+  const inserted: Array<[IDBValidKey, Video]> = []
+  const db = {
+    insert: async (id: IDBValidKey, data: Video) => {
+      inserted.push([id, data])
+    }
+  }
+
+  await player.load(video, 'gift')
+  await player.prepare('gift')
+  player.replace('image', image, { key: 'gift' })
+  player.replace('banner', canvas, { key: 'gift', mode: 'dynamic' })
+  await nextMicrotask()
+  assert.equal(video.replaceElements.image, image)
+  assert.equal(video.dynamicElements.banner, canvas)
+  assert.equal((player as any).slots.get('gift').dirty, false)
+
+  await player.cache(db as any, { key: 'gift', id: 'gift.svga' })
+  assert.equal(inserted[0][0], 'gift.svga')
+  assert.equal(inserted[0][1], video)
+
+  await player.play('gift')
+  player.delete('gift')
+  assert.equal((player as any).slots.has('gift'), false)
+  assert.equal((player as any).activeKey, null)
+  assert.equal((player as any).preparedKey, null)
+  player.delete('missing')
+  player.destroy()
+}
+
+async function testDeleteDuringPrepareDoesNotRestorePreparedState (): Promise<void> {
+  installBrowserFakes()
+  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const player = new SVGAPlayer({
+    container: new FakeCanvas() as any as HTMLCanvasElement,
+    renderMode: 'canvas'
+  })
+  const video = createVideo({ withImage: true })
+  video.images.image = 'base64'
+
+  await player.load(video, 'gift')
+  const preparing = player.prepare('gift')
+  player.delete('gift')
+  await preparing
+  assert.equal((player as any).preparedKey, null)
+  assert.equal((player as any).slots.has('gift'), false)
   player.destroy()
 }
 
@@ -379,96 +527,79 @@ async function testCompilerMetadata (): Promise<void> {
   installBrowserFakes()
   const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
   const compiler = new RenderCompiler()
-  const result = await compiler.compile(createVideo({
+  const animation = compiler.compile(createVideo({
     withShape: true,
     withHole: true,
     withMask: true,
     withDash: true
-  }), new FakeCanvas() as any as HTMLCanvasElement, {
-    renderMode: 'canvas'
-  })
+  }))
 
-  assert.equal(result.animation.frames.length, 3)
-  assert.equal(result.animation.frames[0][0].type, 'sprite')
-  assert.equal(result.animation.requiredCapabilities.shapeFill, true)
-  assert.equal(result.animation.requiredCapabilities.shapeFillHoles, true)
-  assert.equal(result.animation.requiredCapabilities.shapeStroke, true)
-  assert.equal(result.animation.requiredCapabilities.lineDash, true)
-  assert.equal(result.animation.requiredCapabilities.masks, true)
+  assert.equal(animation.frames.length, 3)
+  assert.equal(animation.frames[0][0].type, 'sprite')
+  assert.equal(animation.requiredCapabilities.shapeFill, true)
+  assert.equal(animation.requiredCapabilities.shapeFillHoles, true)
+  assert.equal(animation.requiredCapabilities.shapeStroke, true)
+  assert.equal(animation.requiredCapabilities.lineDash, true)
+  assert.equal(animation.requiredCapabilities.masks, true)
 
-  const firstGeometryId = result.animation.frames[0][0].shapes[0].geometryId
-  const secondGeometryId = result.animation.frames[1][0].shapes[0].geometryId
+  const firstGeometryId = animation.frames[0][0].shapes[0].geometryId
+  const secondGeometryId = animation.frames[1][0].shapes[0].geometryId
   assert.equal(firstGeometryId, secondGeometryId)
-  assert.equal(result.animation.geometries[firstGeometryId].type, 'path')
+  assert.equal(animation.geometries[firstGeometryId].type, 'path')
 }
 
 async function testBackendResolver (): Promise<void> {
   installBrowserFakes()
-  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const { createBackend } = require('../../src/player/backend') as typeof import('../../src/player/backend')
 
-  const imageOnly = createVideo({ withImage: true })
-  const canvasResult = await new RenderCompiler().compile(imageOnly, new FakeCanvas() as any as HTMLCanvasElement, {
-    renderMode: 'canvas'
-  })
-  assert.equal(canvasResult.animation.backendType, 'canvas')
+  const canvasBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'canvas')
+  assert.equal(canvasBackend.type, 'canvas')
 
-  const webglResult = await new RenderCompiler().compile(imageOnly, new FakeCanvas() as any as HTMLCanvasElement, {
-    renderMode: 'webgl'
-  })
-  assert.equal(webglResult.animation.backendType, 'webgl')
+  const webglBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'webgl')
+  assert.equal(webglBackend.type, 'webgl')
 
-  const autoResult = await new RenderCompiler().compile(imageOnly, new FakeCanvas() as any as HTMLCanvasElement, {
-    renderMode: 'auto'
-  })
-  assert.equal(autoResult.animation.backendType, 'webgl')
+  const autoBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'auto')
+  assert.equal(autoBackend.type, 'webgl')
 
-  const fallbackResult = await new RenderCompiler().compile(createVideo({
-    withImage: true,
-    withShape: true
-  }), new FakeCanvas() as any as HTMLCanvasElement, {
-    renderMode: 'auto'
-  })
-  assert.equal(fallbackResult.animation.backendType, 'canvas')
+  fakeWebGLAvailable = false
+  const fallbackBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'auto')
+  assert.equal(fallbackBackend.type, 'canvas')
 
   await assert.rejects(
-    async () => await new RenderCompiler().compile(createVideo({
-      withImage: true,
-      withShape: true
-    }), new FakeCanvas() as any as HTMLCanvasElement, {
-      renderMode: 'webgl'
-    }),
-    /Missing capabilities/
+    async () => createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'webgl'),
+    /WebGL context is unavailable/
   )
 }
 
 async function testCanvasBackendRender (): Promise<void> {
   installBrowserFakes()
   const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const { createBackend } = require('../../src/player/backend') as typeof import('../../src/player/backend')
   const canvas = new FakeCanvas()
-  const result = await new RenderCompiler().compile(createVideo({
+  const animation = new RenderCompiler().compile(createVideo({
     withImage: true,
     withShape: true,
     withMask: true
-  }), canvas as any as HTMLCanvasElement, {
-    renderMode: 'canvas',
-    isCacheFrames: true
-  })
+  }))
+  const backend = createBackend(canvas as any as HTMLCanvasElement, 'canvas', true)
+  await backend.prepare(animation)
 
-  result.backend.renderFrame(result.animation, 0)
+  backend.renderFrame(animation, 0)
   assert.ok(canvas.context2d.calls.some(call => call.startsWith('drawImage')))
 }
 
 async function testWebGLBackendLifecycle (): Promise<void> {
   installBrowserFakes()
   const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const { createBackend } = require('../../src/player/backend') as typeof import('../../src/player/backend')
   const canvas = new FakeCanvas()
-  const result = await new RenderCompiler().compile(createVideo({
+  const animation = new RenderCompiler().compile(createVideo({
     withImage: true
-  }), canvas as any as HTMLCanvasElement, {
-    renderMode: 'webgl'
-  })
+  }))
+  const backend = createBackend(canvas as any as HTMLCanvasElement, 'webgl')
+  await backend.prepare(animation)
 
-  result.backend.renderFrame(result.animation, 0)
+  backend.renderFrame(animation, 0)
   const gl = canvas.webglContext
   assert.ok(gl !== null)
   const webgl = gl as FakeWebGLRenderingContext
@@ -479,31 +610,33 @@ async function testWebGLBackendLifecycle (): Promise<void> {
     restoreContext: () => void
   }
   loseContext.loseContext()
-  result.backend.renderFrame(result.animation, 1)
+  backend.renderFrame(animation, 1)
   loseContext.restoreContext()
   await new Promise(resolve => setTimeout(resolve, 0))
-  result.backend.renderFrame(result.animation, 2)
+  backend.renderFrame(animation, 2)
   assert.ok(webgl.calls.filter(call => call === 'drawArrays').length >= 2)
 
-  result.backend.destroy()
+  backend.destroy()
   assert.equal((canvas.events.webglcontextlost ?? []).length, 0)
   assert.equal((canvas.events.webglcontextrestored ?? []).length, 0)
 
-  await assert.rejects(
-    async () => await new RenderCompiler().compile(createVideo({
-      withImage: true,
-      withShape: true
-    }), new FakeCanvas() as any as HTMLCanvasElement, {
-      renderMode: 'webgl'
-    }),
-    /Missing capabilities/
-  )
+  const unsupportedAnimation = new RenderCompiler().compile(createVideo({
+    withImage: true,
+    withShape: true
+  }))
+  const unsupportedBackend = createBackend(new FakeCanvas() as any as HTMLCanvasElement, 'webgl')
+  await unsupportedBackend.prepare(unsupportedAnimation)
+  assert.throws(() => unsupportedBackend.renderFrame(unsupportedAnimation, 0), /Shapes and masks/)
 }
 
 async function main (): Promise<void> {
   const tests: Array<[string, () => Promise<void>]> = [
     ['public package entry exposes facade only', testPublicEntrySurface],
-    ['facade events, state errors, parser worker, parse -> compile -> play', testFacadeEventsAndParserWorker],
+    ['facade events, state errors, parser worker, load -> async play', testFacadeEventsAndParserWorker],
+    ['keyed load, prepare, play, and key switching', testKeyedLoadPreparePlayAndSwitch],
+    ['parser queue, failure recovery, stale loads, and delete races', testParserQueueVersionAndDelete],
+    ['replace modes, delete cleanup, and cache helper', testReplaceDeleteAndCache],
+    ['delete during prepare does not restore stale prepared state', testDeleteDuringPrepareDoesNotRestorePreparedState],
     ['compiler command/capability/path/geometry metadata', testCompilerMetadata],
     ['backend resolver canvas/webgl/auto fallback', testBackendResolver],
     ['CanvasBackend render regression smoke', testCanvasBackendRender],

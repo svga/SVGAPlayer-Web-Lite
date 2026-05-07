@@ -163,6 +163,7 @@ export class CanvasBackend implements RenderBackend {
   public async prepare (animation: CompiledAnimation): Promise<void> {
     const images = animation.resources.images
     const loaders: Array<Promise<void>> = []
+    this.clearFrameCache()
 
     Object.keys(images).forEach(key => {
       loaders.push(
@@ -173,6 +174,10 @@ export class CanvasBackend implements RenderBackend {
     })
 
     await Promise.all(loaders)
+  }
+
+  public async refresh (_animation: CompiledAnimation): Promise<void> {
+    this.clearFrameCache()
   }
 
   public resize (width: number, height: number): void {
@@ -230,6 +235,10 @@ export class CanvasBackend implements RenderBackend {
   public destroy (): void {
     this.clear()
     this.bitmapsCache = {}
+    this.clearFrameCache()
+  }
+
+  private clearFrameCache (): void {
     this.cacheFrames = {}
   }
 

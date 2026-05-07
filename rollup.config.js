@@ -80,8 +80,7 @@ if (IS_TEST_ENV || FORMAT === 'umd') {
         include: ['**/*.ts']
       }),
       babelOutputPlugin,
-      !IS_TEST_ENV && terser(),
-      IS_TEST_ENV && inlineParser
+      !IS_TEST_ENV && terser()
     ]
   })
 }

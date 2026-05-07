@@ -4,15 +4,12 @@ import {
   VideoFrameShape,
   VideoStyles
 } from '../../types'
-import { createBackend } from '../backend'
 import { parsePath } from './path'
 import {
   CompiledAnimation,
   CompiledGeometry,
   FrameRenderCommand,
   RenderCapabilities,
-  RenderCompileOptions,
-  RenderCompilerResult,
   ShapeRenderCommand
 } from './types'
 
@@ -51,22 +48,7 @@ export class RenderCompiler {
   private readonly geometries: { [id: string]: CompiledGeometry } = {}
   private readonly requiredCapabilities: RenderCapabilities = emptyCapabilities()
 
-  public async compile (
-    video: Video,
-    container: HTMLCanvasElement,
-    options: RenderCompileOptions = {}
-  ): Promise<RenderCompilerResult> {
-    const animation = this.compileAnimation(video)
-    const backend = createBackend(container, animation, options.renderMode ?? 'auto', options.isCacheFrames ?? false)
-
-    animation.backendType = backend.type
-    backend.resize(animation.size.width, animation.size.height)
-    await backend.prepare(animation)
-
-    return { animation, backend }
-  }
-
-  private compileAnimation (video: Video): CompiledAnimation {
+  public compile (video: Video): CompiledAnimation {
     const frames: FrameRenderCommand[][] = []
 
     for (let frameIndex = 0; frameIndex < video.frames; frameIndex++) {

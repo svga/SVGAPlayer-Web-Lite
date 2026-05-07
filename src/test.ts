@@ -4,38 +4,32 @@ import { DB, SVGAPlayer } from './index'
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
 
 /**
- * 基本使用
+ * 基本使用：默认 keyed slot。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE1 = async (): Promise<void> => {
   const url = '/svga/shape-path-undefined.svga'
-  // const url = '/svga/11.svga'
-  // const url = '/svga/TwitterHeart.svga'
-  // const url = '/svga/loading-1.svga'
-  // const url = '/svga/kaola.svga'
   const player = new SVGAPlayer({
     container: canvas,
     loop: 1
   })
-  const svga = await player.parse(url)
-  console.log(svga)
-  await player.compile()
-  player.play()
+  await player.load(url)
+  await player.play()
 }
 
 /**
- * 事件、回调
+ * 事件、回调：显式 key。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  let player = new SVGAPlayer(canvas)
+  let player = new SVGAPlayer({ container: canvas })
   console.time('load')
-  await player.parse(url)
+  await player.load(url, 'angel')
   console.timeEnd('load')
-  console.time('compile')
-  await player.compile()
-  console.timeEnd('compile')
+  console.time('prepare')
+  await player.prepare('angel')
+  console.timeEnd('prepare')
   player.on('start', () => console.log('onStart'))
   player.on('resume', () => console.log('onResume'))
   player.on('pause', () => console.log('onPause'))
@@ -43,7 +37,7 @@ const TESTCASE2 = async (): Promise<void> => {
   player.on('process', () => console.log('onProcess'))
   player.on('end', () => console.log('onEnd'))
   player.on('error', error => console.error(error))
-  ;(window as any).start = () => player.play()
+  ;(window as any).start = async () => await player.play('angel')
   ;(window as any).pause = () => player.pause()
   ;(window as any).resume = () => player.resume()
   ;(window as any).stop = () => player.stop()
@@ -55,7 +49,7 @@ const TESTCASE2 = async (): Promise<void> => {
 }
 
 /**
- * 替换、动态元素
+ * 替换、动态元素。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE3 = async (): Promise<void> => {
@@ -75,18 +69,15 @@ const TESTCASE3 = async (): Promise<void> => {
   image.src = 'https://ovo-oss.duowan.com/upload/1626079061448.png'
 
   const url = '/svga/kingset.svga'
-  const player = new SVGAPlayer(canvas)
-  const svga = await player.parse(url)
-
-  svga.replaceElements['99'] = image
-  svga.dynamicElements.banner = fontCanvas
-
-  await player.compile()
-  player.play()
+  const player = new SVGAPlayer({ container: canvas })
+  await player.load(url, 'gift')
+  player.replace('99', image, { key: 'gift' })
+  player.replace('banner', fontCanvas, { key: 'gift', mode: 'dynamic' })
+  await player.play('gift')
 }
 
 /**
- * DB
+ * DB cache。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE4 = async (): Promise<void> => {
@@ -98,20 +89,18 @@ const TESTCASE4 = async (): Promise<void> => {
       isDisableImageBitmapShim: true
     }
   })
-  let svga = await db.find(url)
-  console.log('db', svga)
+  const svga = await db.find(url)
   if (svga === undefined) {
-    svga = await player.parse(url)
-    await db.insert(url, svga)
+    await player.load(url)
+    await player.cache(db, { id: url })
   } else {
-    await player.parse(svga)
+    await player.load(svga)
   }
-  await player.compile()
-  player.play()
+  await player.play()
 }
 
 /**
- * 多项设置项
+ * 多项设置项。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE5 = async (): Promise<void> => {
@@ -126,13 +115,12 @@ const TESTCASE5 = async (): Promise<void> => {
     startFrame: 10,
     endFrame: 40
   })
-  await player.parse(url)
-  await player.compile()
-  player.play()
+  await player.load(url)
+  await player.play()
 }
 
 /**
- * 往来顺序播放
+ * 往来顺序播放。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE6 = async (): Promise<void> => {
@@ -142,10 +130,8 @@ const TESTCASE6 = async (): Promise<void> => {
     loop: 1,
     playMode: PLAYER_PLAY_MODE.FORWARDS
   })
-  const svga = await player.parse(url)
-  console.log(svga)
-  await player.compile()
-  player.play()
+  await player.load(url)
+  await player.play()
   player.on('end', () => {
     console.log('onEnd', player.currentFrame)
     const playMode = player.config.playMode === PLAYER_PLAY_MODE.FORWARDS ? PLAYER_PLAY_MODE.FALLBACKS : PLAYER_PLAY_MODE.FORWARDS
@@ -153,41 +139,39 @@ const TESTCASE6 = async (): Promise<void> => {
       loop: 1,
       playMode
     })
-    player.play()
+    player.play().catch(error => console.error(error))
   })
 }
 
 /**
- * 捕捉错误
+ * 捕捉错误。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE7 = async (): Promise<void> => {
   const url = '/svga/undefined.svga'
   try {
-    const player = new SVGAPlayer(canvas)
-    await player.parse(url)
-    await player.compile()
-    player.play()
+    const player = new SVGAPlayer({ container: canvas })
+    await player.load(url)
+    await player.play()
   } catch (error) {
     console.error('Catch >>>>', error)
   }
 }
 
 /**
- * 重设配置
+ * 重设配置。
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE8 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
-  const player = new SVGAPlayer(canvas)
-  await player.parse(url)
-  await player.compile()
+  const player = new SVGAPlayer({ container: canvas })
+  await player.load(url)
   player.setConfig({
     loop: 1,
     startFrame: 0,
     endFrame: 1
   })
-  player.play()
+  await player.play()
 
   setTimeout(() => {
     console.log('start')
@@ -196,8 +180,25 @@ const TESTCASE8 = async (): Promise<void> => {
       startFrame: 0,
       endFrame: 0
     })
-    player.play()
+    player.play().catch(error => console.error(error))
   }, 5000)
+}
+
+/**
+ * 多 keyed slots 切换与删除。
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const TESTCASE9 = async (): Promise<void> => {
+  const player = new SVGAPlayer({ container: canvas })
+  await player.load('/svga/loading.svga', 'loading')
+  await player.load('/svga/angel.svga', 'angel')
+  await player.play('loading')
+  setTimeout(() => {
+    player.play('angel').catch(error => console.error(error))
+  }, 2000)
+  setTimeout(() => {
+    player.delete('loading')
+  }, 4000)
 }
 
 Promise.all([
@@ -209,4 +210,5 @@ Promise.all([
   // TESTCASE6()
   // TESTCASE7()
   // TESTCASE8()
+  // TESTCASE9()
 ]).catch(error => console.error(error))

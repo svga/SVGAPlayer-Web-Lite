@@ -237,11 +237,25 @@
       return canvas
     }
 
-    function applyCanvasReplacements(video, mode) {
+    function getDefaultSlot(player) {
+      const slots = player && player.slots
+      if (!slots || typeof slots.get !== 'function') {
+        throw new Error('SVGAPlayer slots Map is unavailable')
+      }
+
+      const slot = slots.get('default')
+      if (!slot) {
+        throw new Error("SVGAPlayer.load('default') did not create a slot")
+      }
+
+      return slot
+    }
+
+    function applyCanvasReplacements(player, video, mode) {
       const imageLayout = getReplaceLayout(video, 'image')
       const titleLayout = getReplaceLayout(video, 'title')
-      video.replaceElements.image = createImageReplacement(mode, imageLayout)
-      video.replaceElements.title = createTitleReplacement(mode, titleLayout)
+      player.replace('image', createImageReplacement(mode, imageLayout))
+      player.replace('title', createTitleReplacement(mode, titleLayout))
       write(`${mode} replaced image ${imageLayout.width}x${imageLayout.height} and title ${titleLayout.width}x${titleLayout.height}`)
     }
 
@@ -310,12 +324,18 @@
         updateSummary()
       })
 
-      const video = await test.player.parse(source)
-      applyCanvasReplacements(video, mode)
-      const compiled = await test.player.compile()
-      test.backendType = compiled.backendType
+      await test.player.load(source)
+      const slot = getDefaultSlot(test.player)
+      const video = slot.video
+      applyCanvasReplacements(test.player, video, mode)
+      await test.player.prepare()
+      const compiled = getDefaultSlot(test.player).compiledAnimation
+      if (!compiled) {
+        throw new Error('SVGAPlayer.prepare() did not compile animation')
+      }
+      test.backendType = compiled.backendType || 'unknown'
       setStatus(mode, `compiled ${video.frames} frames, ${video.fps}fps, backend ${compiled.backendType}`, '')
-      test.player.play()
+      test.player.start()
       write(`${mode} started via backend ${compiled.backendType}`)
     }
 

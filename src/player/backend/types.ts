@@ -8,6 +8,7 @@ export interface RenderBackend {
   type: RenderBackendType
   capabilities: RenderCapabilities
   prepare: (animation: CompiledAnimation) => Promise<void>
+  refresh: (animation: CompiledAnimation) => Promise<void>
   renderFrame: (animation: CompiledAnimation, frame: number) => void
   resize: (width: number, height: number) => void
   clear: () => void

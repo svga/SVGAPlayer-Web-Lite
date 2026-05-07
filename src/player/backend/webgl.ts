@@ -197,6 +197,10 @@ export class WebGLBackend implements RenderBackend {
     await this.uploadStaticResources(animation)
   }
 
+  public async refresh (animation: CompiledAnimation): Promise<void> {
+    this.animation = animation
+  }
+
   private async uploadStaticResources (animation: CompiledAnimation): Promise<void> {
     const loaders: Array<Promise<void>> = []
     const images = animation.resources.images
