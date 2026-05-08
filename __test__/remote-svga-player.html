@@ -405,8 +405,10 @@
 
       const imageLayout = getReplaceLayout(video, 'image')
       const titleLayout = getReplaceLayout(video, 'title')
-      if (keys.includes('image')) player.replace('image', createImageReplacement(mode, imageLayout))
-      if (keys.includes('title')) player.replace('title', createTitleReplacement(mode, titleLayout))
+      const element = {}
+      if (keys.includes('image')) element.image = createImageReplacement(mode, imageLayout)
+      if (keys.includes('title')) element.title = createTitleReplacement(mode, titleLayout)
+      player.replace({ element })
       write(`${mode} replaced image ${imageLayout.width}x${imageLayout.height} and title ${titleLayout.width}x${titleLayout.height}`)
     }
 
@@ -508,7 +510,7 @@
         updateSummary(activeModes)
       })
 
-      await test.player.load(source)
+      await test.player.load({ source })
       const slot = getDefaultSlot(test.player)
       const video = slot.video
       applyCanvasReplacements(test.player, video, mode)

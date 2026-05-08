@@ -1,4 +1,3 @@
-import { DB } from './db'
 import { Parser } from './parser'
 import {
   DynamicElement,
@@ -24,6 +23,11 @@ import { Animator } from './player/animator'
 const inBrowser = typeof window !== 'undefined'
 const hasIntersectionObserver = inBrowser && 'IntersectionObserver' in window
 const DEFAULT_KEY = 'default'
+const DB_GLOBAL_NAME = 'SVGADB'
+const DB_BUNDLE_FILE = 'db.min.js'
+
+declare const global: any
+declare const module: { require?: (path: string) => unknown } | undefined
 
 export interface SVGAPlayerProcessPayload {
   currentFrame: number
@@ -93,11 +97,23 @@ export type SVGAPlayerConfigOptions = SVGAPlayerInitOptions
 export interface SVGAPlayerReplaceOptions {
   key?: string
   mode?: 'replace' | 'dynamic'
+  element: Record<string, ReplaceElement | DynamicElement>
 }
 
 export interface SVGAPlayerCacheOptions {
   key?: string
   id: IDBValidKey
+}
+
+export interface SVGAPlayerCacheStore {
+  insert: (id: IDBValidKey, data: Video) => Promise<void>
+}
+
+type SVGAPlayerCacheStoreConstructor = new () => SVGAPlayerCacheStore
+
+export interface SVGAPlayerLoadOptions {
+  source: string | Video
+  key?: string
 }
 
 interface SlotState {
@@ -106,6 +122,82 @@ interface SlotState {
   dirty: boolean
   version: number
   preparePromise: Promise<void> | null
+}
+
+type CacheStoreLoader = () => Promise<SVGAPlayerCacheStore>
+
+let customCacheStoreLoader: CacheStoreLoader | null = null
+let defaultCacheStorePromise: Promise<SVGAPlayerCacheStore> | null = null
+const dbBundleUrl = resolveDefaultDBBundleUrl()
+
+function getGlobalScope (): any {
+  if (typeof self !== 'undefined') return self
+  if (typeof window !== 'undefined') return window
+  if (typeof global !== 'undefined') return global
+  return {}
+}
+
+function resolveDefaultDBBundleUrl (): string {
+  if (typeof document === 'undefined') return DB_BUNDLE_FILE
+
+  const script = document.currentScript as HTMLScriptElement | null
+  if (script !== null && script.src !== '') {
+    const anchor = document.createElement('a')
+    anchor.href = DB_BUNDLE_FILE
+    const base = script.src.slice(0, script.src.lastIndexOf('/') + 1)
+    anchor.href = `${base}${DB_BUNDLE_FILE}`
+    return anchor.href
+  }
+
+  return DB_BUNDLE_FILE
+}
+
+function getLoadedDBConstructor (): SVGAPlayerCacheStoreConstructor | null {
+  const value = getGlobalScope()[DB_GLOBAL_NAME]
+  if (value !== undefined && typeof value.DB === 'function') {
+    return value.DB as SVGAPlayerCacheStoreConstructor
+  }
+  return null
+}
+
+async function loadScript (src: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script')
+    script.async = true
+    script.src = src
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error(`[SVGAPlayer] failed to load ${src}`))
+    document.head.appendChild(script)
+  })
+}
+
+async function loadDefaultCacheStore (): Promise<SVGAPlayerCacheStore> {
+  const LoadedDB = getLoadedDBConstructor()
+  if (LoadedDB !== null) return new LoadedDB()
+
+  if (typeof document !== 'undefined') {
+    await loadScript(dbBundleUrl)
+    const DB = getLoadedDBConstructor()
+    if (DB !== null) return new DB()
+  }
+
+  if (typeof module !== 'undefined' && module.require !== undefined) {
+    const dbModule = module.require('./db.cjs.min.js') as { DB: SVGAPlayerCacheStoreConstructor }
+    return new dbModule.DB()
+  }
+
+  throw new Error('[SVGAPlayer] DB bundle is unavailable')
+}
+
+async function getCacheStore (): Promise<SVGAPlayerCacheStore> {
+  if (customCacheStoreLoader !== null) return await customCacheStoreLoader()
+  defaultCacheStorePromise = defaultCacheStorePromise ?? loadDefaultCacheStore()
+  return await defaultCacheStorePromise
+}
+
+export function setSVGAPlayerCacheStoreLoaderForTest (loader: CacheStoreLoader | null): void {
+  customCacheStoreLoader = loader
+  defaultCacheStorePromise = null
 }
 
 function parserOptionsFromConfig (options: SVGAPlayerInitOptions): ParserConfigOptions {
@@ -146,6 +238,12 @@ export class SVGAPlayer {
   private intersectionObserver: IntersectionObserver | null = null
   private destroyed = false
 
+  /**
+   * Create a player bound to a canvas and initialize the render backend.
+   *
+   * @param options - Initialization options, including the target canvas,
+   * render backend preference, parser options, and default playback settings.
+   */
   constructor (options: SVGAPlayerInitOptions) {
     this.config = {
       container: options.container,
@@ -173,6 +271,12 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Update playback settings for subsequent prepare/play calls.
+   *
+   * @param options - Playback options such as loop count, fill mode, play mode,
+   * frame range, loop start frame, and no-delay execution behavior.
+   */
   public setConfig (options: SVGAPlayerPlaybackConfigOptions): void {
     if (options.startFrame !== undefined && options.endFrame !== undefined && options.startFrame > options.endFrame) {
       const error = new Error('StartFrame should > EndFrame')
@@ -191,6 +295,13 @@ export class SVGAPlayer {
     this.setIntersectionObserver()
   }
 
+  /**
+   * Subscribe to a player event.
+   *
+   * @param event - Event name to listen for.
+   * @param callback - Handler invoked when the event is emitted.
+   * @returns A function that removes this listener.
+   */
   public on<T extends SVGAPlayerEventName> (
     event: T,
     callback: SVGAPlayerEventCallback<T>
@@ -206,7 +317,14 @@ export class SVGAPlayer {
     }
   }
 
-  public async load (source: string | Video, key?: string): Promise<void> {
+  /**
+   * Load an SVGA source into a named slot.
+   *
+   * @param options - Load options.
+   * @param options.source - Remote/local URL string or an already parsed Video object.
+   * @param options.key - Optional slot key. Uses the default slot when omitted.
+   */
+  public async load ({ source, key }: SVGAPlayerLoadOptions): Promise<void> {
     const slotKey = normalizeKey(key)
     const version = this.nextSlotVersion(slotKey)
 
@@ -226,6 +344,11 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Compile and prepare a loaded slot for playback without starting it.
+   *
+   * @param key - Optional slot key to prepare. Uses the default slot when omitted.
+   */
   public async prepare (key?: string): Promise<void> {
     const slotKey = normalizeKey(key)
     try {
@@ -236,6 +359,11 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Prepare a loaded slot if needed, then start playback.
+   *
+   * @param key - Optional slot key to play. Uses the default slot when omitted.
+   */
   public async play (key?: string): Promise<void> {
     const slotKey = normalizeKey(key)
     try {
@@ -247,6 +375,11 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Start playback for a slot that has already been prepared.
+   *
+   * @param key - Optional prepared slot key to start. Uses the default slot when omitted.
+   */
   public start (key?: string): void {
     const slotKey = normalizeKey(key)
     try {
@@ -257,6 +390,9 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Resume playback from the current frame after a pause.
+   */
   public resume (): void {
     try {
       this.assertActiveCompiled()
@@ -268,11 +404,17 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Pause playback and keep the current frame state.
+   */
   public pause (): void {
     this.animator.stop()
     this.emit('pause', undefined)
   }
 
+  /**
+   * Stop playback, reset the current frame, and clear the active render surface.
+   */
   public stop (): void {
     this.animator.stop()
     this.currentFrame = 0
@@ -281,27 +423,44 @@ export class SVGAPlayer {
     this.emit('stop', undefined)
   }
 
+  /**
+   * Clear the render surface without changing loaded slots or playback state.
+   */
   public clear (): void {
     this.backend.clear()
   }
 
+  /**
+   * Capture the current backend surface when the active backend supports snapshots.
+   *
+   * @returns The current canvas/ImageBitmap snapshot, or null when unsupported.
+   */
   public snapshot (): HTMLCanvasElement | ImageBitmap | null {
     return this.backend.snapshot?.() ?? null
   }
 
-  public replace (
-    elementKey: string,
-    texture: ReplaceElement | DynamicElement,
-    options: SVGAPlayerReplaceOptions = {}
-  ): void {
+  /**
+   * Replace one or more elements in a loaded slot.
+   *
+   * @param options - Replacement options.
+   * @param options.key - Optional slot key to update. Uses the default slot when omitted.
+   * @param options.mode - Replacement target. `replace` updates normal image/text
+   * elements; `dynamic` updates dynamic text/canvas elements.
+   * @param options.element - Map of SVGA element keys to replacement textures.
+   */
+  public replace (options: SVGAPlayerReplaceOptions): void {
     const slotKey = normalizeKey(options.key)
 
     try {
       const slot = this.getLoadedSlot(slotKey)
       if ((options.mode ?? 'replace') === 'dynamic') {
-        slot.video.dynamicElements[elementKey] = texture as DynamicElement
+        Object.keys(options.element).forEach(elementKey => {
+          slot.video.dynamicElements[elementKey] = options.element[elementKey] as DynamicElement
+        })
       } else {
-        slot.video.replaceElements[elementKey] = texture as ReplaceElement
+        Object.keys(options.element).forEach(elementKey => {
+          slot.video.replaceElements[elementKey] = options.element[elementKey] as ReplaceElement
+        })
       }
 
       if (slot.compiledAnimation !== null) {
@@ -319,6 +478,11 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Delete a loaded slot and clean up its active/prepared state.
+   *
+   * @param key - Optional slot key to delete. Uses the default slot when omitted.
+   */
   public delete (key?: string): void {
     const slotKey = normalizeKey(key)
     this.nextSlotVersion(slotKey)
@@ -333,10 +497,19 @@ export class SVGAPlayer {
     }
   }
 
-  public async cache (db: DB, options: SVGAPlayerCacheOptions): Promise<void> {
+  /**
+   * Write the parsed data of a loaded slot into the built-in IndexedDB cache.
+   * The independent DB bundle is lazy-loaded on the first cache call.
+   *
+   * @param options - Cache options.
+   * @param options.key - Optional loaded slot key to cache. Uses the default slot when omitted.
+   * @param options.id - IndexedDB key used to store the parsed Video data.
+   */
+  public async cache (options: SVGAPlayerCacheOptions): Promise<void> {
     const slotKey = normalizeKey(options.key)
     try {
       const slot = this.getLoadedSlot(slotKey)
+      const db = await getCacheStore()
       await db.insert(options.id, slot.video)
     } catch (error) {
       this.emitError(error, SVGAPlayerErrorType.CACHE)
@@ -344,6 +517,9 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Release parser, animator, backend, loaded slots, event listeners, and observers.
+   */
   public destroy (): void {
     this.destroyed = true
     this.animator.stop()
@@ -363,6 +539,9 @@ export class SVGAPlayer {
     }
   }
 
+  /**
+   * Current playback progress from 0 to 1.
+   */
   public get progress (): number {
     return this.totalFrames > 0 ? this.currentFrame / this.totalFrames : 0
   }

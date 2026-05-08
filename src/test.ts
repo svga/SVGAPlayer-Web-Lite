@@ -1,5 +1,6 @@
 import { PLAYER_FILL_MODE, PLAYER_PLAY_MODE } from 'types'
-import { DB, SVGAPlayer } from './index'
+import { DB } from './db'
+import { SVGAPlayer } from './index'
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
 
@@ -13,7 +14,7 @@ const TESTCASE1 = async (): Promise<void> => {
     container: canvas,
     loop: 1
   })
-  await player.load(url)
+  await player.load({ source: url })
   await player.play()
 }
 
@@ -25,7 +26,7 @@ const TESTCASE2 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   let player = new SVGAPlayer({ container: canvas })
   console.time('load')
-  await player.load(url, 'angel')
+  await player.load({ source: url, key: 'angel' })
   console.timeEnd('load')
   console.time('prepare')
   await player.prepare('angel')
@@ -70,9 +71,9 @@ const TESTCASE3 = async (): Promise<void> => {
 
   const url = '/svga/kingset.svga'
   const player = new SVGAPlayer({ container: canvas })
-  await player.load(url, 'gift')
-  player.replace('99', image, { key: 'gift' })
-  player.replace('banner', fontCanvas, { key: 'gift', mode: 'dynamic' })
+  await player.load({ source: url, key: 'gift' })
+  player.replace({ key: 'gift', element: { 99: image } })
+  player.replace({ key: 'gift', mode: 'dynamic', element: { banner: fontCanvas } })
   await player.play('gift')
 }
 
@@ -91,10 +92,10 @@ const TESTCASE4 = async (): Promise<void> => {
   })
   const svga = await db.find(url)
   if (svga === undefined) {
-    await player.load(url)
-    await player.cache(db, { id: url })
+    await player.load({ source: url })
+    await player.cache({ id: url })
   } else {
-    await player.load(svga)
+    await player.load({ source: svga })
   }
   await player.play()
 }
@@ -115,7 +116,7 @@ const TESTCASE5 = async (): Promise<void> => {
     startFrame: 10,
     endFrame: 40
   })
-  await player.load(url)
+  await player.load({ source: url })
   await player.play()
 }
 
@@ -130,7 +131,7 @@ const TESTCASE6 = async (): Promise<void> => {
     loop: 1,
     playMode: PLAYER_PLAY_MODE.FORWARDS
   })
-  await player.load(url)
+  await player.load({ source: url })
   await player.play()
   player.on('end', () => {
     console.log('onEnd', player.currentFrame)
@@ -151,7 +152,7 @@ const TESTCASE7 = async (): Promise<void> => {
   const url = '/svga/undefined.svga'
   try {
     const player = new SVGAPlayer({ container: canvas })
-    await player.load(url)
+    await player.load({ source: url })
     await player.play()
   } catch (error) {
     console.error('Catch >>>>', error)
@@ -165,7 +166,7 @@ const TESTCASE7 = async (): Promise<void> => {
 const TESTCASE8 = async (): Promise<void> => {
   const url = '/svga/angel.svga'
   const player = new SVGAPlayer({ container: canvas })
-  await player.load(url)
+  await player.load({ source: url })
   player.setConfig({
     loop: 1,
     startFrame: 0,
@@ -190,8 +191,8 @@ const TESTCASE8 = async (): Promise<void> => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TESTCASE9 = async (): Promise<void> => {
   const player = new SVGAPlayer({ container: canvas })
-  await player.load('/svga/loading.svga', 'loading')
-  await player.load('/svga/angel.svga', 'angel')
+  await player.load({ source: '/svga/loading.svga', key: 'loading' })
+  await player.load({ source: '/svga/angel.svga', key: 'angel' })
   await player.play('loading')
   setTimeout(() => {
     player.play('angel').catch(error => console.error(error))

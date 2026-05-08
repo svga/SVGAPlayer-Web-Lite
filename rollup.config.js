@@ -11,6 +11,7 @@ import { inlineParser } from './scripts/plugins'
 const FORMAT = process.env.FORMAT
 const IS_TEST_ENV = process.env.NODE_ENV === 'test'
 const DIST_FILE_NAME = 'index'
+const DB_FILE_NAME = 'db'
 const TEST_DIR = '__test__'
 const DIST_DIR = 'dist'
 const UMD_NAME = 'SVGA'
@@ -65,6 +66,28 @@ const config = [
     ]
   }
 ]
+
+if (!IS_TEST_ENV) {
+  config.push({
+    onwarn () {},
+    input: 'src/db.ts',
+    output: {
+      file: `${DIST_DIR}/${DB_FILE_NAME}${FORMAT === 'umd' ? '' : `.${FORMAT}`}.min.js`,
+      format: FORMAT,
+      name: 'SVGADB',
+      sourcemap: false
+    },
+    plugins: [
+      typescript({
+        tsconfig: 'tsconfig.json',
+        include: ['src/db.ts', 'src/types.ts']
+      }),
+      babelOutputPlugin,
+      terser(),
+      banner('SVGA.DB v<%= pkg.version %>')
+    ]
+  })
+}
 
 if (IS_TEST_ENV || FORMAT === 'umd') {
   config.unshift({

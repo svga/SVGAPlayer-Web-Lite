@@ -471,7 +471,7 @@ async function testFacadeEventsAndParserWorker (): Promise<void> {
   await assert.rejects(async () => await player.play(), /load\('default'\) is required/)
   assert.ok(events.some(event => event.includes(':play:blocking')))
 
-  const loadPromise = player.load('https://example.com/fake.svga')
+  const loadPromise = player.load({ source: 'https://example.com/fake.svga' })
   await nextMicrotask()
   assert.equal(parserWorkerPosts.length, 1)
   assert.equal(parserWorkerPosts[0].url, 'https://example.com/fake.svga')
@@ -497,8 +497,8 @@ async function testKeyedLoadPreparePlayAndSwitch (): Promise<void> {
     renderMode: 'canvas'
   })
 
-  await player.load(createVideo({ withImage: true }), 'idle')
-  await player.load(createVideo({ withImage: true, withShape: true }), 'gift')
+  await player.load({ source: createVideo({ withImage: true }), key: 'idle' })
+  await player.load({ source: createVideo({ withImage: true, withShape: true }), key: 'gift' })
   await player.prepare('idle')
   assert.equal((player as any).preparedKey, 'idle')
 
@@ -518,8 +518,8 @@ async function testParserQueueVersionAndDelete (): Promise<void> {
     renderMode: 'canvas'
   })
 
-  const first = player.load('https://example.com/a.svga', 'gift')
-  const second = player.load('https://example.com/b.svga', 'gift')
+  const first = player.load({ source: 'https://example.com/a.svga', key: 'gift' })
+  const second = player.load({ source: 'https://example.com/b.svga', key: 'gift' })
   await nextMicrotask()
   assert.equal(parserWorkerPosts.length, 1)
   resolveNextParserLoad(createVideo({ withImage: true }))
@@ -531,20 +531,20 @@ async function testParserQueueVersionAndDelete (): Promise<void> {
   await second
   assert.equal((player as any).slots.get('gift').video.sprites[0].frames[0].shapes.length, 1)
 
-  const failed = player.load('https://example.com/fail.svga', 'bad')
+  const failed = player.load({ source: 'https://example.com/fail.svga', key: 'bad' })
   await nextMicrotask()
   assert.equal(parserWorkerPosts.length, 3)
   resolveNextParserLoad(new Error('parse failed'))
   await assert.rejects(async () => await failed, /parse failed/)
 
-  const recovered = player.load('https://example.com/recovered.svga', 'ok')
+  const recovered = player.load({ source: 'https://example.com/recovered.svga', key: 'ok' })
   await nextMicrotask()
   assert.equal(parserWorkerPosts.length, 4)
   resolveNextParserLoad(createVideo({ withImage: true }))
   await recovered
   assert.equal((player as any).slots.has('ok'), true)
 
-  const deleted = player.load('https://example.com/delete.svga', 'deleted')
+  const deleted = player.load({ source: 'https://example.com/delete.svga', key: 'deleted' })
   await nextMicrotask()
   assert.equal(parserWorkerPosts.length, 5)
   player.delete('deleted')
@@ -556,7 +556,10 @@ async function testParserQueueVersionAndDelete (): Promise<void> {
 
 async function testReplaceDeleteAndCache (): Promise<void> {
   installBrowserFakes()
-  const { SVGAPlayer } = require('../../src/svga-player') as typeof import('../../src/svga-player')
+  const {
+    SVGAPlayer,
+    setSVGAPlayerCacheStoreLoaderForTest
+  } = require('../../src/svga-player') as typeof import('../../src/svga-player')
   const player = new SVGAPlayer({
     container: new FakeCanvas() as any as HTMLCanvasElement,
     renderMode: 'canvas',
@@ -564,6 +567,7 @@ async function testReplaceDeleteAndCache (): Promise<void> {
   })
   const video = createVideo({ withImage: true })
   const image = new FakeImage() as any as HTMLImageElement
+  const icon = new FakeImage() as any as HTMLImageElement
   const canvas = new FakeCanvas() as any as HTMLCanvasElement
   const inserted: Array<[IDBValidKey, Video]> = []
   const db = {
@@ -572,16 +576,19 @@ async function testReplaceDeleteAndCache (): Promise<void> {
     }
   }
 
-  await player.load(video, 'gift')
+  await player.load({ source: video, key: 'gift' })
   await player.prepare('gift')
-  player.replace('image', image, { key: 'gift' })
-  player.replace('banner', canvas, { key: 'gift', mode: 'dynamic' })
+  player.replace({ key: 'gift', element: { image, icon } })
+  player.replace({ key: 'gift', mode: 'dynamic', element: { banner: canvas } })
   await nextMicrotask()
   assert.equal(video.replaceElements.image, image)
+  assert.equal(video.replaceElements.icon, icon)
   assert.equal(video.dynamicElements.banner, canvas)
   assert.equal((player as any).slots.get('gift').dirty, false)
 
-  await player.cache(db as any, { key: 'gift', id: 'gift.svga' })
+  setSVGAPlayerCacheStoreLoaderForTest(async () => db)
+  await player.cache({ key: 'gift', id: 'gift.svga' })
+  setSVGAPlayerCacheStoreLoaderForTest(null)
   assert.equal(inserted[0][0], 'gift.svga')
   assert.equal(inserted[0][1], video)
 
@@ -604,7 +611,7 @@ async function testDeleteDuringPrepareDoesNotRestorePreparedState (): Promise<vo
   const video = createVideo({ withImage: true })
   video.images.image = 'base64'
 
-  await player.load(video, 'gift')
+  await player.load({ source: video, key: 'gift' })
   const preparing = player.prepare('gift')
   player.delete('gift')
   await preparing
@@ -623,13 +630,13 @@ async function testPublicEntrySurface (): Promise<void> {
     'FrameRenderCommand',
     'CompiledResources',
     'RenderCapabilities',
-    'RenderMode'
+    'RenderMode',
+    'DB'
   ]
 
   assert.equal(typeof entry.SVGAPlayer, 'function')
   assert.equal(entry.default, entry.SVGAPlayer)
   assert.equal(typeof (entry.SVGAPlayer as any).prototype.snapshot, 'function')
-  assert.equal(typeof entry.DB, 'function')
   removedExports.forEach(name => {
     assert.equal(Object.prototype.hasOwnProperty.call(entry, name), false)
   })
@@ -927,7 +934,7 @@ async function testPlayerSnapshot (): Promise<void> {
     container: canvas,
     renderMode: 'canvas'
   })
-  await canvasPlayer.load(createVideo({ withImage: true }))
+  await canvasPlayer.load({ source: createVideo({ withImage: true }) })
   await canvasPlayer.prepare()
   assert.equal(canvasPlayer.snapshot(), canvas)
   canvasPlayer.destroy()
@@ -937,7 +944,7 @@ async function testPlayerSnapshot (): Promise<void> {
     container: webglCanvas,
     renderMode: 'webgl'
   })
-  await webglPlayer.load(createVideo({ withImage: true }))
+  await webglPlayer.load({ source: createVideo({ withImage: true }) })
   await webglPlayer.play()
   const activeKey = (webglPlayer as any).activeKey
   const preparedKey = (webglPlayer as any).preparedKey
@@ -1325,11 +1332,11 @@ async function testUnsupportedCapabilitiesErrorAndWarning (): Promise<void> {
   })
 
   try {
-    await player.load(createVideo({
+    await player.load({ source: createVideo({
       withImage: true,
       withShape: true,
       withMask: true
-    }))
+    }) })
     await player.prepare()
   } finally {
     console.warn = originalWarn
@@ -1360,13 +1367,13 @@ async function testRoundedRectFixturesDoNotWarnInWebGL (): Promise<void> {
   })
 
   try {
-    await player.load(loadRoundedRectFillFixtureVideo(), 'fill')
+    await player.load({ source: loadRoundedRectFillFixtureVideo(), key: 'fill' })
     await player.prepare('fill')
-    await player.load(loadRoundedRectStrokeFixtureVideo(), 'stroke')
+    await player.load({ source: loadRoundedRectStrokeFixtureVideo(), key: 'stroke' })
     await player.prepare('stroke')
-    await player.load(loadEllipseFillFixtureVideo(), 'ellipse-fill')
+    await player.load({ source: loadEllipseFillFixtureVideo(), key: 'ellipse-fill' })
     await player.prepare('ellipse-fill')
-    await player.load(loadEllipseStrokeFixtureVideo(), 'ellipse-stroke')
+    await player.load({ source: loadEllipseStrokeFixtureVideo(), key: 'ellipse-stroke' })
     await player.prepare('ellipse-stroke')
   } finally {
     console.warn = originalWarn
@@ -1501,7 +1508,7 @@ async function testErrorEventTypesAndBlockingFlag (): Promise<void> {
   assert.throws(() => player.start(), /load\('default'\) is required/)
   assert.throws(() => player.resume(), /play\(\) is required/)
   assert.throws(() => player.setConfig({ startFrame: 2, endFrame: 1 }), /StartFrame should > EndFrame/)
-  await assert.rejects(async () => await player.cache({ insert: async () => {} } as any, { id: 'x' }), /load\('default'\) is required/)
+  await assert.rejects(async () => await player.cache({ id: 'x' }), /load\('default'\) is required/)
 
   assert.deepEqual(errors.map(error => error.errorType), [
     SVGAPlayerErrorType.START,

@@ -1,7 +1,7 @@
 {
   "name": "svga",
   "version": "2.1.1",
-  "description": "Lightweight SVGA Web Player",
+  "description": "Advanced SVGA Web Player",
   "main": "dist/index.cjs.min.js",
   "module": "dist/index.esm.min.js",
   "browser": "dist/index.min.js",
@@ -12,12 +12,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/svga/SVGAPlayer-Web-Lite"
+    "url": "git+https://github.com/svga/SVGAPlayer-Web-Pro"
   },
   "bugs": {
-    "url": "https://github.com/svga/SVGAPlayer-Web-Lite/issues"
+    "url": "https://github.com/svga/SVGAPlayer-Web-Pro/issues"
   },
-  "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
+  "homepage": "https://github.com/svga/SVGAPlayer-Web-Pro/#readme",
   "scripts": {
     "format:check": "node node_modules/eslint/bin/eslint.js",
     "type:check": "node node_modules/typescript/bin/tsc --noEmit",
