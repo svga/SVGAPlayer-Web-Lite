@@ -14,6 +14,8 @@ const rectFillOutputPath = resolve(rootDir, '__test__/svga/rect-fill.svga')
 const rectStrokeOutputPath = resolve(rootDir, '__test__/svga/rect-stroke.svga')
 const roundedRectFillOutputPath = resolve(rootDir, '__test__/svga/rounded-rect-fill.svga')
 const roundedRectStrokeOutputPath = resolve(rootDir, '__test__/svga/rounded-rect-stroke.svga')
+const ellipseFillOutputPath = resolve(rootDir, '__test__/svga/ellipse-fill.svga')
+const ellipseStrokeOutputPath = resolve(rootDir, '__test__/svga/ellipse-stroke.svga')
 
 function loadSvgaProtoJson () {
   const source = readFileSync(protoPath, 'utf8')
@@ -174,6 +176,83 @@ function createRoundedRectStrokeMovie () {
   }
 }
 
+function createEllipseFillMovie () {
+  const transform = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+
+  return {
+    version: '2.0',
+    params: {
+      viewBoxWidth: 120,
+      viewBoxHeight: 120,
+      fps: 20,
+      frames: 1
+    },
+    images: {},
+    sprites: [
+      {
+        imageKey: 'shape-only',
+        frames: [
+          {
+            alpha: 1,
+            layout: { x: 0, y: 0, width: 120, height: 120 },
+            transform,
+            clipPath: '',
+            shapes: [
+              {
+                type: 2,
+                ellipse: { x: 60, y: 60, radiusX: 36, radiusY: 24 },
+                styles: {
+                  fill: { r: 0.2, g: 0.85, b: 0.35, a: 1 }
+                },
+                transform
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+function createEllipseStrokeMovie () {
+  const transform = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+
+  return {
+    version: '2.0',
+    params: {
+      viewBoxWidth: 120,
+      viewBoxHeight: 120,
+      fps: 20,
+      frames: 1
+    },
+    images: {},
+    sprites: [
+      {
+        imageKey: 'shape-only',
+        frames: [
+          {
+            alpha: 1,
+            layout: { x: 0, y: 0, width: 120, height: 120 },
+            transform,
+            clipPath: '',
+            shapes: [
+              {
+                type: 2,
+                ellipse: { x: 60, y: 60, radiusX: 34, radiusY: 22 },
+                styles: {
+                  stroke: { r: 0, g: 0, b: 0, a: 1 },
+                  strokeWidth: 8
+                },
+                transform
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
 function varint (value) {
   const bytes = []
   let current = value >>> 0
@@ -237,6 +316,15 @@ function encodeRect (rect) {
   ])
 }
 
+function encodeEllipse (ellipse) {
+  return Buffer.concat([
+    fieldFloat(1, ellipse.x),
+    fieldFloat(2, ellipse.y),
+    fieldFloat(3, ellipse.radiusX),
+    fieldFloat(4, ellipse.radiusY)
+  ])
+}
+
 function encodeRgba (rgba) {
   return Buffer.concat([
     fieldFloat(1, rgba.r),
@@ -255,12 +343,14 @@ function encodeShapeStyle (styles) {
 }
 
 function encodeShape (shape) {
-  return Buffer.concat([
-    fieldInt32(1, shape.type),
-    fieldBytes(3, encodeRect(shape.rect)),
+  const fields = [fieldInt32(1, shape.type)]
+  if (shape.rect != null) fields.push(fieldBytes(3, encodeRect(shape.rect)))
+  if (shape.ellipse != null) fields.push(fieldBytes(4, encodeEllipse(shape.ellipse)))
+  fields.push(
     fieldBytes(10, encodeShapeStyle(shape.styles)),
     fieldBytes(11, encodeTransform(shape.transform))
-  ])
+  )
+  return Buffer.concat(fields)
 }
 
 function encodeFrame (frame) {
@@ -367,7 +457,48 @@ if (
   throw new Error('Generated rounded-rect-stroke.svga did not decode into the expected stroked rounded RECT shape')
 }
 
+const ellipseFill = writeMovie(ellipseFillOutputPath, createEllipseFillMovie())
+const ellipseFillShape = ellipseFill.sprites[0]?.frames[0]?.shapes[0]
+const ellipseFillStyle = ellipseFillShape?.styles
+if (
+  ellipseFillShape?.type !== 2 ||
+  ellipseFillShape.ellipse?.radiusX == null ||
+  ellipseFillShape.ellipse.radiusX <= 0 ||
+  ellipseFillShape.ellipse.radiusY == null ||
+  ellipseFillShape.ellipse.radiusY <= 0 ||
+  ellipseFillStyle?.fill == null ||
+  ellipseFillStyle.stroke != null ||
+  Object.prototype.hasOwnProperty.call(ellipseFillStyle, 'strokeWidth')
+) {
+  throw new Error('Generated ellipse-fill.svga did not decode into the expected filled ELLIPSE shape')
+}
+
+const ellipseStroke = writeMovie(ellipseStrokeOutputPath, createEllipseStrokeMovie())
+const ellipseStrokeShape = ellipseStroke.sprites[0]?.frames[0]?.shapes[0]
+const ellipseStrokeStyle = ellipseStrokeShape?.styles
+if (
+  ellipseStrokeShape?.type !== 2 ||
+  ellipseStrokeShape.ellipse?.radiusX == null ||
+  ellipseStrokeShape.ellipse.radiusX <= 0 ||
+  ellipseStrokeShape.ellipse.radiusY == null ||
+  ellipseStrokeShape.ellipse.radiusY <= 0 ||
+  ellipseStrokeStyle?.fill != null ||
+  ellipseStrokeStyle?.stroke == null ||
+  ellipseStrokeStyle.strokeWidth == null ||
+  ellipseStrokeStyle.strokeWidth <= 0 ||
+  Object.prototype.hasOwnProperty.call(ellipseStrokeStyle, 'lineCap') ||
+  Object.prototype.hasOwnProperty.call(ellipseStrokeStyle, 'lineJoin') ||
+  Object.prototype.hasOwnProperty.call(ellipseStrokeStyle, 'miterLimit') ||
+  Object.prototype.hasOwnProperty.call(ellipseStrokeStyle, 'lineDashI') ||
+  Object.prototype.hasOwnProperty.call(ellipseStrokeStyle, 'lineDashII') ||
+  Object.prototype.hasOwnProperty.call(ellipseStrokeStyle, 'lineDashIII')
+) {
+  throw new Error('Generated ellipse-stroke.svga did not decode into the expected stroked ELLIPSE shape')
+}
+
 console.log(`Wrote ${rectFillOutputPath}`)
 console.log(`Wrote ${rectStrokeOutputPath}`)
 console.log(`Wrote ${roundedRectFillOutputPath}`)
 console.log(`Wrote ${roundedRectStrokeOutputPath}`)
+console.log(`Wrote ${ellipseFillOutputPath}`)
+console.log(`Wrote ${ellipseStrokeOutputPath}`)

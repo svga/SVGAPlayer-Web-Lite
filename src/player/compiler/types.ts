@@ -120,6 +120,8 @@ export function createWebGLRenderCapabilities (): RenderCapabilities {
   capabilities.shape.rect.stroke = true
   capabilities.shape.roundedRect.fill = true
   capabilities.shape.roundedRect.stroke = true
+  capabilities.shape.ellipse.fill = true
+  capabilities.shape.ellipse.stroke = true
   capabilities.shape.strokeStyle.width = true
   capabilities.snapshot = true
   return capabilities

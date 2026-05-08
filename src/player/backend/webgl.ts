@@ -33,7 +33,17 @@ interface RoundedRect extends Rect {
   cornerRadius: number
 }
 
+interface Ellipse {
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+}
+
 const ROUNDED_RECT_CORNER_SEGMENTS = 8
+const MIN_ELLIPSE_SEGMENTS = 16
+const MAX_ELLIPSE_SEGMENTS = 96
+const ELLIPSE_SEGMENT_LENGTH = 6
 
 function webglCapabilities (): RenderCapabilities {
   return createWebGLRenderCapabilities()
@@ -283,6 +293,103 @@ function drawRoundedRectStrokeVertices (
 
   const outerPoints = roundedRectPerimeter(outer, ROUNDED_RECT_CORNER_SEGMENTS, true)
   const innerPoints = roundedRectPerimeter(inner, ROUNDED_RECT_CORNER_SEGMENTS, true)
+  if (
+    outerPoints === null ||
+    innerPoints === null ||
+    outerPoints.length !== innerPoints.length ||
+    outerPoints.length < 2
+  ) {
+    return null
+  }
+
+  const vertices: number[] = []
+  outerPoints.forEach((outerPoint, index) => {
+    const nextIndex = (index + 1) % outerPoints.length
+    const nextOuter = outerPoints[nextIndex]
+    const innerPoint = innerPoints[index]
+    const nextInner = innerPoints[nextIndex]
+    vertices.push(
+      outerPoint.x, outerPoint.y,
+      nextOuter.x, nextOuter.y,
+      innerPoint.x, innerPoint.y,
+      innerPoint.x, innerPoint.y,
+      nextOuter.x, nextOuter.y,
+      nextInner.x, nextInner.y
+    )
+  })
+
+  return new Float32Array(vertices)
+}
+
+function ellipseSegmentCount (ellipse: Ellipse): number {
+  if (ellipse.radiusX <= 0 || ellipse.radiusY <= 0) return 0
+
+  const a = ellipse.radiusX
+  const b = ellipse.radiusY
+  const circumference = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)))
+  const segments = Math.ceil(circumference / ELLIPSE_SEGMENT_LENGTH)
+
+  return Math.max(MIN_ELLIPSE_SEGMENTS, Math.min(MAX_ELLIPSE_SEGMENTS, segments))
+}
+
+function ellipsePerimeter (ellipse: Ellipse, segments: number): Point[] | null {
+  if (ellipse.radiusX <= 0 || ellipse.radiusY <= 0 || segments < 3) return null
+
+  const points: Point[] = []
+  for (let index = 0; index < segments; index++) {
+    const angle = Math.PI * 2 * (index / segments)
+    points.push({
+      x: ellipse.x + Math.cos(angle) * ellipse.radiusX,
+      y: ellipse.y + Math.sin(angle) * ellipse.radiusY
+    })
+  }
+
+  return points
+}
+
+function drawEllipseVertices (ellipse: Ellipse): Float32Array | null {
+  const segments = ellipseSegmentCount(ellipse)
+  const points = ellipsePerimeter(ellipse, segments)
+  if (points === null) return null
+
+  const vertices: number[] = []
+  points.forEach((point, index) => {
+    const next = points[(index + 1) % points.length]
+    vertices.push(
+      ellipse.x, ellipse.y,
+      point.x, point.y,
+      next.x, next.y
+    )
+  })
+
+  return new Float32Array(vertices)
+}
+
+function drawEllipseStrokeVertices (
+  ellipse: Ellipse,
+  strokeWidth: number
+): Float32Array | null {
+  if (ellipse.radiusX <= 0 || ellipse.radiusY <= 0 || strokeWidth <= 0) return null
+
+  const half = strokeWidth / 2
+  const inner: Ellipse = {
+    x: ellipse.x,
+    y: ellipse.y,
+    radiusX: ellipse.radiusX - half,
+    radiusY: ellipse.radiusY - half
+  }
+  const outer: Ellipse = {
+    x: ellipse.x,
+    y: ellipse.y,
+    radiusX: ellipse.radiusX + half,
+    radiusY: ellipse.radiusY + half
+  }
+
+  if (inner.radiusX <= 0 || inner.radiusY <= 0) return null
+
+  const segments = ellipseSegmentCount(outer)
+  const outerPoints = ellipsePerimeter(outer, segments)
+  const innerPoints = ellipsePerimeter(inner, segments)
   if (
     outerPoints === null ||
     innerPoints === null ||
@@ -597,17 +704,22 @@ export class WebGLBackend implements RenderBackend {
     shape: ShapeRenderCommand
   ): void {
     const geometry = animation.geometries[shape.geometryId]
-    if (geometry.type !== 'rect') return
-    if (geometry.width <= 0 || geometry.height <= 0) return
+    if (geometry.type !== 'rect' && geometry.type !== 'ellipse') return
+    if (geometry.type === 'rect' && (geometry.width <= 0 || geometry.height <= 0)) return
+    if (geometry.type === 'ellipse' && (geometry.radiusX <= 0 || geometry.radiusY <= 0)) return
 
     const transform = composeTransforms(command.transform, shape.transform)
-    const isRoundedRect = geometry.cornerRadius > 0
 
     if (shape.styles.fill !== null) {
       const fillColor = parseRgbaColor(shape.styles.fill)
-      const fillVertices = isRoundedRect
-        ? drawRoundedRectVertices(geometry)
-        : drawRectVertices(geometry)
+      let fillVertices: Float32Array | null = null
+      if (geometry.type === 'ellipse') {
+        fillVertices = drawEllipseVertices(geometry)
+      } else {
+        fillVertices = geometry.cornerRadius > 0
+          ? drawRoundedRectVertices(geometry)
+          : drawRectVertices(geometry)
+      }
       if (fillColor !== null) {
         if (fillVertices !== null) {
           this.drawSolidVertices(
@@ -636,11 +748,16 @@ export class WebGLBackend implements RenderBackend {
     }
 
     const strokeColor = parseRgbaColor(shape.styles.stroke)
-    const strokeVertices = strokeColor === null
-      ? null
-      : isRoundedRect
-        ? drawRoundedRectStrokeVertices(geometry, shape.styles.strokeWidth)
-        : drawRectStrokeVertices(geometry, shape.styles.strokeWidth)
+    let strokeVertices: Float32Array | null = null
+    if (strokeColor !== null) {
+      if (geometry.type === 'ellipse') {
+        strokeVertices = drawEllipseStrokeVertices(geometry, shape.styles.strokeWidth)
+      } else {
+        strokeVertices = geometry.cornerRadius > 0
+          ? drawRoundedRectStrokeVertices(geometry, shape.styles.strokeWidth)
+          : drawRectStrokeVertices(geometry, shape.styles.strokeWidth)
+      }
+    }
     if (strokeColor === null || strokeVertices === null) return
 
     this.drawSolidVertices(

@@ -10,10 +10,12 @@ import {
   PLAYER_FILL_MODE,
   PLAYER_PLAY_MODE,
   SHAPE_TYPE,
+  Transform,
   Video
 } from '../../src/types'
 
 type Listener = (event: Event) => void
+type TestRgba = `rgba(${number}, ${number}, ${number}, ${number})`
 
 interface FakeContext2D {
   calls: string[]
@@ -182,9 +184,20 @@ class FakeWebGLRenderingContext {
   public enableVertexAttribArray (): void {}
   public disableVertexAttribArray (): void { this.calls.push('disableVertexAttribArray') }
   public vertexAttribPointer (): void {}
-  public uniformMatrix3fv (): void {}
+  public uniformMatrix3fv (_location: WebGLUniformLocation, _transpose: boolean, value: Float32List): void {
+    this.calls.push(`uniformMatrix3fv:${Array.from(value).join(',')}`)
+  }
   public uniform1f (): void {}
-  public uniform4f (): void { this.calls.push('uniform4f') }
+  public uniform4f (
+    _location: WebGLUniformLocation,
+    red: number,
+    green: number,
+    blue: number,
+    alpha: number
+  ): void {
+    this.calls.push('uniform4f')
+    this.calls.push(`uniform4f:${red},${green},${blue},${alpha}`)
+  }
   public drawArrays (_mode: number, _first: number, count: number): void {
     this.calls.push('drawArrays')
     this.calls.push(`drawArrays:${count}`)
@@ -193,7 +206,7 @@ class FakeWebGLRenderingContext {
   public deleteTexture (): void { this.calls.push('deleteTexture') }
   public texParameteri (): void {}
   public pixelStorei (): void {}
-  public texImage2D (): void {}
+  public texImage2D (): void { this.calls.push('texImage2D') }
   public isContextLost (): boolean { return this.lost }
   public getExtension (name: string): unknown {
     if (name !== 'WEBGL_lose_context') return null
@@ -237,6 +250,16 @@ function loadRoundedRectFillFixtureVideo (): Video {
 
 function loadRoundedRectStrokeFixtureVideo (): Video {
   const fixturePath = path.resolve(process.cwd(), '__test__/svga/rounded-rect-stroke.svga')
+  return new VideoEntity(decodeMovieFixture(fixturePath), {})
+}
+
+function loadEllipseFillFixtureVideo (): Video {
+  const fixturePath = path.resolve(process.cwd(), '__test__/svga/ellipse-fill.svga')
+  return new VideoEntity(decodeMovieFixture(fixturePath), {})
+}
+
+function loadEllipseStrokeFixtureVideo (): Video {
+  const fixturePath = path.resolve(process.cwd(), '__test__/svga/ellipse-stroke.svga')
   return new VideoEntity(decodeMovieFixture(fixturePath), {})
 }
 
@@ -328,17 +351,26 @@ function createVideo (options: {
   withoutFill?: boolean
   strokeWidth?: number
   cornerRadius?: number
+  withLineCap?: boolean
   withLineJoin?: boolean
+  withMiterLimit?: boolean
   withUnsupportedPath?: boolean
+  alpha?: number
+  spriteTransform?: Transform
+  shapeTransform?: Transform
+  fillColor?: TestRgba
+  strokeColor?: TestRgba
+  ellipseRadiusX?: number
+  ellipseRadiusY?: number
 } = {}): Video {
   const hasStroke = options.withDash === true || options.withStroke === true
   const styles = {
-    fill: options.withoutFill === true ? null : 'rgba(255, 0, 0, 1)' as const,
-    stroke: hasStroke ? 'rgba(0, 0, 0, 1)' as const : null,
+    fill: options.withoutFill === true ? null : options.fillColor ?? 'rgba(255, 0, 0, 1)' as const,
+    stroke: hasStroke ? options.strokeColor ?? 'rgba(0, 0, 0, 1)' as const : null,
     strokeWidth: hasStroke ? options.strokeWidth ?? 2 : null,
-    lineCap: null,
+    lineCap: options.withLineCap === true ? 'round' as const : null,
     lineJoin: options.withLineJoin === true ? 'round' as const : null,
-    miterLimit: null,
+    miterLimit: options.withMiterLimit === true ? 4 : null,
     lineDash: options.withDash === true ? [2, 2] : null
   }
   const path = options.withUnsupportedPath === true
@@ -350,9 +382,14 @@ function createVideo (options: {
   const shape = shapeType === 'ellipse'
     ? {
         type: SHAPE_TYPE.ELLIPSE,
-        path: { x: 0, y: 0, radiusX: 10, radiusY: 8 },
+        path: {
+          x: 0,
+          y: 0,
+          radiusX: options.ellipseRadiusX ?? 10,
+          radiusY: options.ellipseRadiusY ?? 8
+        },
         styles,
-        transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+        transform: options.shapeTransform ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
       }
     : shapeType === 'rect' || shapeType === 'roundedRect'
       ? {
@@ -365,13 +402,13 @@ function createVideo (options: {
             cornerRadius: shapeType === 'roundedRect' ? options.cornerRadius ?? 4 : 0
           },
           styles,
-          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+          transform: options.shapeTransform ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
         }
       : {
           type: SHAPE_TYPE.SHAPE,
           path: { d: path },
           styles,
-          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+          transform: options.shapeTransform ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
         }
 
   return {
@@ -386,8 +423,8 @@ function createVideo (options: {
       {
         imageKey: 'image',
         frames: [0, 1, 2].map(() => ({
-          alpha: 1,
-          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+          alpha: options.alpha ?? 1,
+          transform: options.spriteTransform ?? { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
           nx: 0,
           ny: 0,
           layout: { x: 0, y: 0, width: 32, height: 32 },
@@ -655,6 +692,10 @@ async function testCompilerMetadata (): Promise<void> {
     diffRenderCapabilities(roundedRectAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.roundedRect.fill'),
     false
   )
+  assert.equal(
+    diffRenderCapabilities(ellipseAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.ellipse.fill'),
+    false
+  )
 }
 
 async function testRectFillFixtureDecodeAndCompile (): Promise<void> {
@@ -762,6 +803,61 @@ async function testRoundedRectStrokeFixtureDecodeAndCompile (): Promise<void> {
   assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, false)
 }
 
+async function testEllipseFillFixtureDecodeAndCompile (): Promise<void> {
+  installBrowserFakes()
+  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const video = loadEllipseFillFixtureVideo()
+  const shape = video.sprites[0].frames[0].shapes[0]
+  assert.equal(Object.keys(video.images).length, 0)
+  assert.equal(shape.type, SHAPE_TYPE.ELLIPSE)
+  if (shape.type !== SHAPE_TYPE.ELLIPSE) throw new Error('ellipse-fill fixture did not decode an ELLIPSE shape')
+  assert.equal(shape.path.radiusX > 0, true)
+  assert.equal(shape.path.radiusY > 0, true)
+  assert.equal(shape.styles.fill, 'rgba(51, 216, 89, 1)')
+  assert.equal(shape.styles.stroke, null)
+  assert.equal(shape.styles.strokeWidth, null)
+  assert.equal(shape.styles.lineCap, null)
+  assert.equal(shape.styles.lineJoin, null)
+  assert.equal(shape.styles.miterLimit, null)
+
+  const animation = new RenderCompiler().compile(video)
+  assert.equal(animation.requiredCapabilities.shape.ellipse.fill, true)
+  assert.equal(animation.requiredCapabilities.shape.ellipse.stroke, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.miterLimit, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, false)
+}
+
+async function testEllipseStrokeFixtureDecodeAndCompile (): Promise<void> {
+  installBrowserFakes()
+  const { RenderCompiler } = require('../../src/player/compiler') as typeof import('../../src/player/compiler')
+  const video = loadEllipseStrokeFixtureVideo()
+  const shape = video.sprites[0].frames[0].shapes[0]
+  assert.equal(Object.keys(video.images).length, 0)
+  assert.equal(shape.type, SHAPE_TYPE.ELLIPSE)
+  if (shape.type !== SHAPE_TYPE.ELLIPSE) throw new Error('ellipse-stroke fixture did not decode an ELLIPSE shape')
+  assert.equal(shape.path.radiusX > 0, true)
+  assert.equal(shape.path.radiusY > 0, true)
+  assert.equal(shape.styles.fill, null)
+  assert.equal(shape.styles.stroke, 'rgba(0, 0, 0, 1)')
+  assert.equal(shape.styles.strokeWidth, 8)
+  assert.equal(shape.styles.lineCap, null)
+  assert.equal(shape.styles.lineJoin, null)
+  assert.equal(shape.styles.miterLimit, null)
+  assert.deepEqual(shape.styles.lineDash, [])
+
+  const animation = new RenderCompiler().compile(video)
+  assert.equal(animation.requiredCapabilities.shape.ellipse.fill, false)
+  assert.equal(animation.requiredCapabilities.shape.ellipse.stroke, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.width, true)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineCap, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineJoin, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.miterLimit, false)
+  assert.equal(animation.requiredCapabilities.shape.strokeStyle.lineDash, false)
+}
+
 async function testBackendResolver (): Promise<void> {
   installBrowserFakes()
   const { createBackend } = require('../../src/player/backend') as typeof import('../../src/player/backend')
@@ -780,8 +876,8 @@ async function testBackendResolver (): Promise<void> {
   assert.equal(webglBackend.capabilities.shape.rect.stroke, true)
   assert.equal(webglBackend.capabilities.shape.roundedRect.fill, true)
   assert.equal(webglBackend.capabilities.shape.roundedRect.stroke, true)
-  assert.equal(webglBackend.capabilities.shape.ellipse.fill, false)
-  assert.equal(webglBackend.capabilities.shape.ellipse.stroke, false)
+  assert.equal(webglBackend.capabilities.shape.ellipse.fill, true)
+  assert.equal(webglBackend.capabilities.shape.ellipse.stroke, true)
   assert.equal(webglBackend.capabilities.shape.path.fill, false)
   assert.equal(webglBackend.capabilities.shape.path.stroke, false)
   assert.equal(webglBackend.capabilities.shape.strokeStyle.width, true)
@@ -1058,6 +1154,136 @@ async function testWebGLBackendLifecycle (): Promise<void> {
   assert.doesNotThrow(() => joinedRoundedBackend.renderFrame(joinedRoundedAnimation, 0))
   assert.equal(joinedRoundedCanvas.webglContext?.calls.includes('drawArrays'), false)
 
+  const ellipseOnlyCanvas = new FakeCanvas()
+  const ellipseOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse'
+  }))
+  const ellipseOnlyBackend = createBackend(ellipseOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await ellipseOnlyBackend.prepare(ellipseOnlyAnimation)
+  assert.doesNotThrow(() => ellipseOnlyBackend.renderFrame(ellipseOnlyAnimation, 0))
+  assert.equal(ellipseOnlyCanvas.webglContext?.calls.includes('drawArrays:48'), true)
+  assert.equal(ellipseOnlyCanvas.webglContext?.calls.includes('texImage2D'), false)
+
+  const ellipseStrokeOnlyCanvas = new FakeCanvas()
+  const ellipseStrokeOnlyAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true
+  }))
+  const ellipseStrokeOnlyBackend = createBackend(ellipseStrokeOnlyCanvas as any as HTMLCanvasElement, 'webgl')
+  await ellipseStrokeOnlyBackend.prepare(ellipseStrokeOnlyAnimation)
+  assert.doesNotThrow(() => ellipseStrokeOnlyBackend.renderFrame(ellipseStrokeOnlyAnimation, 0))
+  assert.equal(ellipseStrokeOnlyCanvas.webglContext?.calls.includes('drawArrays:96'), true)
+  assert.equal(ellipseStrokeOnlyCanvas.webglContext?.calls.includes('texImage2D'), false)
+
+  const ellipseFillStrokeCanvas = new FakeCanvas()
+  const ellipseFillStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true
+  }))
+  const ellipseFillStrokeBackend = createBackend(ellipseFillStrokeCanvas as any as HTMLCanvasElement, 'webgl')
+  await ellipseFillStrokeBackend.prepare(ellipseFillStrokeAnimation)
+  assert.doesNotThrow(() => ellipseFillStrokeBackend.renderFrame(ellipseFillStrokeAnimation, 0))
+  const ellipseSolidDraws = ellipseFillStrokeCanvas.webglContext?.calls.filter(call => call.startsWith('drawArrays:')) ?? []
+  assert.deepEqual(ellipseSolidDraws.slice(-2), ['drawArrays:48', 'drawArrays:96'])
+
+  const ellipseAlphaColorCanvas = new FakeCanvas()
+  const ellipseAlphaColorAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    alpha: 0.5,
+    fillColor: 'rgba(128, 64, 32, 0.25)',
+    strokeColor: 'rgba(10, 20, 30, 0.75)'
+  }))
+  const ellipseAlphaColorBackend = createBackend(ellipseAlphaColorCanvas as any as HTMLCanvasElement, 'webgl')
+  await ellipseAlphaColorBackend.prepare(ellipseAlphaColorAnimation)
+  assert.doesNotThrow(() => ellipseAlphaColorBackend.renderFrame(ellipseAlphaColorAnimation, 0))
+  const ellipseColors = ellipseAlphaColorCanvas.webglContext?.calls
+    .filter(call => call.startsWith('uniform4f:'))
+    .map(call => call.slice('uniform4f:'.length).split(',').map(Number)) ?? []
+  assert.equal(ellipseColors.length >= 2, true)
+  assert.deepEqual(ellipseColors[ellipseColors.length - 2], [128 / 255, 64 / 255, 32 / 255, 0.125])
+  assert.deepEqual(ellipseColors[ellipseColors.length - 1], [10 / 255, 20 / 255, 30 / 255, 0.375])
+
+  const ellipseTransformCanvas = new FakeCanvas()
+  const ellipseTransformAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    spriteTransform: { a: 2, b: 0, c: 0, d: 3, tx: 5, ty: 7 },
+    shapeTransform: { a: 1, b: 0, c: 0, d: 1, tx: 11, ty: 13 }
+  }))
+  const ellipseTransformBackend = createBackend(ellipseTransformCanvas as any as HTMLCanvasElement, 'webgl')
+  await ellipseTransformBackend.prepare(ellipseTransformAnimation)
+  assert.doesNotThrow(() => ellipseTransformBackend.renderFrame(ellipseTransformAnimation, 0))
+  assert.equal(
+    ellipseTransformCanvas.webglContext?.calls.includes('uniformMatrix3fv:2,0,0,0,3,0,27,46,1'),
+    true
+  )
+
+  const degenerateEllipseFillCanvas = new FakeCanvas()
+  const degenerateEllipseFillAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    ellipseRadiusX: 0
+  }))
+  const degenerateEllipseFillBackend = createBackend(degenerateEllipseFillCanvas as any as HTMLCanvasElement, 'webgl')
+  await degenerateEllipseFillBackend.prepare(degenerateEllipseFillAnimation)
+  assert.doesNotThrow(() => degenerateEllipseFillBackend.renderFrame(degenerateEllipseFillAnimation, 0))
+  assert.equal(degenerateEllipseFillCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const degenerateEllipseStrokeCanvas = new FakeCanvas()
+  const degenerateEllipseStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true,
+    strokeWidth: 20
+  }))
+  const degenerateEllipseStrokeBackend = createBackend(degenerateEllipseStrokeCanvas as any as HTMLCanvasElement, 'webgl')
+  await degenerateEllipseStrokeBackend.prepare(degenerateEllipseStrokeAnimation)
+  assert.doesNotThrow(() => degenerateEllipseStrokeBackend.renderFrame(degenerateEllipseStrokeAnimation, 0))
+  assert.equal(degenerateEllipseStrokeCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const unparseableEllipseFillCanvas = new FakeCanvas()
+  const unparseableEllipseFillAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    fillColor: 'not-a-color' as TestRgba
+  }))
+  const unparseableEllipseFillBackend = createBackend(unparseableEllipseFillCanvas as any as HTMLCanvasElement, 'webgl')
+  await unparseableEllipseFillBackend.prepare(unparseableEllipseFillAnimation)
+  assert.doesNotThrow(() => unparseableEllipseFillBackend.renderFrame(unparseableEllipseFillAnimation, 0))
+  assert.equal(unparseableEllipseFillCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const dashedEllipseCanvas = new FakeCanvas()
+  const dashedEllipseAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withDash: true,
+    withoutFill: true
+  }))
+  const dashedEllipseBackend = createBackend(dashedEllipseCanvas as any as HTMLCanvasElement, 'webgl')
+  await dashedEllipseBackend.prepare(dashedEllipseAnimation)
+  assert.doesNotThrow(() => dashedEllipseBackend.renderFrame(dashedEllipseAnimation, 0))
+  assert.equal(dashedEllipseCanvas.webglContext?.calls.includes('drawArrays'), false)
+
+  const joinedEllipseCanvas = new FakeCanvas()
+  const joinedEllipseAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true,
+    withLineJoin: true
+  }))
+  const joinedEllipseBackend = createBackend(joinedEllipseCanvas as any as HTMLCanvasElement, 'webgl')
+  await joinedEllipseBackend.prepare(joinedEllipseAnimation)
+  assert.doesNotThrow(() => joinedEllipseBackend.renderFrame(joinedEllipseAnimation, 0))
+  assert.equal(joinedEllipseCanvas.webglContext?.calls.includes('drawArrays'), false)
+
   const maskedAnimation = new RenderCompiler().compile(createVideo({
     withImage: true,
     withMask: true
@@ -1138,6 +1364,10 @@ async function testRoundedRectFixturesDoNotWarnInWebGL (): Promise<void> {
     await player.prepare('fill')
     await player.load(loadRoundedRectStrokeFixtureVideo(), 'stroke')
     await player.prepare('stroke')
+    await player.load(loadEllipseFillFixtureVideo(), 'ellipse-fill')
+    await player.prepare('ellipse-fill')
+    await player.load(loadEllipseStrokeFixtureVideo(), 'ellipse-stroke')
+    await player.prepare('ellipse-stroke')
   } finally {
     console.warn = originalWarn
     player.destroy()
@@ -1173,6 +1403,39 @@ async function testUnsupportedStrokeCapabilities (): Promise<void> {
     withoutFill: true,
     withLineJoin: true
   }))
+  const ellipseStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true
+  }))
+  const dashedEllipseAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withDash: true,
+    withoutFill: true
+  }))
+  const ellipseJoinedStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true,
+    withLineJoin: true
+  }))
+  const ellipseCappedStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true,
+    withLineCap: true
+  }))
+  const ellipseMiterStrokeAnimation = new RenderCompiler().compile(createVideo({
+    withShape: true,
+    shapeType: 'ellipse',
+    withStroke: true,
+    withoutFill: true,
+    withMiterLimit: true
+  }))
   const pathStrokeAnimation = new RenderCompiler().compile(createVideo({
     withShape: true,
     withStroke: true,
@@ -1188,7 +1451,27 @@ async function testUnsupportedStrokeCapabilities (): Promise<void> {
     false
   )
   assert.equal(
+    diffRenderCapabilities(ellipseStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.ellipse.stroke'),
+    false
+  )
+  assert.deepEqual(
+    diffRenderCapabilities(dashedEllipseAnimation.requiredCapabilities, createWebGLRenderCapabilities()),
+    ['shape.strokeStyle.lineDash']
+  )
+  assert.equal(
     diffRenderCapabilities(roundedRectJoinedStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.strokeStyle.lineJoin'),
+    true
+  )
+  assert.equal(
+    diffRenderCapabilities(ellipseJoinedStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.strokeStyle.lineJoin'),
+    true
+  )
+  assert.equal(
+    diffRenderCapabilities(ellipseCappedStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.strokeStyle.lineCap'),
+    true
+  )
+  assert.equal(
+    diffRenderCapabilities(ellipseMiterStrokeAnimation.requiredCapabilities, createWebGLRenderCapabilities()).includes('shape.strokeStyle.miterLimit'),
     true
   )
   assert.equal(
@@ -1243,12 +1526,14 @@ async function main (): Promise<void> {
     ['rect-stroke fixture decodes and compiles cleanly', testRectStrokeFixtureDecodeAndCompile],
     ['rounded-rect-fill fixture decodes and compiles cleanly', testRoundedRectFillFixtureDecodeAndCompile],
     ['rounded-rect-stroke fixture decodes and compiles cleanly', testRoundedRectStrokeFixtureDecodeAndCompile],
+    ['ellipse-fill fixture decodes and compiles cleanly', testEllipseFillFixtureDecodeAndCompile],
+    ['ellipse-stroke fixture decodes and compiles cleanly', testEllipseStrokeFixtureDecodeAndCompile],
     ['backend resolver canvas/webgl/auto fallback', testBackendResolver],
     ['CanvasBackend render regression smoke', testCanvasBackendRender],
     ['player snapshot returns current backend surface', testPlayerSnapshot],
     ['WebGLBackend context/render/unsupported/cleanup smoke', testWebGLBackendLifecycle],
     ['unsupported capabilities error and warning', testUnsupportedCapabilitiesErrorAndWarning],
-    ['rounded-rect fixtures do not warn in WebGL', testRoundedRectFixturesDoNotWarnInWebGL],
+    ['rounded-rect and ellipse fixtures do not warn in WebGL', testRoundedRectFixturesDoNotWarnInWebGL],
     ['unsupported stroke capabilities stay precise', testUnsupportedStrokeCapabilities],
     ['error event types and blocking flag', testErrorEventTypesAndBlockingFlag]
   ]
