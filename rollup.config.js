@@ -51,7 +51,9 @@ const config = [
         include: ['**/*.ts']
       }),
       babelOutputPlugin,
-      IS_TEST_ENV && serve(TEST_DIR),
+      IS_TEST_ENV && serve({
+        contentBase: [TEST_DIR, '.']
+      }),
       IS_TEST_ENV && livereload({
         delay: 810,
         watch: TEST_DIR,

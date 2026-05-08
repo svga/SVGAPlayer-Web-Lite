@@ -14,7 +14,7 @@
     }
 
     main {
-      max-width: 1180px;
+      max-width: 1480px;
       margin: 0 auto;
     }
 
@@ -77,7 +77,7 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      grid-template-columns: repeat(4, minmax(220px, 1fr));
       gap: 16px;
       align-items: start;
     }
@@ -148,6 +148,7 @@
           <option value="canvas">canvas</option>
           <option value="auto">auto</option>
           <option value="webgl">webgl</option>
+          <option value="original">original svga.lite</option>
         </select>
       </label>
       <button id="runSelected">Run Selected</button>
@@ -160,7 +161,7 @@
       <button id="restoreContext">Restore WebGL Context</button>
       <button id="destroyAll">Destroy All</button>
     </div>
-    <div id="summary" class="summary">Ready. Choose a source and mode, or run canvas, auto, and webgl together.</div>
+    <div id="summary" class="summary">Ready. Choose a source and mode, or run local modes with original svga.lite together.</div>
     <div class="grid">
       <section class="panel" data-mode="canvas">
         <h2>canvas</h2>
@@ -177,12 +178,28 @@
         <canvas id="canvas-webgl" width="520" height="520"></canvas>
         <div id="status-webgl" class="status">idle</div>
       </section>
+      <section class="panel" data-mode="original">
+        <h2>original svga.lite</h2>
+        <canvas id="canvas-original" width="520" height="520"></canvas>
+        <div id="status-original" class="status">idle</div>
+      </section>
     </div>
     <pre id="log"></pre>
   </main>
 
-  <script src="../dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svga.lite/svga.lite.min.js"></script>
   <script>
+    window.OriginalSVGA = window.SVGA
+  </script>
+  <script>
+    const localBundleSrc = location.protocol === 'file:'
+      ? '../dist/index.min.js'
+      : '/dist/index.min.js'
+    document.write(`<script src="${localBundleSrc}"><\/script>`)
+  </script>
+  <script>
+    window.LocalSVGA = window.SVGA
+
     const sourcePresets = [
       {
         label: 'Local rect fill',
@@ -217,7 +234,9 @@
         value: 'custom'
       }
     ]
-    const modes = ['canvas', 'auto', 'webgl']
+    const localModes = ['canvas', 'auto', 'webgl']
+    const originalMode = 'original'
+    const modes = localModes.concat(originalMode)
     const tests = {}
     let loseContext = null
 
@@ -322,6 +341,61 @@
       return slot
     }
 
+    function assertOriginalSVGA() {
+      if (!window.OriginalSVGA || !window.OriginalSVGA.Downloader || !window.OriginalSVGA.Parser || !window.OriginalSVGA.Player) {
+        throw new Error('Original svga.lite CDN API is unavailable')
+      }
+      return window.OriginalSVGA
+    }
+
+    function waitForCanvasPaint() {
+      return new Promise(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      })
+    }
+
+    function hasVisiblePixels(canvas) {
+      const context = canvas.getContext('2d')
+      if (!context) return true
+
+      const data = context.getImageData(0, 0, canvas.width, canvas.height).data
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index + 3] > 0) return true
+      }
+      return false
+    }
+
+    function drawSingleFrame(test) {
+      if (test.mode === originalMode) {
+        if (test.player._renderer && typeof test.player._renderer.drawFrame === 'function') {
+          test.player._renderer.drawFrame(0)
+          return
+        }
+        test.player.stop()
+        return
+      }
+
+      if (typeof test.player.drawFrame === 'function') {
+        test.player.drawFrame(0)
+      }
+    }
+
+    async function renderSingleFrame(mode, activeModes) {
+      const test = tests[mode]
+      if (!test || !test.player || !test.canvas) return
+
+      drawSingleFrame(test)
+      await waitForCanvasPaint()
+      if (!hasVisiblePixels(test.canvas)) {
+        throw new Error('single frame produced no visible pixels')
+      }
+
+      test.failed = false
+      test.passed = true
+      setStatus(mode, `single frame rendered, backend ${test.backendType}`, 'pass')
+      updateSummary(activeModes)
+    }
+
     function applyCanvasReplacements(player, video, mode) {
       const keys = video.sprites.map(item => item.imageKey)
       if (!keys.includes('image') && !keys.includes('title')) {
@@ -366,8 +440,15 @@
 
     function destroyAll() {
       modes.forEach(mode => {
-        if (tests[mode] && tests[mode].player) {
-          tests[mode].player.destroy()
+        const test = tests[mode]
+        if (test && test.player && typeof test.player.destroy === 'function') {
+          test.player.destroy()
+        }
+        if (test && test.parser && typeof test.parser.destroy === 'function') {
+          test.parser.destroy()
+        }
+        if (test && test.downloader && typeof test.downloader.destroy === 'function') {
+          test.downloader.destroy()
         }
         tests[mode] = null
         setStatus(mode, 'idle', '')
@@ -396,12 +477,14 @@
       const canvas = document.getElementById(`canvas-${mode}`)
       const test = {
         mode,
-        player: new SVGA.SVGAPlayer({
+        canvas,
+        player: new window.LocalSVGA.SVGAPlayer({
           container: canvas,
           renderMode: mode,
           loop: 0
         }),
         backendType: 'unknown',
+        videoFrames: 0,
         framesSeen: 0,
         passed: false,
         failed: false
@@ -435,15 +518,72 @@
         throw new Error('SVGAPlayer.prepare() did not compile animation')
       }
       test.backendType = compiled.backendType || 'unknown'
+      test.videoFrames = video.frames
       setStatus(mode, `compiled ${video.frames} frames, ${video.fps}fps, backend ${compiled.backendType}`, '')
       test.player.start()
       write(`${mode} started via backend ${compiled.backendType}`)
       if (video.frames <= 1 && !test.passed) {
-        if (typeof test.player.drawFrame === 'function') test.player.drawFrame(0)
-        test.passed = true
-        setStatus(mode, `single frame rendered, backend ${test.backendType}`, 'pass')
-        updateSummary(activeModes)
+        await renderSingleFrame(mode, activeModes)
       }
+    }
+
+    async function runOriginalMode(source, activeModes) {
+      const originalSVGA = assertOriginalSVGA()
+      const canvas = document.getElementById('canvas-original')
+      const test = {
+        mode: originalMode,
+        canvas,
+        downloader: new originalSVGA.Downloader(),
+        parser: new originalSVGA.Parser({ disableWorker: false }),
+        player: null,
+        backendType: 'canvas',
+        videoFrames: 0,
+        framesSeen: 0,
+        passed: false,
+        failed: false
+      }
+
+      tests[originalMode] = test
+      setStatus(originalMode, 'loading original svga.lite', '')
+
+      const data = await test.downloader.get(source)
+      const video = await test.parser.do(data)
+      test.player = new originalSVGA.Player(canvas, null, {
+        loop: 0
+      })
+      test.player.$on('process', () => {
+        test.framesSeen += 1
+        if (!test.passed && test.framesSeen >= 3) {
+          test.passed = true
+          write('original svga.lite passed')
+        }
+        setStatus(
+          originalMode,
+          `frame ${test.player.currentFrame}, progress ${test.player.progress.toFixed(1)}%, backend canvas`,
+          test.passed ? 'pass' : ''
+        )
+        updateSummary(activeModes)
+      })
+      test.player.$on('end', () => {
+        write('original svga.lite ended')
+      })
+
+      await test.player.mount(video)
+      test.videoFrames = video.frames
+      setStatus(originalMode, `mounted ${video.frames} frames, ${video.FPS}fps, backend canvas`, '')
+      test.player.start()
+      write('original svga.lite started via backend canvas')
+      if (video.frames <= 1 && !test.passed) {
+        await renderSingleFrame(originalMode, activeModes)
+      }
+    }
+
+    async function runAnyMode(mode, source, activeModes) {
+      if (mode === originalMode) {
+        await runOriginalMode(source, activeModes)
+        return
+      }
+      await runMode(mode, source, activeModes)
     }
 
     async function runModes(activeModes) {
@@ -451,7 +591,7 @@
       destroyAll()
       setSummary(`Running: loading ${activeModes.join(', ')}.`, '')
       write(`loading ${source}`)
-      await Promise.all(activeModes.map(mode => runMode(mode, source, activeModes).catch(error => markFailure(mode, error))))
+      await Promise.all(activeModes.map(mode => runAnyMode(mode, source, activeModes).catch(error => markFailure(mode, error))))
       updateSummary(activeModes)
     }
 
@@ -489,10 +629,31 @@
 
     document.getElementById('runSelected').onclick = () => runSelectedModes()
     document.getElementById('runAll').onclick = () => runAllModes()
-    document.getElementById('playAll').onclick = () => modes.forEach(mode => tests[mode] && tests[mode].player.play())
-    document.getElementById('pauseAll').onclick = () => modes.forEach(mode => tests[mode] && tests[mode].player.pause())
-    document.getElementById('resumeAll').onclick = () => modes.forEach(mode => tests[mode] && tests[mode].player.resume())
-    document.getElementById('stopAll').onclick = () => modes.forEach(mode => tests[mode] && tests[mode].player.stop())
+    document.getElementById('playAll').onclick = () => modes.forEach(mode => {
+      const test = tests[mode]
+      if (!test || !test.player) return
+      if (test.videoFrames <= 1) {
+        renderSingleFrame(mode, modes).catch(error => markFailure(mode, error))
+        return
+      }
+      if (mode === originalMode) {
+        test.player.start()
+      } else {
+        test.player.play()
+      }
+    })
+    document.getElementById('pauseAll').onclick = () => modes.forEach(mode => {
+      const test = tests[mode]
+      if (test && test.player) test.player.pause()
+    })
+    document.getElementById('resumeAll').onclick = () => modes.forEach(mode => {
+      const test = tests[mode]
+      if (test && test.player) test.player.resume()
+    })
+    document.getElementById('stopAll').onclick = () => modes.forEach(mode => {
+      const test = tests[mode]
+      if (test && test.player) test.player.stop()
+    })
     document.getElementById('destroyAll').onclick = () => {
       destroyAll()
       setSummary('Destroyed. Run all modes again to retest.', '')
