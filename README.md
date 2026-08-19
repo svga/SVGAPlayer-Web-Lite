@@ -1,11 +1,12 @@
-# SVGAPlayer-Web-Lite &middot; [![npm version](https://img.shields.io/npm/v/svga.svg?style=flat)](https://www.npmjs.com/package/svga) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://reactjs.org/docs/how-to-contribute.html#your-first-pull-request)
+# SVGAPlayer-Web-Lite &middot; [![npm version](https://img.shields.io/npm/v/svga.svg?style=flat)](https://www.npmjs.com/package/svga) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/svga/SVGAPlayer-Web-Lite/pulls)
 
 这是一个 SVGA 在移动端 Web 上的播放器，它的目标是 **更轻量**、**更高效**
 
 ## 实现
 
-- [x] 体积 < 60kb (gzip < 18kb)
-- [x] 兼容 Android 4.4+ / iOS 9+
+- [x] 单个 JavaScript 产物 < 60 KiB（gzip < 18 KiB）
+- [x] 面向 Android 8.0+（API 26，使用受维护且可更新的 Chrome 或 WebView）与 iOS/iPadOS 16+ Safari/WKWebView
+- [x] 使用 ES2017 语法；安装包检查会验证 ES2017 语法解析
 - [x] 更好的异步操作
 - [x] 多线程 (WebWorker) 解析文件数据
 - [x] OffscreenCanvas / ImageBitmap
@@ -26,10 +27,10 @@
 ### NPM
 
 ```sh
-yarn add svga
-# 或者
-npm i svga
+npm install svga
 ```
+
+这是一个 Web 包，不设置 Android `minSdk` 或 iOS/iPadOS `Deployment Target`；原生宿主应用的最低版本由宿主自行设置。当前本地 Playwright 测试用于浏览器行为和包消费验证，不代表最低版本设备上的真机认证。
 
 ### CDN
 
@@ -58,7 +59,7 @@ player.onStart = () => console.log('onStart')
 player.onResume = () => console.log('onResume')
 player.onPause = () => console.log('onPause')
 player.onStop = () => console.log('onStop')
-player.onProcess = () => console.log('onProcess', player.progress)
+player.onProcess = () => console.log('onProcess', player.currentFrame / player.totalFrames)
 player.onEnd = () => console.log('onEnd')
 
 // 开始播放动画
@@ -209,7 +210,7 @@ declare module '*.svga'
 
 ## Webpack SVGA
 
-SVGA 文件可用 [url-loader](https://www.npmjs.com/package/raw-loader) 配置 Webpack 进行打包构建，例如：
+SVGA 文件可用 [url-loader](https://www.npmjs.com/package/url-loader) 配置 Webpack 进行打包构建，例如：
 
 ```js
 // webpack.config.js
@@ -259,18 +260,31 @@ const svga = await parser.load(xx)
 我们感谢社区提供错误修正和改进。
 
 ### 环境要求
-Node.js v16.x
+
+项目开发基线为 Node.js 24 和 `package.json` 中 `packageManager` 指定的 npm 版本。
 
 ```sh
-# 安装依赖
-yarn install
+# 选择 Node.js 24（使用 nvm 时）
+nvm use
 
-# 开发 & 测试
-yarn test
+# 按锁文件安装依赖
+npm ci --allow-git=root
 
-# 构建
-yarn build
+# 监听模式，供本地开发时持续运行
+npm run dev
 ```
+
+### 自动检查
+
+以下测试命令都会在完成后退出；`npm run dev` 才是持续监听模式。
+
+- `npm test`：运行一次完整单元测试。
+- `npm run coverage`：运行一次单元测试并单独报告语句、分支、函数和行覆盖率。
+- `npm run test:browser`：先构建，再在桌面 Chromium、Firefox、WebKit 和移动 Chromium 视口中运行真实浏览器流程。
+- `npm run test:package`：先构建，再生成真实 npm 压缩包，检查确定性构建、精确文件清单、ES2017 语法以及 CommonJS、ESM、UMD、TypeScript 消费方式。
+- `npm run verify`：依次运行代码规范、类型、覆盖率、四种浏览器和真实包消费检查；不会在覆盖率之外重复运行单元测试。
+
+测试通过率表示测试用例是否全部成功，覆盖率百分比表示源码被测试执行到的比例，两者是不同指标，不能互相替代。
 
 ## LICENSE
 

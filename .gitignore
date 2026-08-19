@@ -1,3 +1,5 @@
 node_modules
 dist
-__test__/*.js
+coverage
+playwright-report
+test-results

@@ -13,16 +13,13 @@ import {
   ReplaceElements
 } from '../types'
 
-interface CurrentPoint {
-  x: number
-  y: number
-  x1: number
-  y1: number
-  x2: number
-  y2: number
+function ownValue<T> (values: { [key: string]: T }, key: string): T | undefined {
+  return ({}).hasOwnProperty.call(values, key) ? values[key] : undefined
 }
 
-const validMethods = 'MLHVCSQRZmlhvcsqrz'
+function numberOrZero (value: number | null | undefined): number {
+  return value == null ? 0 : value
+}
 
 function render (
   canvas: HTMLCanvasElement | OffscreenCanvas,
@@ -34,14 +31,18 @@ function render (
 ): void {
   const context = canvas.getContext('2d')
 
-  if (context === null) throw new Error('Render Context cannot be null')
-  if (!('save' in context)) throw new Error('Render Context is not context2d')
+  if (context === null || !('save' in context)) throw Error('Invalid render context')
 
   videoEntity.sprites.forEach(sprite => {
-    const bitmap = bitmapsCache[sprite.imageKey]
-    const replaceElement = replaceElements[sprite.imageKey]
-    const dynamicElement = dynamicElements[sprite.imageKey]
-    drawSprite(context, sprite, currentFrame, bitmap, replaceElement, dynamicElement)
+    const key = sprite.imageKey
+    drawSprite(
+      context,
+      sprite,
+      currentFrame,
+      ownValue(bitmapsCache, key),
+      ownValue(replaceElements, key),
+      ownValue(dynamicElements, key)
+    )
   })
 }
 
@@ -54,40 +55,27 @@ function drawSprite (
   dynamicElement: DynamicElement | undefined
 ): void {
   const frame = sprite.frames[currentFrame]
-
-  if (frame.alpha < 0.05) return
+  if (!frame || frame.alpha < 0.05) return
 
   context.save()
-  context.globalAlpha = frame.alpha
+  try {
+    context.globalAlpha = frame.alpha
+    const transform = frame.transform
+    if (transform) context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
 
-  context.transform(
-    frame.transform?.a ?? 1,
-    frame.transform?.b ?? 0,
-    frame.transform?.c ?? 0,
-    frame.transform?.d ?? 1,
-    frame.transform?.tx ?? 0,
-    frame.transform?.ty ?? 0
-  )
-
-  if (bitmap !== undefined) {
-    if (frame.maskPath !== null) {
-      drawBezier(context, frame.maskPath.d, frame.maskPath.transform, frame.maskPath.styles)
-      context.clip()
+    if (bitmap) {
+      if (frame.maskPath !== null && !clipPath(context, frame.maskPath.d, frame.maskPath.transform)) return
+      if (replaceElement) context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
+      else context.drawImage(bitmap, 0, 0, frame.layout.width, frame.layout.height)
     }
-    if (replaceElement !== undefined) {
-      context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
-    } else {
-      context.drawImage(bitmap, 0, 0, frame.layout.width, frame.layout.height)
+
+    if (dynamicElement) {
+      context.drawImage(dynamicElement, (frame.layout.width - dynamicElement.width) / 2, (frame.layout.height - dynamicElement.height) / 2)
     }
+    frame.shapes.forEach(shape => drawShape(context, shape))
+  } finally {
+    context.restore()
   }
-
-  if (dynamicElement !== undefined) {
-    context.drawImage(dynamicElement, (frame.layout.width - dynamicElement.width) / 2, (frame.layout.height - dynamicElement.height) / 2)
-  }
-
-  frame.shapes.forEach(shape => drawShape(context, shape))
-
-  context.restore()
 }
 
 function drawShape (
@@ -96,34 +84,22 @@ function drawShape (
 ): void {
   switch (shape.type) {
     case SHAPE_TYPE.SHAPE:
-      drawBezier(
-        context,
-        shape.path.d,
-        shape.transform,
-        shape.styles
-      )
+      drawSvgPath(context, shape.path.d, shape.transform, shape.styles)
       break
     case SHAPE_TYPE.ELLIPSE:
       drawEllipse(
         context,
-        shape.path.x ?? 0.0,
-        shape.path.y ?? 0.0,
-        shape.path.radiusX ?? 0.0,
-        shape.path.radiusY ?? 0.0,
-        shape.transform,
-        shape.styles
+        numberOrZero(shape.path.x), numberOrZero(shape.path.y),
+        numberOrZero(shape.path.radiusX), numberOrZero(shape.path.radiusY),
+        shape.transform, shape.styles
       )
       break
     case SHAPE_TYPE.RECT:
       drawRect(
         context,
-        shape.path.x ?? 0.0,
-        shape.path.y ?? 0.0,
-        shape.path.width ?? 0.0,
-        shape.path.height ?? 0.0,
-        shape.path.cornerRadius ?? 0.0,
-        shape.transform,
-        shape.styles
+        numberOrZero(shape.path.x), numberOrZero(shape.path.y),
+        numberOrZero(shape.path.width), numberOrZero(shape.path.height), numberOrZero(shape.path.cornerRadius),
+        shape.transform, shape.styles
       )
       break
   }
@@ -131,190 +107,81 @@ function drawShape (
 
 function resetShapeStyles (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  styles: VideoStyles | undefined
+  styles: VideoStyles
 ): void {
-  if (styles === undefined) return
-
-  if (styles.stroke !== null) {
-    context.strokeStyle = styles.stroke
-  } else {
-    context.strokeStyle = 'transparent'
-  }
-
-  if (styles.strokeWidth !== null && styles.strokeWidth > 0) context.lineWidth = styles.strokeWidth
-  if (styles.miterLimit !== null && styles.miterLimit > 0) context.miterLimit = styles.miterLimit
-  if (styles.lineCap !== null) context.lineCap = styles.lineCap
-  if (styles.lineJoin !== null) context.lineJoin = styles.lineJoin
-
-  if (styles.fill !== null) {
-    context.fillStyle = styles.fill
-  } else {
-    context.fillStyle = 'transparent'
-  }
-
-  if (styles.lineDash !== null) context.setLineDash(styles.lineDash)
+  context.strokeStyle = styles.stroke || 'transparent'
+  if (styles.strokeWidth && styles.strokeWidth > 0) context.lineWidth = styles.strokeWidth
+  if (styles.miterLimit && styles.miterLimit > 0) context.miterLimit = styles.miterLimit
+  if (styles.lineCap) context.lineCap = styles.lineCap
+  if (styles.lineJoin) context.lineJoin = styles.lineJoin
+  context.fillStyle = styles.fill || 'transparent'
+  if (styles.lineDash) context.setLineDash(styles.lineDash)
 }
 
-function drawBezier (
+function drawStyled (
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  transform: Transform | undefined,
+  styles: VideoStyles,
+  path: Path2D
+): void {
+  context.save()
+  try {
+    resetShapeStyles(context, styles)
+    if (transform) context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
+    if (styles.fill) context.fill(path)
+    if (styles.stroke) context.stroke(path)
+  } finally {
+    context.restore()
+  }
+}
+
+function svgPath (d: string | undefined): Path2D | undefined {
+  if (!d) return undefined
+  try {
+    return new Path2D(d)
+  } catch {
+    return undefined
+  }
+}
+
+function drawSvgPath (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   d: string | undefined,
   transform: Transform | undefined,
   styles: VideoStyles
 ): void {
-  context.save()
-  resetShapeStyles(context, styles)
-  if (transform !== undefined) {
-    context.transform(
-      transform.a,
-      transform.b,
-      transform.c,
-      transform.d,
-      transform.tx,
-      transform.ty
-    )
-  }
-  const currentPoint: CurrentPoint = { x: 0, y: 0, x1: 0, y1: 0, x2: 0, y2: 0 }
-  context.beginPath()
-  if (d !== undefined) {
-    d = d.replace(/([a-zA-Z])/g, '|||$1 ').replace(/,/g, ' ')
-    d.split('|||').forEach(segment => {
-      if (segment.length === 0) return
-      const firstLetter = segment.substr(0, 1)
-      if (validMethods.includes(firstLetter)) {
-        const args = segment.substr(1).trim().split(' ')
-        drawBezierElement(context, currentPoint, firstLetter, args)
-      }
-    })
-  }
-  if (styles.fill !== null) {
-    context.fill()
-  }
-  if (styles.stroke !== null) {
-    context.stroke()
-  }
-  context.restore()
+  const path = svgPath(d)
+  if (path) drawStyled(context, transform, styles, path)
 }
 
-function drawBezierElement (
+function clipPath (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  currentPoint: CurrentPoint,
-  method: string,
-  args: string[]
-): void {
-  switch (method) {
-    case 'M':
-      currentPoint.x = Number(args[0])
-      currentPoint.y = Number(args[1])
-      context.moveTo(currentPoint.x, currentPoint.y)
-      break
-    case 'm':
-      currentPoint.x += Number(args[0])
-      currentPoint.y += Number(args[1])
-      context.moveTo(currentPoint.x, currentPoint.y)
-      break
-    case 'L':
-      currentPoint.x = Number(args[0])
-      currentPoint.y = Number(args[1])
-      context.lineTo(currentPoint.x, currentPoint.y)
-      break
-    case 'l':
-      currentPoint.x += Number(args[0])
-      currentPoint.y += Number(args[1])
-      context.lineTo(currentPoint.x, currentPoint.y)
-      break
-    case 'H':
-      currentPoint.x = Number(args[0])
-      context.lineTo(currentPoint.x, currentPoint.y)
-      break
-    case 'h':
-      currentPoint.x += Number(args[0])
-      context.lineTo(currentPoint.x, currentPoint.y)
-      break
-    case 'V':
-      currentPoint.y = Number(args[0])
-      context.lineTo(currentPoint.x, currentPoint.y)
-      break
-    case 'v':
-      currentPoint.y += Number(args[0])
-      context.lineTo(currentPoint.x, currentPoint.y)
-      break
-    case 'C':
-      currentPoint.x1 = Number(args[0])
-      currentPoint.y1 = Number(args[1])
-      currentPoint.x2 = Number(args[2])
-      currentPoint.y2 = Number(args[3])
-      currentPoint.x = Number(args[4])
-      currentPoint.y = Number(args[5])
-      context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-      break
-    case 'c':
-      currentPoint.x1 = currentPoint.x + Number(args[0])
-      currentPoint.y1 = currentPoint.y + Number(args[1])
-      currentPoint.x2 = currentPoint.x + Number(args[2])
-      currentPoint.y2 = currentPoint.y + Number(args[3])
-      currentPoint.x += Number(args[4])
-      currentPoint.y += Number(args[5])
-      context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-      break
-    case 'S':
-      if (currentPoint.x1 !== undefined && currentPoint.y1 !== undefined && currentPoint.x2 !== undefined && currentPoint.y2 !== undefined) {
-        currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-        currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-        currentPoint.x2 = Number(args[0])
-        currentPoint.y2 = Number(args[1])
-        currentPoint.x = Number(args[2])
-        currentPoint.y = Number(args[3])
-        context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-      } else {
-        currentPoint.x1 = Number(args[0])
-        currentPoint.y1 = Number(args[1])
-        currentPoint.x = Number(args[2])
-        currentPoint.y = Number(args[3])
-        context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-      }
-      break
-    case 's':
-      if (currentPoint.x1 !== undefined && currentPoint.y1 !== undefined && currentPoint.x2 !== undefined && currentPoint.y2 !== undefined) {
-        currentPoint.x1 = currentPoint.x - currentPoint.x2 + currentPoint.x
-        currentPoint.y1 = currentPoint.y - currentPoint.y2 + currentPoint.y
-        currentPoint.x2 = currentPoint.x + Number(args[0])
-        currentPoint.y2 = currentPoint.y + Number(args[1])
-        currentPoint.x += Number(args[2])
-        currentPoint.y += Number(args[3])
-        context.bezierCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x2, currentPoint.y2, currentPoint.x, currentPoint.y)
-      } else {
-        currentPoint.x1 = currentPoint.x + Number(args[0])
-        currentPoint.y1 = currentPoint.y + Number(args[1])
-        currentPoint.x += Number(args[2])
-        currentPoint.y += Number(args[3])
-        context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-      }
-      break
-    case 'Q':
-      currentPoint.x1 = Number(args[0])
-      currentPoint.y1 = Number(args[1])
-      currentPoint.x = Number(args[2])
-      currentPoint.y = Number(args[3])
-      context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-      break
-    case 'q':
-      currentPoint.x1 = currentPoint.x + Number(args[0])
-      currentPoint.y1 = currentPoint.y + Number(args[1])
-      currentPoint.x += Number(args[2])
-      currentPoint.y += Number(args[3])
-      context.quadraticCurveTo(currentPoint.x1, currentPoint.y1, currentPoint.x, currentPoint.y)
-      break
-    case 'A':
-      break
-    case 'a':
-      break
-    case 'Z':
-    case 'z':
-      context.closePath()
-      break
-    default:
-      break
+  d: string | undefined,
+  transform: Transform | undefined
+): boolean {
+  const path = svgPath(d)
+  if (!path) return false
+  if (!transform) {
+    context.clip(path)
+    return true
   }
+
+  const { a, b, c, d: scaleY, tx, ty } = transform
+  if (![a, b, c, scaleY, tx, ty].every(Number.isFinite)) return false
+  const determinant = a * scaleY - b * c
+  if (!Number.isFinite(determinant) || determinant === 0) return false
+  context.transform(a, b, c, scaleY, tx, ty)
+  try {
+    context.clip(path)
+  } finally {
+    context.transform(
+      scaleY / determinant, -b / determinant,
+      -c / determinant, a / determinant,
+      (c * ty - scaleY * tx) / determinant,
+      (b * tx - a * ty) / determinant
+    )
+  }
+  return true
 }
 
 function drawEllipse (
@@ -326,42 +193,14 @@ function drawEllipse (
   transform: Transform | undefined,
   styles: VideoStyles
 ): void {
-  context.save()
-  resetShapeStyles(context, styles)
-  if (transform !== undefined) {
-    context.transform(
-      transform.a,
-      transform.b,
-      transform.c,
-      transform.d,
-      transform.tx,
-      transform.ty
-    )
+  let path: Path2D
+  try {
+    path = new Path2D()
+    path.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2)
+  } catch {
+    return
   }
-  x = x - radiusX
-  y = y - radiusY
-  const w = radiusX * 2
-  const h = radiusY * 2
-  const kappa = 0.5522848
-  const ox = (w / 2) * kappa
-  const oy = (h / 2) * kappa
-  const xe = x + w
-  const ye = y + h
-  const xm = x + w / 2
-  const ym = y + h / 2
-  context.beginPath()
-  context.moveTo(x, ym)
-  context.bezierCurveTo(x, ym - oy, xm - ox, y, xm, y)
-  context.bezierCurveTo(xm + ox, y, xe, ym - oy, xe, ym)
-  context.bezierCurveTo(xe, ym + oy, xm + ox, ye, xm, ye)
-  context.bezierCurveTo(xm - ox, ye, x, ym + oy, x, ym)
-  if (styles.fill !== null) {
-    context.fill()
-  }
-  if (styles.stroke !== null) {
-    context.stroke()
-  }
-  context.restore()
+  drawStyled(context, transform, styles, path)
 }
 
 function drawRect (
@@ -374,39 +213,22 @@ function drawRect (
   transform: Transform | undefined,
   styles: VideoStyles
 ): void {
-  context.save()
-  resetShapeStyles(context, styles)
-  if (transform !== undefined) {
-    context.transform(
-      transform.a,
-      transform.b,
-      transform.c,
-      transform.d,
-      transform.tx,
-      transform.ty
-    )
+  let path: Path2D
+  try {
+    path = new Path2D()
+    let radius = cornerRadius
+    if (width < 2 * radius) radius = width / 2
+    if (height < 2 * radius) radius = height / 2
+    path.moveTo(x + radius, y)
+    path.arcTo(x + width, y, x + width, y + height, radius)
+    path.arcTo(x + width, y + height, x, y + height, radius)
+    path.arcTo(x, y + height, x, y, radius)
+    path.arcTo(x, y, x + width, y, radius)
+    path.closePath()
+  } catch {
+    return
   }
-  let radius = cornerRadius
-  if (width < 2 * radius) {
-    radius = width / 2
-  }
-  if (height < 2 * radius) {
-    radius = height / 2
-  }
-  context.beginPath()
-  context.moveTo(x + radius, y)
-  context.arcTo(x + width, y, x + width, y + height, radius)
-  context.arcTo(x + width, y + height, x, y + height, radius)
-  context.arcTo(x, y + height, x, y, radius)
-  context.arcTo(x, y, x + width, y, radius)
-  context.closePath()
-  if (styles.fill !== null) {
-    context.fill()
-  }
-  if (styles.stroke !== null) {
-    context.stroke()
-  }
-  context.restore()
+  drawStyled(context, transform, styles, path)
 }
 
 export default render

@@ -4,7 +4,6 @@
   "description": "Lightweight SVGA Web Player",
   "main": "dist/index.cjs.min.js",
   "module": "dist/index.esm.min.js",
-  "browser": "dist/index.min.js",
   "types": "dist/index.d.ts",
   "jsdelivr": "dist/index.min.js",
   "keywords": [
@@ -19,67 +18,42 @@
   },
   "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
   "scripts": {
-    "format:check": "eslint",
+    "dev": "vitest --watch",
+    "lint": "oxlint --deny-warnings src tests scripts playwright.config.ts vitest.config.mts",
     "type:check": "tsc --noEmit",
-    "test": "cross-env NODE_ENV=test rollup -c -w",
-    "clean": "rimraf dist",
-    "build:umd": "cross-env FORMAT=umd rollup -c",
-    "build:cjs": "cross-env FORMAT=cjs rollup -c",
-    "build:esm": "cross-env FORMAT=esm rollup -c",
-    "build:index": "cross-env NODE_ENV=production node ./scripts/inject-parser.mjs",
-    "build": "run-s clean build:umd build:cjs build:esm build:index",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "test:browser": "npm run build && playwright test",
+    "test:package": "node scripts/verify-package.mjs",
+    "build": "node scripts/build.mjs",
+    "verify": "npm run lint && npm run type:check && npm run coverage && npm run test:browser && npm run test:package",
     "prepack": "npm run build"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
+  "packageManager": "npm@12.0.2",
   "author": "SVGA",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
-    "@babel/core": "^7.5.5",
-    "@babel/preset-env": "^7.5.5",
-    "@commitlint/cli": "^13.1.0",
-    "@commitlint/config-conventional": "^13.1.0",
-    "@rollup/plugin-babel": "^5.3.0",
-    "@rollup/plugin-commonjs": "^19.0.0",
-    "@rollup/plugin-node-resolve": "^13.0.0",
-    "@typescript-eslint/eslint-plugin": "^4.28.1",
-    "cross-env": "^5.2.0",
-    "eslint": "^7.27.0",
-    "eslint-config-standard-with-typescript": "^20.0.0",
-    "eslint-plugin-import": "^2.22.1",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^4.2.1",
-    "fs-extra": "^10.0.0",
-    "glob": "^7.1.7",
-    "lint-staged": "^11.1.1",
-    "npm-run-all": "^4.1.5",
-    "protobufjs": "git+https://github.com/lijialiang/protobuf.js.git",
-    "rimraf": "^3.0.2",
-    "rollup": "^2.51.1",
-    "rollup-plugin-babel": "^4.3.3",
-    "rollup-plugin-banner": "^0.2.1",
-    "rollup-plugin-livereload": "^1.0.1",
-    "rollup-plugin-serve": "^1.0.1",
-    "rollup-plugin-terser": "^5.1.1",
-    "rollup-plugin-typescript2": "^0.30.0",
-    "tslib": "^2.3.0",
-    "typescript": "^4.9.4",
-    "yorkie": "^2.0.0",
-    "zlibjs": "git+https://github.com/lijialiang/zlib.js.git#esm"
-  },
-  "lint-staged": {
-    "./src/**/*.{js,ts}": [
-      "npm run format:check"
-    ]
-  },
-  "commitlint": {
-    "extends": [
-      "@commitlint/config-conventional"
-    ]
-  },
-  "gitHooks": {
-    "pre-commit": "npm run type:check && lint-staged",
-    "commit-msg": "commitlint -e $GIT_PARAMS"
+    "@playwright/test": "^1.62.1",
+    "@rollup/plugin-commonjs": "^29.0.3",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.11",
+    "acorn": "^8.18.0",
+    "fake-indexeddb": "^6.2.5",
+    "fflate": "^0.8.3",
+    "oxlint": "^1.79.0",
+    "protobufjs": "git+https://github.com/lijialiang/protobuf.js.git#b84b9b2d55ce07a0c9f28519054ce6b15ab092ca",
+    "rollup": "^4.62.4",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }

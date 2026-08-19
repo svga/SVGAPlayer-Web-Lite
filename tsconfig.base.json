@@ -1,21 +1,23 @@
 {
   "compilerOptions": {
-    "baseUrl": "./src",
-    "target": "es5",
+    "target": "es2017",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "noImplicitThis": true,
     "alwaysStrict": true,
     "lib": [
-      "es2015",
+      "es2017",
       "dom",
       "webworker"
     ],
     "skipLibCheck": true
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "**/*.mts"
   ],
   "exclude": [
     "node_modules", "dist"

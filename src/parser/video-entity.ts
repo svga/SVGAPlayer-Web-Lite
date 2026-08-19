@@ -14,6 +14,19 @@ import {
   RGBA
 } from '../types'
 
+const rgb = (value: number): number => {
+  if (typeof value !== 'number' || !isFinite(value)) return 0
+  return Math.min(255, Math.max(0, Math.floor(value * 255)))
+}
+
+const alpha = (value: number): number => {
+  if (typeof value !== 'number' || !isFinite(value)) return 0
+  return Math.min(1, Math.max(0, value))
+}
+
+const color = (value: { r: number, g: number, b: number, a: number }): RGBA<number, number, number, number> =>
+  ('rgba(' + rgb(value.r) + ', ' + rgb(value.g) + ', ' + rgb(value.b) + ', ' + alpha(value.a) + ')') as RGBA<number, number, number, number>
+
 export class VideoEntity implements Video {
   public version: string
   public size = { width: 0, height: 0 }
@@ -114,12 +127,12 @@ export class VideoEntity implements Video {
 
           let fill: RGBA<number, number, number, number> | null = null
           if (mStyles.fill !== null) {
-            fill = `rgba(${parseInt((mStyles.fill.r * 255).toString())}, ${parseInt((mStyles.fill.g * 255).toString())}, ${parseInt((mStyles.fill.b * 255).toString())}, ${parseInt((mStyles.fill.a * 1).toString())})`
+            fill = color(mStyles.fill)
           }
 
           let stroke: RGBA<number, number, number, number> | null = null
           if (mStyles.stroke !== null) {
-            stroke = `rgba(${parseInt((mStyles.stroke.r * 255).toString())}, ${parseInt((mStyles.stroke.g * 255).toString())}, ${parseInt((mStyles.stroke.b * 255).toString())}, ${parseInt((mStyles.stroke.a * 1).toString())})`
+            stroke = color(mStyles.stroke)
           }
 
           const { strokeWidth, miterLimit } = mStyles
