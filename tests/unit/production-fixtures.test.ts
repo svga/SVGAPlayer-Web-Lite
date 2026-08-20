@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Video } from '../../src/types'
-import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from '../../src/parser/protocol'
+import type { ParserWorkerRequest, ParserWorkerResult, ParserWorkerScope } from '../../src/parser/protocol'
 
 const fixtureDir = 'tests/fixtures/svga'
 const fixtureBlobs = new Map([
@@ -66,9 +66,9 @@ describe('production SVGA fixtures', () => {
         arrayBuffer: async () => buffer
       }
     })
-    const responses: ParserWorkerResponse[] = []
+    const responses: ParserWorkerResult[] = []
     const scope: ParserWorkerScope = {
-      postMessage: response => { responses.push(response) }
+      postMessage: response => { if (!('ready' in response)) responses.push(response) }
     }
     vi.stubGlobal('self', scope)
 

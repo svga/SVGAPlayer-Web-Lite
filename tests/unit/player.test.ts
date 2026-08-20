@@ -1,7 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PlayerConfigOptions, Video } from '../../src/types'
-import { PLAYER_FILL_MODE, PLAYER_PLAY_MODE } from '../../src/types'
 import { Animator } from '../../src/player/animator'
 
 class FakeContext2D {
@@ -369,8 +368,8 @@ describe('Player configuration and visibility observer', () => {
   it('applies every valid partial option when constructed without a container', () => {
     const player = new Player({
       loop: 3,
-      fillMode: PLAYER_FILL_MODE.BACKWARDS,
-      playMode: PLAYER_PLAY_MODE.FALLBACKS,
+      fillMode: 'backwards',
+      playMode: 'fallbacks',
       startFrame: 1,
       endFrame: 3,
       loopStartFrame: 2,
@@ -381,8 +380,8 @@ describe('Player configuration and visibility observer', () => {
 
     expect(player.config).toMatchObject({
       loop: 3,
-      fillMode: PLAYER_FILL_MODE.BACKWARDS,
-      playMode: PLAYER_PLAY_MODE.FALLBACKS,
+      fillMode: 'backwards',
+      playMode: 'fallbacks',
       startFrame: 1,
       endFrame: 3,
       loopStartFrame: 2,
@@ -433,8 +432,8 @@ describe('Player configuration and visibility observer', () => {
     { loop: -1 },
     { loop: 1.5 },
     { loop: Number.POSITIVE_INFINITY },
-    { fillMode: 'invalid' as PLAYER_FILL_MODE },
-    { playMode: 'backwards' as PLAYER_PLAY_MODE },
+    { fillMode: 'invalid' as PlayerConfigOptions['fillMode'] },
+    { playMode: 'backwards' as PlayerConfigOptions['playMode'] },
     { isCacheFrames: 1 as unknown as boolean },
     { isUseIntersectionObserver: null as unknown as boolean },
     { isOpenNoExecutionDelay: 'true' as unknown as boolean }
@@ -992,7 +991,7 @@ describe('Player mount and playback lifecycle', () => {
       endFrame: 4,
       loopStartFrame: 2,
       loop: false,
-      fillMode: PLAYER_FILL_MODE.BACKWARDS
+      fillMode: 'backwards'
     })
     await player.mount(makeVideo({ frames: 5, fps: 10 }))
     player.start()
@@ -1009,6 +1008,25 @@ describe('Player mount and playback lifecycle', () => {
     expect(animator.__svgaLoop).toBe(1)
     runRaf(rafRequests[rafRequests.length - 1], 200)
     expect(player.currentFrame).toBe(2)
+  })
+
+  it('measures a reverse loop point from the configured end frame', async () => {
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      startFrame: 1,
+      endFrame: 6,
+      loopStartFrame: 2,
+      loop: 2,
+      playMode: 'fallbacks'
+    })
+    await player.mount(makeVideo({ frames: 7, fps: 10 }))
+    player.start()
+    const animator = (player as unknown as { __svgaAnimator: Animator }).__svgaAnimator
+
+    expect(animator.__svgaStart).toBe(6)
+    expect(animator.__svgaEnd).toBe(1)
+    expect(animator.__svgaDuration).toBe(500)
+    expect(animator.__svgaLoopStart).toBe(400)
   })
 
   it('keeps one running timeline when resume is called repeatedly', async () => {

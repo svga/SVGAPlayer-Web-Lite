@@ -7,7 +7,9 @@ type Request =
   | { requestId: number, url: string }
   | { requestId: number, cancel: true }
   | { cancel: true }
-type Response = { requestId: number, video?: Video, error?: { name: string, message: string } }
+type Response =
+  | { ready: true }
+  | { requestId: number, video?: Video, error?: { name: string, message: string } }
 
 class FakeWorker {
   static instances: FakeWorker[] = []
@@ -53,22 +55,50 @@ describe('Parser request lifecycle', () => {
     vi.unstubAllGlobals()
   })
 
-  it('revokes the Blob URL after successful Worker startup can begin', async () => {
+  it('keeps the Blob URL until the Worker confirms startup', async () => {
     vi.useFakeTimers()
-    new Parser()
-    expect(FakeWorker.instances[0].blobUrl).toBe('blob:parser')
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    expect(worker.blobUrl).toBe('blob:parser')
     expect(revokeObjectURL).not.toHaveBeenCalled()
     await vi.runAllTimersAsync()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    worker.respond({ ready: true })
     expect(revokeObjectURL).toHaveBeenCalledOnce()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:parser')
+    worker.respond({ ready: true })
+    parser.destroy()
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
   })
 
   it('revokes the Blob URL and preserves a construction failure', async () => {
-    vi.useFakeTimers()
     const failure = Error('construction failed')
+    revokeObjectURL.mockImplementationOnce(() => { throw Error('cleanup failed') })
     vi.stubGlobal('Worker', class { constructor () { throw failure } })
     expect(() => new Parser()).toThrow(failure)
-    await vi.runAllTimersAsync()
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('continues teardown when Blob URL cleanup fails', () => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    revokeObjectURL.mockImplementationOnce(() => { throw Error('cleanup failed') })
+
+    expect(() => parser.destroy()).not.toThrow()
+    expect(worker.terminated).toBe(1)
+  })
+
+  it.each(['destroy', 'error', 'messageerror'] as const)('revokes an unready Worker URL on %s', eventName => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+
+    if (eventName === 'destroy') parser.destroy()
+    else if (eventName === 'error') worker.onerror?.({ message: 'startup failed', preventDefault: vi.fn() } as unknown as ErrorEvent)
+    else worker.onmessageerror?.({} as MessageEvent)
+
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:parser')
+    parser.destroy()
     expect(revokeObjectURL).toHaveBeenCalledOnce()
   })
 
@@ -201,11 +231,13 @@ describe('Parser request lifecycle', () => {
     const parser = new Parser()
     const worker = FakeWorker.instances[0]
     const pending = parser.load('/pending.svga')
+    const preventDefault = vi.fn()
 
-    if (eventName === 'error') worker.onerror?.({ message: '' } as ErrorEvent)
+    if (eventName === 'error') worker.onerror?.({ message: '', preventDefault } as unknown as ErrorEvent)
     else worker.onmessageerror?.({} as MessageEvent)
 
     await expect(pending).rejects.toThrow(eventName === 'error' ? 'Worker failure' : 'Worker message failure')
+    expect(preventDefault).toHaveBeenCalledTimes(eventName === 'error' ? 1 : 0)
     expect(worker.terminated).toBe(1)
   })
 

@@ -2,7 +2,7 @@ import { deflateSync } from 'node:zlib'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from '../../src/parser/protocol'
+import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerResult, ParserWorkerScope } from '../../src/parser/protocol'
 
 const concat = (...parts: Uint8Array[]): Uint8Array => {
   const result = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
@@ -67,37 +67,51 @@ interface FetchResult {
 
 let fetchResult: FetchResult
 let workerScope: ParserWorkerScope & { postMessage: ReturnType<typeof vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>> }
+let fetchSignal: AbortSignal | undefined
+let cancelReader: ReturnType<typeof vi.fn<() => Promise<void>>>
+let releaseReader: ReturnType<typeof vi.fn<() => void>>
 
-function responseBody (bytes: Uint8Array, sizes: number[]): { getReader: () => { read: () => Promise<{ done: boolean, value?: Uint8Array }> } } {
+function responseBody (bytes: Uint8Array, sizes: number[]): { getReader: () => {
+  read: () => Promise<{ done: boolean, value?: Uint8Array }>
+  cancel: () => Promise<void>
+  releaseLock: () => void
+} } {
   let offset = 0
   let index = 0
   return {
     getReader: () => ({
+      cancel: cancelReader,
       read: async () => {
         if (offset === bytes.length) return { done: true }
         const end = Math.min(bytes.length, offset + (sizes[index++] ?? bytes.length))
         const value = bytes.slice(offset, end)
         offset = end
         return { done: false, value }
-      }
+      },
+      releaseLock: releaseReader
     })
   }
 }
 
-async function runWorker (request: ParserWorkerRequest = { requestId: 7, url: 'https://example.test/file.svga' }): Promise<ParserWorkerResponse> {
+async function runWorker (request: ParserWorkerRequest = { requestId: 7, url: 'https://example.test/file.svga' }): Promise<ParserWorkerResult> {
   await import('../../src/parser/index')
+  workerScope.postMessage.mockClear()
   await workerScope.onmessage?.({ data: request } as MessageEvent<ParserWorkerRequest>)
   await vi.waitFor(() => expect(workerScope.postMessage).toHaveBeenCalled())
-  return workerScope.postMessage.mock.calls[0][0] as ParserWorkerResponse
+  return workerScope.postMessage.mock.calls[0][0] as ParserWorkerResult
 }
 
 describe('parser worker', () => {
   beforeEach(() => {
     vi.resetModules()
     fetchResult = { bytes: compressedMovie() }
+    fetchSignal = undefined
+    cancelReader = vi.fn(async () => {})
+    releaseReader = vi.fn()
     workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
     vi.stubGlobal('self', workerScope)
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, _options: { signal: AbortSignal }) => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, options: { signal: AbortSignal }) => {
+      fetchSignal = options.signal
       const status = fetchResult.status ?? 200
       return {
         status,
@@ -110,6 +124,13 @@ describe('parser worker', () => {
   })
 
   afterEach(() => vi.unstubAllGlobals())
+
+  it('announces readiness after installing its request handler', async () => {
+    await import('../../src/parser/index')
+    expect(workerScope.onmessage).toBeTypeOf('function')
+    expect(workerScope.postMessage).toHaveBeenCalledOnce()
+    expect(workerScope.postMessage).toHaveBeenCalledWith({ ready: true })
+  })
 
   it('returns byte images in a null-prototype map and never uses DOM/base64 image conversion', async () => {
     const images = Object.create(null) as Record<string, Uint8Array>
@@ -150,6 +171,9 @@ describe('parser worker', () => {
     fetchResult.bytes = new Uint8Array(8 * 1024 * 1024 + 1)
     fetchResult.chunks = [fetchResult.bytes.length]
     expect((await runWorker()).error?.message).toContain('8 MiB')
+    expect(cancelReader).toHaveBeenCalledOnce()
+    expect(releaseReader).toHaveBeenCalledOnce()
+    expect(fetchSignal?.aborted).toBe(true)
   })
 
   it('normalizes non-Error download failures', async () => {
@@ -193,6 +217,7 @@ describe('parser worker', () => {
   it('rejects the v1 ZIP header at the worker call site', async () => {
     fetchResult.bytes = Uint8Array.from([80, 75, 3, 4])
     expect((await runWorker()).error?.message).toContain('version@2')
+    expect(fetchSignal?.aborted).toBe(true)
   })
 
   it.each([

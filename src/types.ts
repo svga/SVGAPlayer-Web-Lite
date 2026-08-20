@@ -201,28 +201,6 @@ export interface Video {
   sprites: VideoSprite[]
 }
 
-export const enum PLAYER_FILL_MODE {
-  /**
-   * 播放完成后停在尾帧
-   */
-  FORWARDS = 'forwards',
-  /**
-   * 播放完成后停在首帧
-   */
-  BACKWARDS = 'backwards'
-}
-
-export const enum PLAYER_PLAY_MODE {
-  /**
-   * 顺序播放
-   */
-  FORWARDS = 'forwards',
-  /**
-   * 倒序播放
-   */
-  FALLBACKS = 'fallbacks'
-}
-
 export interface PlayerConfig {
   /**
    * 播放动画的 Canvas 元素
@@ -235,11 +213,11 @@ export interface PlayerConfig {
   /**
    * 最后停留的目标模式，类似于 animation-fill-mode，默认值 forwards。
    */
-  fillMode: PLAYER_FILL_MODE
+  fillMode: 'forwards' | 'backwards'
   /**
    * 播放模式，默认值 forwards
    */
-  playMode: PLAYER_PLAY_MODE
+  playMode: 'forwards' | 'fallbacks'
   /**
    * 开始播放的帧数，默认值 0
    */

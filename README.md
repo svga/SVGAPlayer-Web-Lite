@@ -113,20 +113,6 @@ Parser 返回的 `Video.images` 是可缓存的 `Uint8Array` 字节。Player 在
 ### PlayerConfigOptions
 
 ```ts
-const enum PLAYER_FILL_MODE {
-  // 播放完成后停在尾帧
-  FORWARDS = 'forwards',
-  // 播放完成后停在首帧
-  BACKWARDS = 'backwards'
-}
-
-const enum PLAYER_PLAY_MODE {
-  // 顺序播放
-  FORWARDS = 'forwards',
-  // 倒序播放
-  FALLBACKS = 'fallbacks'
-}
-
 new Player({
   // 播放动画的 Canvas 元素
   container?: HTMLCanvasElement
@@ -136,10 +122,10 @@ new Player({
 
   // 最后停留的目标模式，默认值 forwards
   // 类似于 https://developer.mozilla.org/en-US/docs/Web/CSS/animation-fill-mode
-  fillMode?: PLAYER_FILL_MODE
+  fillMode?: 'forwards' | 'backwards'
 
   // 播放模式，默认值 forwards
-  playMode?: PLAYER_PLAY_MODE
+  playMode?: 'forwards' | 'fallbacks'
 
   // 开始播放的帧数，默认值 0
   startFrame?: number

@@ -17,6 +17,7 @@ interface PendingLoad {
 interface ParserState {
   port: Worker | ParserWorkerScope
   direct: boolean
+  workerUrl?: string
   pending: Map<number, PendingLoad>
   queue: PendingLoad[]
   inFlight: number
@@ -51,6 +52,13 @@ function normalizeVideo (video: Video): Video {
   return validateVideo(video)
 }
 
+function revokeWorkerUrl (state: ParserState): void {
+  const url = state.workerUrl
+  if (url === undefined) return
+  state.workerUrl = undefined
+  try { window.URL.revokeObjectURL(url) } catch {}
+}
+
 function drain (parser: Parser, state: ParserState): void {
   if (states.get(parser) !== state) return
   while (state.inFlight < maxInFlight && state.queue.length > 0) {
@@ -79,6 +87,10 @@ function drain (parser: Parser, state: ParserState): void {
 function handleResponse (parser: Parser, response: ParserWorkerResponse): void {
   const state = states.get(parser)
   if (state === undefined) return
+  if ('ready' in response) {
+    revokeWorkerUrl(state)
+    return
+  }
   const request = state.pending.get(response.requestId)
   if (request === undefined) return
   state.pending.delete(response.requestId)
@@ -109,6 +121,7 @@ function release (parser: Parser, error: Error): void {
   }
   state.pending.clear()
   state.inFlight = 0
+  revokeWorkerUrl(state)
 
   if (state.direct) {
     try { send(state, { cancel: true }) } catch {}
@@ -139,13 +152,17 @@ export class Parser {
       let worker: Worker
       try {
         worker = new Worker(blobUrl)
-      } finally {
-        setTimeout(window.URL.revokeObjectURL, 0, blobUrl)
+      } catch (error) {
+        try { window.URL.revokeObjectURL(blobUrl) } catch {}
+        throw error
       }
-      state = { port: worker, direct: false, pending: new Map(), queue: [], inFlight: 0 }
+      state = { port: worker, direct: false, workerUrl: blobUrl, pending: new Map(), queue: [], inFlight: 0 }
       states.set(this, state)
       worker.onmessage = ({ data }: MessageEvent<ParserWorkerResponse>) => { handleResponse(this, data) }
-      worker.onerror = event => { release(this, parserError(event.message || 'Worker failure')) }
+      worker.onerror = event => {
+        event.preventDefault()
+        release(this, parserError(event.message || 'Worker failure'))
+      }
       worker.onmessageerror = () => { release(this, parserError('Worker message failure')) }
     }
   }

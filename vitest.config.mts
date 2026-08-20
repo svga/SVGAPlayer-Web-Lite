@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       include: [
+        'src/index.ts',
         'src/db.ts',
         'src/parser.ts',
         'src/parser/index.ts',

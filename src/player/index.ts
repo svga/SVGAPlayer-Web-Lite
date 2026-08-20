@@ -1,6 +1,4 @@
 import {
-  PLAYER_FILL_MODE,
-  PLAYER_PLAY_MODE,
   PlayerConfigOptions,
   Video,
   BitmapsCache,
@@ -161,8 +159,8 @@ function validateConfig (config: PlayerConfig, totalFrames?: number): void {
   const { startFrame, endFrame, loopStartFrame } = config
   if (!(config.container instanceof HTMLCanvasElement)) throw Error('container')
   if (!(typeof config.loop === 'boolean' || (Number.isInteger(config.loop) && config.loop >= 0))) throw Error('loop')
-  if (config.fillMode !== PLAYER_FILL_MODE.FORWARDS && config.fillMode !== PLAYER_FILL_MODE.BACKWARDS) throw Error('fillMode')
-  if (config.playMode !== PLAYER_PLAY_MODE.FORWARDS && config.playMode !== PLAYER_PLAY_MODE.FALLBACKS) throw Error('playMode')
+  if (config.fillMode !== 'forwards' && config.fillMode !== 'backwards') throw Error('fillMode')
+  if (config.playMode !== 'forwards' && config.playMode !== 'fallbacks') throw Error('playMode')
   if (![config.isCacheFrames, config.isUseIntersectionObserver, config.isOpenNoExecutionDelay].every(value => typeof value === 'boolean')) throw Error('flag')
   if (![startFrame, endFrame, loopStartFrame].every(Number.isInteger) || Math.min(startFrame, endFrame, loopStartFrame) < 0) throw Error('frame')
 
@@ -246,8 +244,8 @@ export class Player {
   private readonly __svgaConfig: PlayerConfig = {
     container: document.createElement('canvas'),
     loop: 0,
-    fillMode: PLAYER_FILL_MODE.FORWARDS,
-    playMode: PLAYER_PLAY_MODE.FORWARDS,
+    fillMode: 'forwards',
+    playMode: 'forwards',
     startFrame: 0,
     endFrame: 0,
     loopStartFrame: 0,
@@ -441,7 +439,7 @@ export class Player {
     runtime.__svgaTimeline = -this.__svgaAnimator.__svgaClock() - 1
     const config = this.__svgaConfig
     const endFrame = config.endFrame || this.totalFrames
-    this.currentFrame = config.playMode === PLAYER_PLAY_MODE.FORWARDS
+    this.currentFrame = config.playMode === 'forwards'
       ? config.startFrame
       : endFrame
     this.__svgaDraw(this.currentFrame)
@@ -518,7 +516,7 @@ export class Player {
     const { playMode, startFrame, endFrame, loopStartFrame, fillMode, loop } = config
     const effectiveEndFrame = endFrame || totalFrames
 
-    if (playMode === PLAYER_PLAY_MODE.FORWARDS) {
+    if (playMode === 'forwards') {
       animator.__svgaStart = startFrame
       animator.__svgaEnd = effectiveEndFrame
     } else {
@@ -529,7 +527,7 @@ export class Player {
     const frameDuration = 1000 / videoEntity.fps
     animator.__svgaDuration = Math.abs(animator.__svgaEnd - animator.__svgaStart) * frameDuration
     animator.__svgaLoopStart = loopStartFrame > startFrame
-      ? (loopStartFrame - startFrame) * frameDuration
+      ? (playMode === 'forwards' ? loopStartFrame - startFrame : effectiveEndFrame - loopStartFrame) * frameDuration
       : 0
     animator.__svgaLoop = loop === false ? 1 : (loop === true || loop <= 0 ? Infinity : loop)
     animator.__svgaFill = fillMode === 'backwards' ? 1 : 0

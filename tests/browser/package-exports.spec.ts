@@ -211,3 +211,36 @@ test('built UMD falls back after a real timer Worker error without a page error'
   expect(evidence.workerConstructions).toBe(1)
   expect(pageErrors).toEqual([])
 })
+
+test('built UMD rejects a real Parser Worker error without a page error', async ({ page }) => {
+  await page.goto('about:blank')
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
+
+  const evidence = await page.evaluate(async () => {
+    interface BrowserParser {
+      load: (url: string) => Promise<unknown>
+      destroy: () => void
+    }
+    const browserWindow = window as unknown as Window & {
+      SVGA: { Parser: new () => BrowserParser }
+    }
+    const NativeWorker = Worker
+    const failingUrl = URL.createObjectURL(new Blob(['throw Error("parser worker failure")']))
+    window.Worker = new Proxy(NativeWorker, {
+      construct () { return new NativeWorker(failingUrl) }
+    })
+    const parser = new browserWindow.SVGA.Parser()
+    let message = ''
+    try {
+      await parser.load('data:application/octet-stream;base64,AA==')
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    } finally {
+      parser.destroy()
+      URL.revokeObjectURL(failingUrl)
+    }
+    return message
+  })
+
+  expect(evidence).toContain('parser worker failure')
+})

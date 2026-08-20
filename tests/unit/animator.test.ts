@@ -101,6 +101,29 @@ describe('Animator lifecycle', () => {
     expect(raf.callbacks).toHaveLength(0)
   })
 
+  it('keeps a reverse frame for its full interval before stepping down', () => {
+    const raf = installRaf()
+    const animator = new Animator()
+    animator.__svgaStart = 4
+    animator.__svgaEnd = 0
+    animator.__svgaDuration = 400
+    let now = 0
+    const updates: number[] = []
+    animator.__svgaClock = () => now
+    animator.__svgaOnUpdate = value => updates.push(value)
+
+    animator.__svgaRun()
+    let request = raf.requested[raf.requested.length - 1]
+    now = 1
+    raf.callbacks.get(request)?.(now)
+    expect(updates[updates.length - 1]).toBe(4)
+
+    request = raf.requested[raf.requested.length - 1]
+    now = 100
+    raf.callbacks.get(request)?.(now)
+    expect(updates[updates.length - 1]).toBe(3)
+  })
+
   it.each(['__svgaOnStart', '__svgaOnUpdate', '__svgaOnEnd'] as const)(
     'retires the scheduler when %s throws and preserves the error',
     callbackName => {

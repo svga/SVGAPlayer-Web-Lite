@@ -3,7 +3,7 @@ import { Unzlib } from 'fflate'
 import type { Movie, RawImages, Video } from '../types'
 import { validateVideo } from '../validate-video'
 import { com } from './svga.generated'
-import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from './protocol'
+import type { ParserWorkerRequest, ParserWorkerResult, ParserWorkerScope } from './protocol'
 import { createVideo } from './video-entity'
 import { scanMovieWire } from './wire-scan'
 
@@ -18,13 +18,20 @@ async function download (url: string, signal: AbortSignal): Promise<Uint8Array> 
   let length = 0
   const reader = response.body?.getReader()
   if (reader !== undefined) {
-    for (;;) {
-      const result = await reader.read()
-      if (result.done) break
-      const chunk = result.value
-      length += chunk.byteLength
-      if (length > maxCompressedBytes) throw Error('Compressed SVGA exceeds 8 MiB')
-      chunks.push(chunk)
+    try {
+      for (;;) {
+        const result = await reader.read()
+        if (result.done) break
+        const chunk = result.value
+        length += chunk.byteLength
+        if (length > maxCompressedBytes) throw Error('Compressed SVGA exceeds 8 MiB')
+        chunks.push(chunk)
+      }
+    } catch (error) {
+      try { await reader.cancel(error) } catch {}
+      throw error
+    } finally {
+      reader.releaseLock()
     }
   } else {
     const chunk = new Uint8Array(await response.arrayBuffer())
@@ -92,7 +99,7 @@ function installParserWorker (scope: ParserWorkerScope): void {
 
     const controller = new AbortController()
     controllers.set(request.requestId, controller)
-    let response: ParserWorkerResponse
+    let response: ParserWorkerResult
     try {
       const compressed = await download(request.url, controller.signal)
       if (compressed[0] === 80 && compressed[1] === 75 && compressed[2] === 3 && compressed[3] === 4) {
@@ -113,9 +120,12 @@ function installParserWorker (scope: ParserWorkerScope): void {
       }
       scope.postMessage(response)
     } finally {
+      controller.abort()
       controllers.delete(request.requestId)
     }
   }
+
+  scope.postMessage({ ready: true })
 }
 
 installParserWorker(self as unknown as ParserWorkerScope)

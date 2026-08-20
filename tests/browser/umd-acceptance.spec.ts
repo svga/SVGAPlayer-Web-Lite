@@ -306,6 +306,75 @@ test('built UMD transfers default Worker image bytes and Player decodes them for
   expect(evidence.nonEmptyPixels).toBeGreaterThan(0)
 })
 
+test('Player closes only its own decoded ImageBitmaps exactly once', async ({ page }) => {
+  const fixture = await readFixture('11')
+  await page.goto('about:blank')
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
+
+  const evidence = await page.evaluate(async data => {
+    interface BrowserVideo {
+      images: Record<string, Uint8Array>
+      replaceElements: Record<string, CanvasImageSource>
+      dynamicElements: Record<string, CanvasImageSource>
+    }
+    interface BrowserParser {
+      load: (url: string) => Promise<BrowserVideo>
+      destroy: () => void
+    }
+    interface BrowserPlayer {
+      mount: (video: BrowserVideo) => Promise<void>
+      destroy: () => void
+    }
+    const browserWindow = window as unknown as Window & {
+      SVGA: {
+        Parser: new () => BrowserParser
+        Player: new (container: HTMLCanvasElement) => BrowserPlayer
+      }
+    }
+    const nativeCreate = createImageBitmap
+    const nativeClose = ImageBitmap.prototype.close
+    const caller = await nativeCreate(document.createElement('canvas'))
+    const owned: ImageBitmap[] = []
+    const closeCounts: number[] = []
+    let callerCloses = 0
+    window.createImageBitmap = (async (...args: unknown[]) => {
+      const bitmap = await (nativeCreate as unknown as (...values: unknown[]) => Promise<ImageBitmap>)(...args)
+      owned.push(bitmap)
+      closeCounts.push(0)
+      return bitmap
+    }) as typeof createImageBitmap
+    ImageBitmap.prototype.close = function () {
+      if (this === caller) callerCloses++
+      const index = owned.indexOf(this)
+      if (index >= 0) closeCounts[index]++
+      nativeClose.call(this)
+    }
+
+    const parser = new browserWindow.SVGA.Parser()
+    const player = new browserWindow.SVGA.Player(document.createElement('canvas'))
+    try {
+      const video = await parser.load(`data:application/octet-stream;base64,${data}`)
+      const key = Object.keys(video.images)[0]
+      video.replaceElements[key] = caller
+      video.dynamicElements[key] = caller
+      await player.mount(video)
+      await player.mount(video)
+      player.destroy()
+      return { callerCloses, closeCounts, owned: owned.length }
+    } finally {
+      player.destroy()
+      parser.destroy()
+      window.createImageBitmap = nativeCreate
+      ImageBitmap.prototype.close = nativeClose
+      nativeClose.call(caller)
+    }
+  }, fixture)
+
+  expect(evidence.owned).toBeGreaterThan(0)
+  expect(evidence.closeCounts).toEqual(Array(evidence.owned).fill(1))
+  expect(evidence.callerCloses).toBe(0)
+})
+
 test('default Worker parses, caches, reopens and renders under strict CSP', async ({ page }, testInfo) => {
   const [fixture, bundle] = await Promise.all([
     readFixture('11'),

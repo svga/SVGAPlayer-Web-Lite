@@ -273,4 +273,15 @@ describe('DB stable Video records', () => {
     await expect(db.delete('video')).resolves.toBeUndefined()
     await expect(db.find('video')).resolves.toBeUndefined()
   })
+
+  it('does not discard a newer shared connection when an older transaction finishes', async () => {
+    const open = vi.spyOn(indexedDB, 'open')
+    const db = new DB(options())
+    const first = db.find('first').then(async () => await db.find('third'))
+    const second = db.find('second').then(async () => await db.find('fourth'))
+
+    await Promise.all([first, second])
+
+    expect(open).toHaveBeenCalledTimes(2)
+  })
 })

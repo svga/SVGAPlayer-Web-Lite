@@ -144,9 +144,13 @@ async function verifyUmdConsumer (installedPackageDir) {
 
 async function verifyTypeScriptConsumer (consumerDir) {
   await writeFile(join(consumerDir, 'consumer.ts'), [
-    "import { DB, Parser, Player } from 'svga'",
+    "import { DB, Parser, Player, type DBOptions, type ParserConfigOptions, type PlayerConfig, type PlayerConfigOptions, type Video } from 'svga'",
     'const publicApi: [typeof DB, typeof Parser, typeof Player] = [DB, Parser, Player]',
+    'declare const publicTypes: [DBOptions, ParserConfigOptions, PlayerConfig, PlayerConfigOptions, Video]',
+    "const options: PlayerConfigOptions = { container: document.createElement('canvas'), fillMode: 'backwards', playMode: 'fallbacks' }",
+    'new Player(options)',
     'void publicApi',
+    'void publicTypes',
     ''
   ].join('\n'))
   await writeFile(join(consumerDir, 'tsconfig.json'), JSON.stringify({

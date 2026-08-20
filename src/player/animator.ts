@@ -68,7 +68,8 @@ export class Animator {
   }
 
   public get __svgaValue (): number {
-    return Math.floor(((this.__svgaEnd - this.__svgaStart) * this.__svgaFraction) + this.__svgaStart)
+    const value = ((this.__svgaEnd - this.__svgaStart) * this.__svgaFraction) + this.__svgaStart
+    return this.__svgaEnd < this.__svgaStart ? Math.ceil(value) : Math.floor(value)
   }
 
   private __svgaFrame (scheduler: Worker | number): void {

@@ -18,7 +18,8 @@ const clone = <T>(value: T): T => structuredClone(value)
 
 function close (state: DBState, database: IDBDatabase): void {
   database.close()
-  if (state.database === database) state.database = undefined
+  if (state.database !== database) return
+  state.database = undefined
   state.connection = undefined
 }
 
