@@ -244,6 +244,10 @@ export interface PlayerConfig {
    * 开启后使用 `WebWorker` 确保动画按时执行（避免个别情况下浏览器延迟或停止执行动画任务）
    */
   isOpenNoExecutionDelay: boolean
+  /**
+   * 是否禁用 OffscreenCanvas 作为渲染中间画布，默认值 false
+   */
+  isDisableOffscreenCanvas: boolean
 }
 
 export type PlayerConfigOptions = Partial<PlayerConfig>

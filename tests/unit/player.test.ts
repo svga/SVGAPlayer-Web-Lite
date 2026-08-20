@@ -336,6 +336,26 @@ describe('Player configuration and visibility observer', () => {
     expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeCanvas)
   })
 
+  it('uses OffscreenCanvas by default and an HTML canvas when explicitly disabled', () => {
+    class FakeOffscreenCanvas extends FakeCanvas {
+      constructor (width: number, height: number) {
+        super()
+        this.width = width
+        this.height = height
+      }
+    }
+    vi.stubGlobal('window', { ...window, OffscreenCanvas: FakeOffscreenCanvas })
+
+    const defaultPlayer = new Player({})
+    const disabledPlayer = new Player({ isDisableOffscreenCanvas: true })
+
+    expect((defaultPlayer as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeOffscreenCanvas)
+    expect((disabledPlayer as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeCanvas)
+    expect((disabledPlayer as unknown as { __svgaCanvas: unknown }).__svgaCanvas).not.toBeInstanceOf(FakeOffscreenCanvas)
+    expect(defaultPlayer.config.isDisableOffscreenCanvas).toBe(false)
+    expect(disabledPlayer.config.isDisableOffscreenCanvas).toBe(true)
+  })
+
   it('merges partial configuration without resetting unspecified values', () => {
     const canvas = new FakeCanvas()
     const player = new Player({
@@ -346,7 +366,8 @@ describe('Player configuration and visibility observer', () => {
       loopStartFrame: 3,
       isCacheFrames: true,
       isUseIntersectionObserver: true,
-      isOpenNoExecutionDelay: true
+      isOpenNoExecutionDelay: true,
+      isDisableOffscreenCanvas: true
     })
 
     player.setConfig({ loop: 4 })
@@ -359,7 +380,8 @@ describe('Player configuration and visibility observer', () => {
       loopStartFrame: 3,
       isCacheFrames: true,
       isUseIntersectionObserver: true,
-      isOpenNoExecutionDelay: true
+      isOpenNoExecutionDelay: true,
+      isDisableOffscreenCanvas: true
     })
     expect(observers).toHaveLength(1)
     expect(observers[0].disconnect).not.toHaveBeenCalled()
@@ -375,7 +397,8 @@ describe('Player configuration and visibility observer', () => {
       loopStartFrame: 2,
       isCacheFrames: true,
       isUseIntersectionObserver: true,
-      isOpenNoExecutionDelay: true
+      isOpenNoExecutionDelay: true,
+      isDisableOffscreenCanvas: true
     })
 
     expect(player.config).toMatchObject({
@@ -387,7 +410,8 @@ describe('Player configuration and visibility observer', () => {
       loopStartFrame: 2,
       isCacheFrames: true,
       isUseIntersectionObserver: true,
-      isOpenNoExecutionDelay: true
+      isOpenNoExecutionDelay: true,
+      isDisableOffscreenCanvas: true
     })
   })
 
@@ -436,7 +460,8 @@ describe('Player configuration and visibility observer', () => {
     { playMode: 'backwards' as PlayerConfigOptions['playMode'] },
     { isCacheFrames: 1 as unknown as boolean },
     { isUseIntersectionObserver: null as unknown as boolean },
-    { isOpenNoExecutionDelay: 'true' as unknown as boolean }
+    { isOpenNoExecutionDelay: 'true' as unknown as boolean },
+    { isDisableOffscreenCanvas: 1 as unknown as boolean }
   ] satisfies PlayerConfigOptions[])('rejects every invalid non-frame option: %j', options => {
     const player = new Player({ loop: 2 })
     const previous = player.config
@@ -502,6 +527,44 @@ describe('Player configuration and visibility observer', () => {
     expect(observers).toHaveLength(1)
     expect(observer.disconnect).not.toHaveBeenCalled()
     expect((player as unknown as { __svgaVisible: boolean }).__svgaVisible).toBe(false)
+  })
+
+  it('recreates the render canvas and closes cached frames when OffscreenCanvas use changes', async () => {
+    const cached = new FakeImageBitmap(10, 10)
+    const created: FakeOffscreenCanvas[] = []
+    class FakeOffscreenCanvas extends FakeCanvas {
+      public readonly transferToImageBitmap = vi.fn(() => cached)
+
+      constructor (width: number, height: number) {
+        super()
+        this.width = width
+        this.height = height
+        created.push(this)
+      }
+    }
+    vi.stubGlobal('window', { ...window, OffscreenCanvas: FakeOffscreenCanvas })
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      isCacheFrames: true
+    })
+    await player.mount(makeVideo({ size: { width: 10, height: 10 }, frames: 1 }))
+    player.start()
+    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toEqual(['0'])
+    const original = (player as unknown as { __svgaCanvas: unknown }).__svgaCanvas
+
+    player.setConfig({ isDisableOffscreenCanvas: true })
+
+    const disabled = (player as unknown as { __svgaCanvas: unknown }).__svgaCanvas
+    expect(disabled).toBeInstanceOf(FakeCanvas)
+    expect(disabled).not.toBeInstanceOf(FakeOffscreenCanvas)
+    expect(disabled).not.toBe(original)
+    expect(cached.close).toHaveBeenCalledOnce()
+    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toEqual([])
+
+    player.setConfig({ isDisableOffscreenCanvas: false })
+
+    expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeOffscreenCanvas)
+    expect(created).toHaveLength(2)
   })
 
   it('validates partial frame updates against the mounted video range', async () => {
@@ -936,6 +999,130 @@ describe('Player mount and playback lifecycle', () => {
     expect(rafCallbacks).toHaveLength(0)
     expect(onStart).toHaveBeenCalledOnce()
     expect(onEnd).toHaveBeenCalledOnce()
+  })
+
+  it('reports progress before and after mounting, including single-frame videos', async () => {
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+
+    expect(player.progress).toBe(0)
+    await player.mount(makeVideo({ frames: 4 }))
+    expect(player.progress).toBe(0.25)
+    await player.mount(makeVideo({ frames: 1 }))
+    expect(player.progress).toBe(1)
+  })
+
+  it('passes the same bounded progress value to onProcess while playing', async () => {
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const progressValues: number[] = []
+    player.onProcess = progress => progressValues.push(progress)
+    await player.mount(makeVideo({ frames: 4, fps: 10 }))
+
+    player.start()
+    runRaf(rafRequests[rafRequests.length - 1], 100)
+
+    expect(player.currentFrame).toBe(1)
+    expect(player.progress).toBe(0.5)
+    expect(progressValues).toEqual([player.progress])
+  })
+
+  it('steps to a frame, stops the old timeline, and resumes from that position', async () => {
+    const canvas = new FakeCanvas()
+    const player = new Player(canvas as unknown as HTMLCanvasElement)
+    const onProcess = vi.fn()
+    const onResume = vi.fn()
+    const onStart = vi.fn()
+    const onPause = vi.fn()
+    const onStop = vi.fn()
+    player.onProcess = onProcess
+    player.onResume = onResume
+    player.onStart = onStart
+    player.onPause = onPause
+    player.onStop = onStop
+    await player.mount(makeVideo({ frames: 4, fps: 10 }))
+    player.start()
+    const oldRequest = rafRequests[rafRequests.length - 1]
+    canvas.context.drawImage.mockClear()
+    onStart.mockClear()
+
+    player.stepToFrame(2)
+
+    expect(rafCancellations).toContain(oldRequest)
+    expect(rafCallbacks).toHaveLength(0)
+    expect(player.currentFrame).toBe(2)
+    expect(player.progress).toBe(0.75)
+    expect(canvas.context.drawImage).toHaveBeenCalledOnce()
+    expect(onProcess).toHaveBeenCalledOnce()
+    expect(onProcess).toHaveBeenLastCalledWith(0.75)
+    expect(onStart).not.toHaveBeenCalled()
+    expect(onResume).not.toHaveBeenCalled()
+    expect(onPause).not.toHaveBeenCalled()
+    expect(onStop).not.toHaveBeenCalled()
+
+    player.resume()
+    runRaf(rafRequests[rafRequests.length - 1], 100)
+
+    expect(player.currentFrame).toBe(3)
+    expect(player.progress).toBe(1)
+    expect(onResume).toHaveBeenCalledOnce()
+  })
+
+  it('continues reverse playback from a stepped frame', async () => {
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      playMode: 'fallbacks',
+      startFrame: 1,
+      endFrame: 3
+    })
+    await player.mount(makeVideo({ frames: 4, fps: 10 }))
+
+    player.stepToFrame(2)
+    player.resume()
+    runRaf(rafRequests[rafRequests.length - 1], 100)
+
+    expect(player.currentFrame).toBe(1)
+    expect(player.progress).toBe(0.5)
+  })
+
+  it('continues immediately with one resume event when stepToFrame andPlay is true', async () => {
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const events: string[] = []
+    player.onProcess = () => events.push('process')
+    player.onResume = () => events.push('resume')
+    player.onStart = () => events.push('start')
+    player.onPause = () => events.push('pause')
+    player.onStop = () => events.push('stop')
+    await player.mount(makeVideo({ frames: 4, fps: 10 }))
+
+    player.stepToFrame(1, true)
+
+    expect(events).toEqual(['process', 'resume'])
+    expect(rafCallbacks).toHaveLength(1)
+  })
+
+  it('validates stepToFrame arguments against the configured playback range', async () => {
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      startFrame: 1,
+      endFrame: 2
+    })
+
+    expect(() => player.stepToFrame(1)).toThrow(/video/)
+    await player.mount(makeVideo({ frames: 4 }))
+
+    expect(() => player.stepToFrame(1.5)).toThrow(/frame/)
+    expect(() => player.stepToFrame(0)).toThrow(/frame/)
+    expect(() => player.stepToFrame(3)).toThrow(/frame/)
+    expect(() => (player.stepToFrame as (frame: number, andPlay: unknown) => void)(1, 'true')).toThrow(/andPlay/)
+  })
+
+  it('does not restart after an onProcess callback destroys a stepped player', async () => {
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    await player.mount(makeVideo())
+    player.onProcess = () => player.destroy()
+
+    expect(() => player.stepToFrame(1, true)).not.toThrow()
+    expect(rafCallbacks).toHaveLength(0)
+    expect(() => player.resume()).toThrow(/destroyed/)
   })
 
   it('fires onStart before onEnd for a single-frame video', async () => {

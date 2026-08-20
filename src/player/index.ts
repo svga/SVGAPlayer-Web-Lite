@@ -10,6 +10,7 @@ import render from './render'
 import { validateVideo } from '../validate-video'
 
 type EventCallback = undefined | (() => void)
+type ProcessCallback = undefined | ((progress: number) => void)
 type ImageRelease = ImageBitmap | (() => void)
 
 type FrameCache = { [key: string]: ImageBitmap | undefined }
@@ -161,7 +162,12 @@ function validateConfig (config: PlayerConfig, totalFrames?: number): void {
   if (!(typeof config.loop === 'boolean' || (Number.isInteger(config.loop) && config.loop >= 0))) throw Error('loop')
   if (config.fillMode !== 'forwards' && config.fillMode !== 'backwards') throw Error('fillMode')
   if (config.playMode !== 'forwards' && config.playMode !== 'fallbacks') throw Error('playMode')
-  if (![config.isCacheFrames, config.isUseIntersectionObserver, config.isOpenNoExecutionDelay].every(value => typeof value === 'boolean')) throw Error('flag')
+  if (![
+    config.isCacheFrames,
+    config.isUseIntersectionObserver,
+    config.isOpenNoExecutionDelay,
+    config.isDisableOffscreenCanvas
+  ].every(value => typeof value === 'boolean')) throw Error('flag')
   if (![startFrame, endFrame, loopStartFrame].every(Number.isInteger) || Math.min(startFrame, endFrame, loopStartFrame) < 0) throw Error('frame')
 
   if (endFrame && startFrame > endFrame) throw Error('start>end')
@@ -179,7 +185,12 @@ function validateConfig (config: PlayerConfig, totalFrames?: number): void {
   if (looping && effectiveEnd !== 0 && loopStartFrame === effectiveEnd) throw Error('loop segment')
 }
 
-function createOffscreen (width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
+function createOffscreen (
+  width: number,
+  height: number,
+  isDisabled: boolean
+): HTMLCanvasElement | OffscreenCanvas {
+  if (isDisabled) return document.createElement('canvas')
   const Canvas = window.OffscreenCanvas
   if (Canvas) {
     try {
@@ -251,11 +262,12 @@ export class Player {
     loopStartFrame: 0,
     isCacheFrames: false,
     isUseIntersectionObserver: false,
-    isOpenNoExecutionDelay: false
+    isOpenNoExecutionDelay: false,
+    isDisableOffscreenCanvas: false
   }
 
   private readonly __svgaAnimator: Animator
-  private readonly __svgaCanvas: HTMLCanvasElement | OffscreenCanvas
+  private __svgaCanvas!: HTMLCanvasElement | OffscreenCanvas
 
   private __svgaVisible = true
   private __svgaObserver: IntersectionObserver | null = null
@@ -265,6 +277,15 @@ export class Player {
 
   public get config (): Readonly<PlayerConfig> {
     return Object.freeze({ ...this.__svgaConfig })
+  }
+
+  /**
+   * 当前播放进度，取值范围 0 到 1
+   */
+  public get progress (): number {
+    if (!this.videoEntity) return 0
+    if (this.totalFrames === 0) return 1
+    return Math.min(1, Math.max(0, (this.currentFrame + 1) / (this.totalFrames + 1)))
   }
 
   constructor (options: HTMLCanvasElement | PlayerConfigOptions) {
@@ -282,7 +303,11 @@ export class Player {
         if (this.onEnd) this.onEnd()
       }
       this.setConfig(options instanceof HTMLCanvasElement ? { container: options } : options)
-      this.__svgaCanvas = createOffscreen(this.__svgaConfig.container.width, this.__svgaConfig.container.height)
+      this.__svgaCanvas = createOffscreen(
+        this.__svgaConfig.container.width,
+        this.__svgaConfig.container.height,
+        this.__svgaConfig.isDisableOffscreenCanvas
+      )
     } catch (error) {
       releasePlayer(this)
       throw error
@@ -306,10 +331,19 @@ export class Player {
     validateConfig(mergedConfig, this.videoEntity ? this.totalFrames : undefined)
     const containerChanged = mergedConfig.container !== this.__svgaConfig.container
     const observerChanged = containerChanged || mergedConfig.isUseIntersectionObserver !== this.__svgaConfig.isUseIntersectionObserver
-    if (containerChanged || (this.__svgaConfig.isCacheFrames && !mergedConfig.isCacheFrames)) {
+    const offscreenChanged = mergedConfig.isDisableOffscreenCanvas !== this.__svgaConfig.isDisableOffscreenCanvas
+    if (containerChanged || offscreenChanged || (this.__svgaConfig.isCacheFrames && !mergedConfig.isCacheFrames)) {
       clearFrameCache(runtime, this.__svgaFrames)
     }
     Object.keys(this.__svgaConfig).forEach(key => { target[key] = mergedConfig[key] })
+    const currentCanvas = (this as unknown as { __svgaCanvas?: HTMLCanvasElement | OffscreenCanvas }).__svgaCanvas
+    if (offscreenChanged && currentCanvas) {
+      this.__svgaCanvas = createOffscreen(
+        this.__svgaConfig.container.width,
+        this.__svgaConfig.container.height,
+        this.__svgaConfig.isDisableOffscreenCanvas
+      )
+    }
     if (containerChanged && this.videoEntity) this.__svgaSize()
     this.__svgaAnimator.__svgaNoDelay = this.__svgaConfig.isOpenNoExecutionDelay
     if (observerChanged) this.__svgaObserve()
@@ -420,7 +454,7 @@ export class Player {
   /**
    * 播放中事件回调
    */
-  public onProcess: EventCallback
+  public onProcess: ProcessCallback
   /**
    * 播放结束事件回调
    */
@@ -471,6 +505,31 @@ export class Player {
       if (this.onResume) this.onResume()
     }
     this.__svgaAnimate(true)
+  }
+
+  /**
+   * 定位到指定帧
+   * @param frame 目标帧
+   * @param andPlay 定位后是否立即继续播放
+   */
+  public stepToFrame (frame: number, andPlay = false): void {
+    const runtime = activeRuntime(this)
+    const videoEntity = this.videoEntity
+    if (!videoEntity) throw Error('video')
+    if (typeof andPlay !== 'boolean') throw Error('andPlay')
+    const config = this.__svgaConfig
+    const effectiveEndFrame = config.endFrame || this.totalFrames
+    if (!Number.isInteger(frame) || frame < config.startFrame || frame > effectiveEndFrame) throw Error('frame')
+
+    this.__svgaAnimator.__svgaStop()
+    const frameDuration = 1000 / videoEntity.fps
+    runtime.__svgaTimeline = config.playMode === 'forwards'
+      ? (frame - config.startFrame) * frameDuration
+      : (effectiveEndFrame - frame) * frameDuration
+    this.currentFrame = frame
+    this.__svgaDraw(frame)
+    if (this.onProcess) this.onProcess(this.progress)
+    if (andPlay && playerRuntimes.has(this)) this.resume()
   }
 
   /**
@@ -540,7 +599,7 @@ export class Player {
       if (this.currentFrame === value) return
       this.currentFrame = value
       this.__svgaDraw(value)
-      if (this.onProcess) this.onProcess()
+      if (this.onProcess) this.onProcess(this.progress)
     }
 
     animator.__svgaRun()
