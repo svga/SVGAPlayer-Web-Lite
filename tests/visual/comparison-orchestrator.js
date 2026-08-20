@@ -168,8 +168,8 @@ export class ComparisonOrchestrator {
     result.correctness = comparisonCorrectness(result.rounds)
     result.warmCorrectness = warmComparisonCorrectness(result.rounds)
     result.warmPerformanceComparable = result.correctness.state === 'match' && result.warmCorrectness.state === 'match'
-    result.warnings.push(...comparisonSummaryWarnings(result.aggregates, rounds))
-    if (includeWarm) result.warnings.push(...comparisonSummaryWarnings(result.warmAggregates, rounds, { scope: '热播放', directional: false }))
+    result.warnings.push(...comparisonSummaryWarnings(result.aggregates, rounds, { scope: `${fixture.name} 冷启动` }))
+    if (includeWarm) result.warnings.push(...comparisonSummaryWarnings(result.warmAggregates, rounds, { scope: `${fixture.name} 热播放`, directional: false }))
     result.warnings = [...new Set(result.warnings)]
     if (this.cancelled || runToken !== this.runToken) return { cancelled: true, fixture, warnings: [...new Set([...result.warnings, '人工取消：未保留不完整素材。'])] }
     result.complete = result.rounds.baseline.length === rounds && result.rounds.local.length === rounds

@@ -5,7 +5,8 @@ import { resolve } from 'node:path'
 import { createRuntimeMetadata, parseBaselineOptions, prepareBaselineRuntime } from './visual-baseline.mjs'
 
 const host = '127.0.0.1'
-const port = 4173
+const port = Number.parseInt(process.env.SVGA_VISUAL_PORT || '4173', 10)
+if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('SVGA_VISUAL_PORT must be a valid TCP port')
 const projectDir = resolve(import.meta.dirname, '..')
 const fixtureDir = resolve(projectDir, 'tests/fixtures/svga')
 
