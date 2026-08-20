@@ -3,6 +3,60 @@ import { expect, test } from './browser-test'
 const visualTestUrl = 'http://127.0.0.1:4173/'
 const isolatedRuntime = process.env.SVGA_VISUAL_RUNTIME === 'baseline' ? 'baseline' : 'local'
 
+async function forceAndTrackPlaybackTimeout (page: import('@playwright/test').Page, property: string) {
+  await page.evaluate(name => {
+    const browserWindow = window as typeof window & Record<string, any>
+    const active = new Set<number>()
+    const created: number[] = []
+    const cleared: number[] = []
+    const originalSetTimeout = window.setTimeout.bind(window)
+    const originalClearTimeout = window.clearTimeout.bind(window)
+    const originalIsFinite = Number.isFinite
+    const isPlaybackTimeout = (callback: TimerHandler) => typeof callback === 'function' && callback.toString().includes('player.pause()')
+
+    browserWindow[name] = {
+      active,
+      cleared,
+      created,
+      restore () {
+        window.setTimeout = originalSetTimeout
+        window.clearTimeout = originalClearTimeout
+        Number.isFinite = originalIsFinite
+      }
+    }
+    // The normal local UI intentionally uses Infinity, so make only its playback
+    // sample branch observable without tracking unrelated page timers.
+    Number.isFinite = value => value === Infinity || originalIsFinite(value)
+    window.setTimeout = ((callback: TimerHandler, timeout?: number, ...args: any[]) => {
+      const playbackTimeout = isPlaybackTimeout(callback)
+      let id = 0
+      const handler = typeof callback === 'function'
+        ? (...callbackArgs: any[]) => {
+            active.delete(id)
+            callback(...callbackArgs)
+          }
+        : callback
+      id = originalSetTimeout(handler, playbackTimeout && timeout === Infinity ? 10_000 : timeout, ...args) as unknown as number
+      if (playbackTimeout) {
+        active.add(id)
+        created.push(id)
+      }
+      return id as unknown as number
+    }) as typeof window.setTimeout
+    window.clearTimeout = ((id?: number) => {
+      if (id !== undefined && active.delete(id)) cleared.push(id)
+      return originalClearTimeout(id)
+    }) as typeof window.clearTimeout
+  }, property)
+}
+
+async function playbackTimeoutStats (page: import('@playwright/test').Page, property: string) {
+  return await page.evaluate(name => {
+    const tracker = (window as typeof window & Record<string, any>)[name]
+    return { active: tracker.active.size, cleared: tracker.cleared.length, created: tracker.created.length }
+  }, property)
+}
+
 test('visual test page inventories every production fixture', async ({ page }) => {
   await page.goto(visualTestUrl)
 
@@ -223,6 +277,7 @@ test('a late mount resolution cannot hide the new fixture prompt', async ({ page
 
 test('switching fixtures during local playback releases every monitor', async ({ page }) => {
   await page.goto(visualTestUrl)
+  await forceAndTrackPlaybackTimeout(page, 'visualLocalPlaybackTimeouts')
   await page.evaluate(() => {
     const browserWindow = window as any
     const intervals = new Set<number>()
@@ -283,6 +338,8 @@ test('switching fixtures during local playback releases every monitor', async ({
   }))).toMatchObject({ intervals: 0, frames: 0 })
   const observer = await page.evaluate(() => (window as any).visualMonitorStats)
   expect(observer.disconnected).toBe(observer.observed)
+  expect(await playbackTimeoutStats(page, 'visualLocalPlaybackTimeouts')).toEqual({ active: 0, cleared: 1, created: 1 })
+  await page.evaluate(() => (window as any).visualLocalPlaybackTimeouts.restore())
 })
 
 test('switching fixtures during replay releases every monitor', async ({ page }) => {
@@ -322,6 +379,7 @@ test('switching fixtures during replay releases every monitor', async ({ page })
   })
   await page.getByTestId('run-selected').click()
   await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'completed', { timeout: 15_000 })
+  await forceAndTrackPlaybackTimeout(page, 'visualReplayPlaybackTimeouts')
   await page.getByTestId('replay').click()
   await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'playing')
   await page.locator('[data-fixture="11.svga"]').click()
@@ -330,6 +388,8 @@ test('switching fixtures during replay releases every monitor', async ({ page })
     intervals: (window as any).visualReplayMonitorStats.intervals.size,
     frames: (window as any).visualReplayMonitorStats.frames.size
   }))).toEqual({ intervals: 0, frames: 0 })
+  expect(await playbackTimeoutStats(page, 'visualReplayPlaybackTimeouts')).toEqual({ active: 0, cleared: 1, created: 1 })
+  await page.evaluate(() => (window as any).visualReplayPlaybackTimeouts.restore())
 })
 
 test('changing fixtures clears the previous comparison report before a new run', async ({ page }) => {
