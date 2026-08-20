@@ -97,6 +97,19 @@ describe('visual comparison correctness states', () => {
     expect(compareCorrectness({ baseline: incomplete, local: incomplete })).toEqual({ state: 'limited', performanceComparable: false })
   })
 
+  it('matches profiles when only the legacy baseline image byte count is unavailable', () => {
+    const legacyBaseline = { ...successful, profile: { ...successful.profile, imageBytes: null } }
+    expect(compareCorrectness({ baseline: legacyBaseline, local: successful })).toEqual({ state: 'match', performanceComparable: true })
+  })
+
+  it.each([
+    ['width', 101], ['fps', 21], ['frames', 11], ['images', 2], ['sprites', 2], ['shapes', 2]
+  ])('keeps %s profile changes as metadata-change when image bytes are unavailable', (field, value) => {
+    const legacyBaseline = { ...successful, profile: { ...successful.profile, imageBytes: null } }
+    const local = { ...successful, profile: { ...successful.profile, [field]: value } }
+    expect(compareCorrectness({ baseline: legacyBaseline, local })).toEqual({ state: 'metadata-change', performanceComparable: false })
+  })
+
   it('prioritizes metadata and visual changes ahead of capability changes', () => {
     const metadataAndCapability = {
       ...successful,

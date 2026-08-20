@@ -118,7 +118,7 @@ function sameValue (left, right) {
 
 const profileCoreFields = [
   'fileBytes', 'width', 'height', 'pixels', 'fps', 'frames', 'durationMs', 'images',
-  'imageBytes', 'sprites', 'spriteFrames', 'shapes', 'rgbaBytes'
+  'sprites', 'spriteFrames', 'shapes', 'rgbaBytes'
 ]
 
 function sameProfile (baseline, local) {

@@ -573,6 +573,65 @@ test('runs one isolated local runtime and returns runtime-only startup metrics',
   })
 })
 
+test('prefers the first process callback visual over an empty start visual and keeps the start fallback', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const outcome = await page.evaluate(async () => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const fixture = { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' }
+    const api = (window as any).SVGAVisual
+    const run = async (processVisual: boolean) => {
+      const runner = api.createIsolatedRunner('local', { onEvent: () => {} })
+      await runner.ready
+      const runnerWindow = runner.frame.contentWindow as any
+      const video = {
+        size: { width: 10, height: 10 }, fps: 20, frames: 2,
+        images: {}, sprites: [{ frames: [{ shapes: [] }] }]
+      }
+      runnerWindow.SVGA.Parser = class {
+        async load () { return video }
+        destroy () {}
+      }
+      runnerWindow.SVGA.Player = class {
+        currentFrame = 0
+        constructor ({ container }: { container: HTMLCanvasElement }) { this.container = container }
+        container: HTMLCanvasElement
+        async mount () {}
+        start () {
+          if (!processVisual) return queueMicrotask(() => this.onEnd?.())
+          queueMicrotask(() => {
+            this.currentFrame = 1
+            const context = this.container.getContext('2d')!
+            context.fillStyle = '#000'
+            context.fillRect(0, 0, 10, 10)
+            this.onProcess?.()
+            context.clearRect(0, 0, 10, 10)
+            this.currentFrame = 2
+            this.onProcess?.()
+            this.onEnd?.()
+          })
+        }
+        pause () {}
+        destroy () {}
+        onProcess?: () => void
+        onEnd?: () => void
+      }
+      const event = await runner.run({ buffer, fixture, options: { maxPlaybackMs: 100, includeWarm: true } })
+      runner.dispose()
+      return event.result
+    }
+    return { process: await run(true), fallback: await run(false) }
+  })
+
+  expect(outcome.process).toMatchObject({
+    visual: { frame: 1, width: 300, height: 150, nonEmptyPixels: 100 },
+    warm: { visual: { frame: 1, width: 300, height: 150, nonEmptyPixels: 100 } }
+  })
+  expect(outcome.fallback).toMatchObject({
+    visual: { frame: 0, width: 300, height: 150, nonEmptyPixels: 0 },
+    warm: { visual: { frame: 0, width: 300, height: 150, nonEmptyPixels: 0 } }
+  })
+})
+
 test('keeps a one-second cold and warm sample inside its full timeout budget', async ({ page }) => {
   test.setTimeout(10_000)
   await page.goto(visualTestUrl)

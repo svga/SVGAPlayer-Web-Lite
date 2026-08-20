@@ -147,9 +147,11 @@ async function playMounted (token, player, video, maxPlaybackMs) {
   const started = performance.now()
   try {
     if (token.cancelled) throw cancelledError()
+    let processVisual = null
     player.onProcess = () => {
       if (token.cancelled) return
       collector.record(player.currentFrame, performance.now())
+      if (!processVisual) processVisual = fingerprint(player.currentFrame)
       const tick = collector.ticks[collector.ticks.length - 1]
       if (tick) send('ticks', { ticks: [tick] })
     }
@@ -158,7 +160,7 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     if (token.cancelled) throw cancelledError()
     collector.record(player.currentFrame, performance.now())
     const startMs = performance.now() - started
-    const visual = fingerprint(player.currentFrame)
+    const startVisual = fingerprint(player.currentFrame)
     const paintStarted = performance.now()
     const painted = await waitForPaint(token)
     if (token.cancelled || !painted) throw cancelledError()
@@ -175,7 +177,7 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     if (token.asyncError) throw Error(`运行时异步错误：${token.asyncError.message}`)
     const runtimeResult = finishMonitors()
     const playbackResult = collector.summarize(Math.max(0, performance.now() - started), runtimeResult.rafFrames)
-    return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual, playback: playbackResult, runtime: runtimeResult }
+    return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual: processVisual || startVisual, playback: playbackResult, runtime: runtimeResult }
   } finally {
     window.clearTimeout(timeoutId)
     token.paintCancel?.()
