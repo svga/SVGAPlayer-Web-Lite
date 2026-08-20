@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -48,14 +48,37 @@ async function readJson (path) {
   }
 }
 
-function walkAst (value, visitor) {
+function walkReachable (value, visitor) {
   if (Array.isArray(value)) {
-    for (const item of value) walkAst(item, visitor)
+    for (const item of value) walkReachable(item, visitor)
     return
   }
   if (!value || typeof value !== 'object') return
+  if (value.type === 'IfStatement') {
+    visitor(value)
+    walkReachable(value.test, visitor)
+    if (value.test.type === 'Literal' && typeof value.test.value === 'boolean') {
+      walkReachable(value.test.value ? value.consequent : value.alternate, visitor)
+    } else {
+      walkReachable(value.consequent, visitor)
+      walkReachable(value.alternate, visitor)
+    }
+    return
+  }
+  if (value.type === 'ConditionalExpression') {
+    visitor(value)
+    walkReachable(value.test, visitor)
+    if (value.test.type === 'Literal' && typeof value.test.value === 'boolean') {
+      walkReachable(value.test.value ? value.consequent : value.alternate, visitor)
+    } else {
+      walkReachable(value.consequent, visitor)
+      walkReachable(value.alternate, visitor)
+    }
+    return
+  }
+  if (value.type === 'FunctionExpression' || value.type === 'ArrowFunctionExpression') return
   if (typeof value.type === 'string') visitor(value)
-  for (const child of Object.values(value)) walkAst(child, visitor)
+  for (const child of Object.values(value)) walkReachable(child, visitor)
 }
 
 function identifierIs (node, name) {
@@ -68,40 +91,89 @@ function assignmentHasProperty (node, property, objectName) {
     (!objectName || identifierIs(node.left.object, objectName))
 }
 
-function hasUmdRuntimeShape (program) {
-  let accepted = false
-  walkAst(program, node => {
-    if (accepted || node.type !== 'CallExpression' || node.callee.type !== 'FunctionExpression') return
-    const factoryIndex = node.arguments.findIndex(argument => argument?.type === 'FunctionExpression')
-    const factory = node.arguments[factoryIndex]
-    const factoryParameter = node.callee.params[factoryIndex]
-    const exportedObject = factory?.params[0]
-    if (!factory || !identifierIs(factoryParameter, factoryParameter?.name) || !identifierIs(exportedObject, exportedObject?.name)) return
+function usesIdentifier (node, name) {
+  let found = false
+  walkReachable(node, candidate => { found ||= identifierIs(candidate, name) })
+  return found
+}
 
-    let hasExportsTypeof = false
-    let hasModuleTypeof = false
-    let callsFactoryWithExports = false
-    let assignsSvgaNamespace = false
-    walkAst(node.callee.body, candidate => {
-      if (candidate.type === 'UnaryExpression' && candidate.operator === 'typeof') {
-        hasExportsTypeof ||= identifierIs(candidate.argument, 'exports')
-        hasModuleTypeof ||= identifierIs(candidate.argument, 'module')
-      }
-      if (candidate.type === 'CallExpression' && identifierIs(candidate.callee, factoryParameter.name)) {
-        callsFactoryWithExports ||= candidate.arguments.some(argument => identifierIs(argument, 'exports'))
-      }
-      assignsSvgaNamespace ||= assignmentHasProperty(candidate, 'SVGA')
-    })
-
-    let exportsParser = false
-    let exportsPlayer = false
-    walkAst(factory.body, candidate => {
-      exportsParser ||= assignmentHasProperty(candidate, 'Parser', exportedObject.name)
-      exportsPlayer ||= assignmentHasProperty(candidate, 'Player', exportedObject.name)
-    })
-    accepted = hasExportsTypeof && hasModuleTypeof && callsFactoryWithExports && assignsSvgaNamespace && exportsParser && exportsPlayer
+function hasCommonJsTypeofTest (test) {
+  let hasExports = false
+  let hasModule = false
+  walkReachable(test, candidate => {
+    if (candidate.type !== 'UnaryExpression' || candidate.operator !== 'typeof') return
+    hasExports ||= identifierIs(candidate.argument, 'exports')
+    hasModule ||= identifierIs(candidate.argument, 'module')
   })
-  return accepted
+  return hasExports && hasModule
+}
+
+function isCommonJsExportTarget (node) {
+  return identifierIs(node, 'exports') || (node?.type === 'MemberExpression' &&
+    !node.computed && identifierIs(node.object, 'module') && identifierIs(node.property, 'exports'))
+}
+
+function isGlobalSvgaAssignment (node, globalName) {
+  return node?.type === 'AssignmentExpression' && node.operator === '=' &&
+    node.left.type === 'MemberExpression' && !node.left.computed &&
+    identifierIs(node.left.property, 'SVGA') && usesIdentifier(node.left.object, globalName)
+}
+
+function branchCallsFactory (branch, factoryName, acceptsArgument) {
+  let found = false
+  walkReachable(branch, candidate => {
+    if (candidate.type === 'CallExpression' && identifierIs(candidate.callee, factoryName)) {
+      found ||= candidate.arguments.some(acceptsArgument)
+    }
+  })
+  return found
+}
+
+function unwrapIifeCall (expression) {
+  if (expression?.type === 'CallExpression') return expression
+  if (expression?.type === 'UnaryExpression' && expression.operator === '!' && expression.argument.type === 'CallExpression') {
+    return expression.argument
+  }
+  return null
+}
+
+function hasUmdRuntimeShape (program) {
+  const calls = program.body
+    .filter(statement => statement.type === 'ExpressionStatement')
+    .map(statement => unwrapIifeCall(statement.expression))
+    .filter(Boolean)
+  if (calls.length !== 1) return false
+  const call = calls[0]
+  if (!call || call.callee.type !== 'FunctionExpression') return false
+
+  const wrapper = call.callee
+  const factoryIndex = call.arguments.findIndex(argument => argument?.type === 'FunctionExpression')
+  if (factoryIndex < 1 || call.arguments.filter(argument => argument?.type === 'FunctionExpression').length !== 1) return false
+  const factory = call.arguments[factoryIndex]
+  const factoryParameter = wrapper.params[factoryIndex]
+  const globalParameter = wrapper.params[0]
+  const exportedObject = factory.params[0]
+  if (!identifierIs(factoryParameter, factoryParameter?.name) || !identifierIs(globalParameter, globalParameter?.name) || !identifierIs(exportedObject, exportedObject?.name)) return false
+
+  let exportsParser = false
+  let exportsPlayer = false
+  walkReachable(factory.body, candidate => {
+    exportsParser ||= assignmentHasProperty(candidate, 'Parser', exportedObject.name)
+    exportsPlayer ||= assignmentHasProperty(candidate, 'Player', exportedObject.name)
+  })
+  if (!exportsParser || !exportsPlayer) return false
+
+  let hasLinkedBranches = false
+  walkReachable(wrapper.body, candidate => {
+    if (candidate.type !== 'IfStatement' && candidate.type !== 'ConditionalExpression') return
+    const consequent = candidate.consequent
+    const alternate = candidate.alternate
+    if (!alternate || !hasCommonJsTypeofTest(candidate.test)) return
+    const commonJsCallsFactory = branchCallsFactory(consequent, factoryParameter.name, isCommonJsExportTarget)
+    const globalCallsFactory = branchCallsFactory(alternate, factoryParameter.name, argument => isGlobalSvgaAssignment(argument, globalParameter.name))
+    hasLinkedBranches ||= commonJsCallsFactory && globalCallsFactory
+  })
+  return hasLinkedBranches
 }
 
 async function inspectRuntime (directory, metadata) {
@@ -198,8 +270,7 @@ async function writeCacheMetadata (directory, metadata) {
   await writeJsonAtomically(join(directory, 'metadata.json'), metadata)
 }
 
-async function cachedRuntime ({ cacheDir, version, cacheState, onlineConfirmed, expectedIntegrity, expectedScriptIntegrity, projectDir }) {
-  const directory = join(cacheDir, 'versions', version)
+async function cachedRuntimeAt ({ directory, version, cacheState, onlineConfirmed, expectedIntegrity, expectedScriptIntegrity, projectDir }) {
   const cached = await readJson(join(directory, 'metadata.json'))
   if (!cached || cached.version !== version || typeof cached.integrity !== 'string' || typeof cached.scriptIntegrity !== 'string') return null
   if (expectedIntegrity && cached.integrity !== expectedIntegrity) return null
@@ -207,6 +278,13 @@ async function cachedRuntime ({ cacheDir, version, cacheState, onlineConfirmed, 
   return await metadataForDirectory({
     directory, expectedVersion: version, expectedScriptIntegrity: cached.scriptIntegrity, source: 'npm',
     url: '/runtime/baseline.js', cacheState, integrity: cached.integrity, onlineConfirmed, projectDir
+  })
+}
+
+async function cachedRuntime ({ cacheDir, version, cacheState, onlineConfirmed, expectedIntegrity, expectedScriptIntegrity, projectDir }) {
+  return await cachedRuntimeAt({
+    directory: join(cacheDir, 'versions', version), version, cacheState, onlineConfirmed,
+    expectedIntegrity, expectedScriptIntegrity, projectDir
   })
 }
 
@@ -252,14 +330,56 @@ async function downloadRuntime (version, integrity, dependencies) {
     } catch (error) {
       const conflict = error && typeof error === 'object' && ['EEXIST', 'ENOTEMPTY'].includes(error.code)
       if (!conflict) throw error
-      const published = await cachedRuntime({
+      const expectedRuntime = {
         cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true,
         expectedIntegrity: integrity, expectedScriptIntegrity: validated.scriptIntegrity, projectDir
-      })
-      if (!published) {
-        throw new Error(`Baseline cache publish collision for ${version} did not produce a matching runtime`)
       }
-      return published
+      const published = await cachedRuntime(expectedRuntime)
+      if (published) return published
+
+      const existing = await cachedRuntime({
+        cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
+      })
+      if (existing) {
+        throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+      }
+
+      const quarantine = join(versionsDir, `.${version}.quarantine-${randomUUID()}`)
+      let movedToQuarantine = false
+      try {
+        try {
+          await rename(target, quarantine)
+          movedToQuarantine = true
+        } catch (quarantineError) {
+          const targetMoved = quarantineError && typeof quarantineError === 'object' && quarantineError.code === 'ENOENT'
+          if (!targetMoved) throw quarantineError
+        }
+
+        if (movedToQuarantine) {
+          const movedRuntime = await cachedRuntimeAt({
+            directory: quarantine, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
+          })
+          if (movedRuntime) {
+            await rename(quarantine, target)
+            movedToQuarantine = false
+            const restored = await cachedRuntime(expectedRuntime)
+            if (restored) return restored
+            throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+          }
+        }
+
+        try {
+          await rename(unpacked, target)
+          validated.runtimePath = join(target, 'dist/index.min.js')
+          return validated
+        } catch (publishError) {
+          const winner = await cachedRuntime(expectedRuntime)
+          if (winner) return winner
+          throw publishError
+        }
+      } finally {
+        if (movedToQuarantine) await rm(quarantine, { force: true, recursive: true })
+      }
     }
   } finally {
     await rm(staging, { force: true, recursive: true })
