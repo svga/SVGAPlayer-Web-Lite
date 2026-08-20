@@ -1,7 +1,10 @@
 THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
 
+This file applies to SVGAPlayer-Web-Lite 2.2.0 and covers third-party
+software incorporated into its distributed JavaScript bundles.
+
 protobuf.js 8.7.2 (BSD-3-Clause)
-Source: https://github.com/protobufjs/protobuf.js/tree/v8.7.2
+Source: https://github.com/protobufjs/protobuf.js/tree/protobufjs-v8.7.2
 
 This license applies to all parts of protobuf.js except those files
 either explicitly including or referencing a different license or
@@ -43,14 +46,19 @@ of the input file used when generating it. This code is not
 standalone and requires a support library to be linked with it. This
 support library is itself covered by the above license.
 
-The decode-only static source was generated with protobufjs-cli 2.6.2 from
-the official SVGA v2 schema in the SVGA-Format project. Exact source and
-generator provenance is recorded in src/parser/PROTOBUF_PROVENANCE.md.
+The shipped decode-only static source was generated from the official SVGA v2
+schema with protobufjs-cli 2.6.2 and uses the protobufjs 8.7.2 minimal runtime.
+
+Schema: https://github.com/svga/SVGA-Format/blob/c5c26c14fc2a1e104a067d0b58f237646d2e9de1/proto/svga.proto
+Schema SHA-256: 12f395148ae23ff04bcf0e39937b3f804edad5d57fbd7b7e6b5e04e49adb17b8
+
+The SVGA-Format repository does not publish a license for this schema; no
+schema license is inferred by this notice.
 
 ===============================================================================
 
-fflate (MIT)
-Source: https://github.com/101arrowz/fflate
+fflate 0.8.3 (MIT)
+Source: https://github.com/101arrowz/fflate/tree/v0.8.3
 
 MIT License
 

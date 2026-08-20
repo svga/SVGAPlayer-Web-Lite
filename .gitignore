@@ -5,3 +5,5 @@ playwright-report
 test-results
 .DS_Store
 .impeccable/
+.superpowers/
+docs/
