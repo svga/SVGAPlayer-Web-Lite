@@ -17,7 +17,14 @@ test('shows both runtime cards and only enables comparison when a baseline is av
 
   await expect(page.getByTestId('runtime-card-local')).toContainText('本地')
   await expect(page.getByTestId('runtime-card-baseline')).toContainText(/基线|不可用/)
+  await expect(page.getByTestId('runtime-card-local')).toContainText(/原始/)
+  await expect(page.getByTestId('runtime-card-local')).toContainText(/gzip/)
+  await expect(page.getByTestId('runtime-card-local')).toContainText(/包完整性/)
+  await expect(page.getByTestId('runtime-card-local')).toContainText(/脚本完整性/)
+  await expect(page.getByTestId('runtime-card-local')).toContainText(/提交/)
+  await expect(page.getByTestId('runtime-card-local')).toContainText(/工作区/)
   const baselineAvailable = await page.getByTestId('runtime-card-baseline').getAttribute('data-available')
+  if (baselineAvailable === 'true') await expect(page.locator('#comparison-warnings')).toContainText('版本相同')
   if (baselineAvailable === 'true') await expect(page.getByTestId('compare-selected')).toBeEnabled()
   else await expect(page.getByTestId('compare-selected')).toBeDisabled()
   await expect(page.getByTestId('export-json')).toBeDisabled()
@@ -92,6 +99,78 @@ test('runs the stable three-round warm comparison in alternating order', async (
   expect((report as any).fixtures[0].rounds.baseline).toHaveLength(3)
   expect((report as any).fixtures[0].rounds.local).toHaveLength(3)
   expect((report as any).fixtures[0].orders).toEqual([['baseline', 'local'], ['local', 'baseline'], ['baseline', 'local']])
+  expect((report as any).fixtures[0].warmAggregates.baseline.startMs.samples).toBe(3)
+  expect((report as any).fixtures[0].warmMetricComparisons.startMs).toBeTruthy()
+  await expect(page.locator('#warm-comparison')).toBeVisible()
+  await expect(page.locator('#warm-comparison-metrics')).toContainText('启动')
+})
+
+test('starting a full comparison cancels a local playback before creating isolated runners', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  test.skip(await page.getByTestId('runtime-card-baseline').getAttribute('data-available') !== 'true', 'A baseline is required for comparison.')
+  await page.getByTestId('run-selected').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'playing')
+  await expect(page.getByTestId('run-all')).toBeEnabled()
+  await page.getByTestId('run-all').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'cancelled')
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-state', 'running')
+  await expect(page.getByTestId('pause')).toBeDisabled()
+  await expect(page.locator('.canvas-bay iframe')).toHaveCount(1, { timeout: 10_000 })
+  await page.getByTestId('cancel-all').click()
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-state', 'cancelled')
+  await expect(page.locator('.canvas-bay iframe')).toHaveCount(0)
+})
+
+test('cancelling the first selected fetch does not publish an old or partial report', async ({ browserDiagnostics, page }) => {
+  test.setTimeout(15_000)
+  await page.goto(visualTestUrl)
+  test.skip(await page.getByTestId('runtime-card-baseline').getAttribute('data-available') !== 'true', 'A baseline is required for comparison.')
+  browserDiagnostics.expectRequestCancellation('/fixtures/soundwave.svga')
+  let releaseFetch: (() => void) | undefined
+  await page.route('**/fixtures/soundwave.svga', async route => {
+    await new Promise<void>(resolve => { releaseFetch = resolve })
+    await route.continue()
+  })
+  await page.getByTestId('compare-selected').click()
+  await expect.poll(() => Boolean(releaseFetch)).toBe(true)
+  await page.getByTestId('cancel-all').click()
+  releaseFetch?.()
+  await expect(page.getByTestId('comparison-status')).toHaveAttribute('data-state', 'cancelled')
+  await expect(page.getByTestId('export-json')).toBeDisabled()
+  await expect(page.locator('#comparison-metrics')).toBeEmpty()
+})
+
+test('changing fixtures clears the previous comparison report before a new run', async ({ page }) => {
+  test.setTimeout(20_000)
+  await page.goto(visualTestUrl)
+  test.skip(await page.getByTestId('runtime-card-baseline').getAttribute('data-available') !== 'true', 'A baseline is required for comparison.')
+  await page.getByTestId('compare-selected').click()
+  await expect(page.getByTestId('export-json')).toBeEnabled({ timeout: 15_000 })
+  await page.locator('[data-fixture="11.svga"]').click()
+  await expect(page.getByTestId('export-json')).toBeDisabled()
+  await expect(page.locator('#comparison-metrics')).toBeEmpty()
+})
+
+test('full cancellation retains only complete rows and exports the same fixture set', async ({ browserName, page }) => {
+  test.skip(browserName !== 'chromium', 'The complete-pair cancellation assertion runs once; first-fetch cancellation covers every browser.')
+  test.setTimeout(25_000)
+  await page.goto(visualTestUrl)
+  test.skip(await page.getByTestId('runtime-card-baseline').getAttribute('data-available') !== 'true', 'A baseline is required for comparison.')
+  await page.getByTestId('run-all').click()
+  await expect(page.getByTestId('batch-row')).toHaveCount(1, { timeout: 12_000 })
+  await expect(page.getByTestId('batch-status')).toContainText('正在对比 2/17')
+  await page.getByTestId('cancel-all').click()
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-state', 'cancelled')
+  const rows = await page.getByTestId('batch-row').count()
+  await expect(page.getByTestId('export-json')).toBeEnabled()
+  const download = page.waitForEvent('download')
+  await page.getByTestId('export-json').click()
+  const stream = await (await download).createReadStream()
+  let json = ''
+  for await (const chunk of stream!) json += chunk
+  const report = JSON.parse(json)
+  expect(report.warnings).toContain('人工取消：已完成行已保留。')
+  expect(report.fixtures).toHaveLength(rows)
 })
 
 test('runs a real SVGA file and reports finite startup and playback metrics', async ({ page }) => {
@@ -445,6 +524,10 @@ test('completes the full real-fixture sweep in Chromium', async ({ browserName, 
   await page.getByTestId('run-all').click()
   await expect(page.getByTestId('batch-status')).toHaveAttribute('data-state', 'completed', { timeout: 80_000 })
   await expect(page.getByTestId('batch-status')).toContainText('17 个素材')
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-success', '16')
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-expected', '1')
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-failed', '0')
+  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-review', '0')
   await expect(page.getByTestId('batch-row')).toHaveCount(17)
   await expect(page.locator('[data-testid="batch-row"][data-fixture="show.svga"]')).toHaveAttribute('data-result', 'expected-rejection')
 })
@@ -472,4 +555,17 @@ test('keeps the animation stage first and avoids horizontal overflow on mobile',
   await expect(page.locator('#environment-badge')).toContainText('CPU')
   await expect(page.locator('#environment-badge')).toContainText('ImageBitmap')
   await expect(page.getByTestId('comparison-status')).toContainText(/等待比较|基线不可用/)
+  if (await page.getByTestId('runtime-card-baseline').getAttribute('data-available') === 'true') {
+    await page.getByTestId('compare-selected').click()
+    await expect(page.getByTestId('comparison-status')).toHaveAttribute('data-state', /match|limited|expected-rejection|metadata-change|visual-change/, { timeout: 30_000 })
+    const comparisonLayout = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      headers: Array.from(document.querySelectorAll('.comparison-metrics thead')).map(header => getComputedStyle(header).display),
+      status: document.querySelector('[data-testid="comparison-status"]')?.textContent
+    }))
+    expect(comparisonLayout.scrollWidth).toBeLessThanOrEqual(comparisonLayout.viewportWidth)
+    expect(comparisonLayout.headers.every(display => display !== 'none')).toBe(true)
+    expect(comparisonLayout.status).not.toBe('')
+  }
 })

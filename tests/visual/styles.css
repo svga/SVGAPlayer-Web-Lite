@@ -155,26 +155,22 @@ input:focus-visible {
 .runtime-card dt { color: var(--muted); }
 .runtime-card dd { overflow-wrap: anywhere; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
-.comparison-metrics {
-  display: grid;
-  overflow: hidden;
+.comparison-table-wrap {
   border: 1px solid var(--line);
   border-radius: 0.8rem;
 }
 
+.comparison-metrics { width: 100%; }
+
 .comparison-metric-row {
-  display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 1.2fr);
-  border-bottom: 1px solid #e6ebf2;
-  padding: 0.6rem 0.75rem;
-  gap: 0.65rem;
   font-size: 0.7rem;
 }
 
-.comparison-metric-row:last-child { border-bottom: 0; }
-.comparison-metric-row span { color: var(--muted); overflow-wrap: anywhere; }
-.comparison-metric-row span:nth-child(2)::before { content: "基线："; }
-.comparison-metric-row span:nth-child(3)::before { content: "本地："; }
+.comparison-metric-row td { color: var(--muted); overflow-wrap: anywhere; }
+
+.warm-comparison { margin-top: 1.25rem; }
+.warm-comparison h3 { margin: 0; font-size: 0.92rem; }
+.warm-comparison > p { margin: 0.45rem 0 0.8rem; color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
 
 .workbench {
   display: grid;
@@ -800,7 +796,47 @@ tbody tr[data-result="failed"] {
 
   .runtime-cards { grid-template-columns: minmax(0, 1fr); }
 
-  .comparison-metric-row { grid-template-columns: minmax(0, 1fr); gap: 0.32rem; }
+  .comparison-table-wrap { overflow: visible; border: 0; }
+  .comparison-metrics,
+  .comparison-metrics tbody,
+  .comparison-metrics tr,
+  .comparison-metrics th,
+  .comparison-metrics td { display: block; width: 100%; white-space: normal; }
+
+  .comparison-metrics thead,
+  .batch-table-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .comparison-metric-row {
+    margin-bottom: 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    padding: 0.35rem 0.65rem;
+    background: #fff;
+  }
+
+  .comparison-metric-row th,
+  .comparison-metric-row td {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.78fr) minmax(0, 1.22fr);
+    border: 0;
+    border-bottom: 1px solid #e6ebf2;
+    padding: 0.42rem 0;
+    overflow-wrap: anywhere;
+    gap: 0.5rem;
+  }
+
+  .comparison-metric-row th::before { content: "指标"; color: var(--muted); font-family: inherit; font-size: 0.64rem; }
+  .comparison-metric-row td:nth-child(2)::before { content: "基线"; color: var(--muted); font-family: inherit; font-size: 0.64rem; }
+  .comparison-metric-row td:nth-child(3)::before { content: "本地"; color: var(--muted); font-family: inherit; font-size: 0.64rem; }
+  .comparison-metric-row td:nth-child(4)::before { content: "结论"; color: var(--muted); font-family: inherit; font-size: 0.64rem; }
 
   .table-wrap { overflow: visible; border: 0; }
 
@@ -809,8 +845,6 @@ tbody tr[data-result="failed"] {
   .batch-panel tr,
   .batch-panel th,
   .batch-panel td { display: block; width: 100%; white-space: normal; }
-
-  .batch-panel thead { display: none; }
 
   .batch-panel tr {
     margin-bottom: 0.7rem;

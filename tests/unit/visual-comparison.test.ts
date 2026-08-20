@@ -8,6 +8,7 @@ import {
   median,
   relativeMad
 } from '../visual/comparison.js'
+import { comparisonCorrectness, warmComparisonAggregates, warmComparisonMetrics } from '../visual/comparison-orchestrator.js'
 
 describe('visual comparison statistics', () => {
   it('uses the middle value for odd, even, and singleton rounds', () => {
@@ -94,5 +95,53 @@ describe('visual comparison correctness states', () => {
   it('treats incomplete profiles as limited instead of a match', () => {
     const incomplete = { status: 'completed', profile: { width: 100 }, visual: successful.visual, capabilities: undefined }
     expect(compareCorrectness({ baseline: incomplete, local: incomplete })).toEqual({ state: 'limited', performanceComparable: false })
+  })
+
+  it('prioritizes metadata and visual changes ahead of capability changes', () => {
+    const metadataAndCapability = {
+      ...successful,
+      profile: { ...successful.profile, frames: 11 },
+      capabilities: { imageBitmap: false }
+    }
+    const visualAndCapability = {
+      ...successful,
+      visual: { ...successful.visual, rgbaHash: 'bb' },
+      capabilities: { imageBitmap: false }
+    }
+    expect(compareCorrectness({ baseline: successful, local: metadataAndCapability }).state).toBe('metadata-change')
+    expect(compareCorrectness({ baseline: successful, local: visualAndCapability }).state).toBe('visual-change')
+  })
+})
+
+describe('visual comparison round summaries', () => {
+  const profile = {
+    fileBytes: 10, width: 100, height: 100, pixels: 10_000, fps: 20, frames: 10, durationMs: 500,
+    images: 1, imageBytes: 10, sprites: 1, spriteFrames: 10, shapes: 1, rgbaBytes: 40_000
+  }
+  const matching = {
+    status: 'completed', profile, capabilities: { worker: true },
+    visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 },
+    warm: { status: 'sampled', startMs: 1, firstPaintMs: 2, playback: { targetFps: 20, actualFps: 20, skippedFrames: 0, skippedRate: 0, lateRate: 0, intervalP95Ms: 50, jitterMs: 0 }, runtime: { longTaskTotalMs: 0, longTaskMaxMs: 0, blockingMs: 0, heapDeltaBytes: 1 } }
+  }
+
+  it('retains an early local regression even when later round pairs match', () => {
+    const rounds = {
+      baseline: [matching, matching, matching],
+      local: [{ ...matching, status: 'failed' }, matching, matching]
+    }
+    expect(comparisonCorrectness(rounds)).toEqual({ state: 'local-regression', performanceComparable: false })
+  })
+
+  it('returns expected rejection only when every complete pair is expected', () => {
+    const expected = { status: 'expected-rejection' }
+    expect(comparisonCorrectness({ baseline: [expected, expected], local: [expected, expected] }))
+      .toEqual({ state: 'expected-rejection', performanceComparable: false })
+  })
+
+  it('aggregates and compares warm-only start, playback, and runtime metrics', () => {
+    const rounds = { baseline: [matching], local: [{ ...matching, warm: { ...matching.warm, startMs: 3 } }] }
+    expect(warmComparisonAggregates(rounds).baseline.startMs.median).toBe(1)
+    expect(warmComparisonMetrics(rounds, 20).startMs.outcome).toBe('regression')
+    expect(warmComparisonMetrics(rounds, 20).heapDeltaBytes.outcome).toBe('limited')
   })
 })

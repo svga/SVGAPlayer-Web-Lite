@@ -10,6 +10,16 @@ const metricPaths = [
   ['heapAfterBytes', 'runtime.heapAfterBytes'], ['heapPeakBytes', 'runtime.heapPeakBytes'], ['heapDeltaBytes', 'runtime.heapDeltaBytes']
 ]
 
+const warmMetricPaths = [
+  ['startMs', 'warm.startMs'], ['firstPaintMs', 'warm.firstPaintMs'], ['actualFps', 'warm.playback.actualFps'],
+  ['skippedFrames', 'warm.playback.skippedFrames'], ['skippedRate', 'warm.playback.skippedRate'],
+  ['lateRate', 'warm.playback.lateRate'], ['intervalP95Ms', 'warm.playback.intervalP95Ms'],
+  ['jitterMs', 'warm.playback.jitterMs'], ['longTaskTotalMs', 'warm.runtime.longTaskTotalMs'],
+  ['longTaskMaxMs', 'warm.runtime.longTaskMaxMs'], ['blockingMs', 'warm.runtime.blockingMs'],
+  ['heapBeforeBytes', 'warm.runtime.heapBeforeBytes'], ['heapMountBytes', 'warm.runtime.heapMountBytes'],
+  ['heapAfterBytes', 'warm.runtime.heapAfterBytes'], ['heapPeakBytes', 'warm.runtime.heapPeakBytes'], ['heapDeltaBytes', 'warm.runtime.heapDeltaBytes']
+]
+
 function round (value) {
   return Number(value.toFixed(2))
 }
@@ -20,10 +30,18 @@ function terminalResult (event) {
   return { status: 'failed', error: event?.error || { stage: 'runner', message: '隔离运行器没有返回结果' }, warnings: [] }
 }
 
-function correctnessFor (rounds) {
-  const baseline = rounds.baseline[rounds.baseline.length - 1]
-  const local = rounds.local[rounds.local.length - 1]
-  return compareCorrectness({ baseline, local })
+export function comparisonCorrectness (rounds) {
+  const pairCount = Math.min(rounds.baseline.length, rounds.local.length)
+  if (pairCount === 0 || rounds.baseline.length !== rounds.local.length) return { state: 'limited', performanceComparable: false }
+  const states = Array.from({ length: pairCount }, (_, index) => {
+    return compareCorrectness({ baseline: rounds.baseline[index], local: rounds.local[index] }).state
+  })
+  if (states.every(state => state === 'expected-rejection')) return { state: 'expected-rejection', performanceComparable: false }
+  if (states.every(state => state === 'match')) return { state: 'match', performanceComparable: true }
+  for (const state of ['local-regression', 'metadata-change', 'visual-change', 'capability-change', 'both-failed', 'limited']) {
+    if (states.includes(state)) return { state, performanceComparable: false }
+  }
+  return { state: 'limited', performanceComparable: false }
 }
 
 export function comparisonAggregates (rounds) {
@@ -37,6 +55,17 @@ export function comparisonMetrics (rounds, targetFps) {
   return Object.fromEntries(metricPaths.map(([name]) => [name, compareMetric(name, aggregates.baseline[name], aggregates.local[name], { targetFps })]))
 }
 
+export function warmComparisonAggregates (rounds) {
+  return Object.fromEntries(['baseline', 'local'].map(runtime => [runtime, Object.fromEntries(
+    warmMetricPaths.map(([name, path]) => [name, aggregateVersionRounds(rounds[runtime], path)])
+  )]))
+}
+
+export function warmComparisonMetrics (rounds, targetFps) {
+  const aggregates = warmComparisonAggregates(rounds)
+  return Object.fromEntries(warmMetricPaths.map(([name]) => [name, compareMetric(name, aggregates.baseline[name], aggregates.local[name], { targetFps })]))
+}
+
 export class ComparisonOrchestrator {
   constructor ({ canvas, createRunner, getBuffer, getOptions, onProgress = () => {}, onVisible = () => {} }) {
     this.canvas = canvas
@@ -47,11 +76,20 @@ export class ComparisonOrchestrator {
     this.onVisible = onVisible
     this.cancelled = false
     this.activeRunner = null
+    this.runToken = 0
   }
 
   async runFixture (fixture, { fixtureIndex = 0, rounds = 1, maxPlaybackMs = 2_000, includeWarm = false, runnerOptions = {} } = {}) {
     this.cancelled = false
-    const sharedRead = await this.getBuffer(fixture)
+    const runToken = ++this.runToken
+    let sharedRead
+    try {
+      sharedRead = await this.getBuffer(fixture)
+    } catch (error) {
+      if (this.cancelled || error?.name === 'AbortError') return { cancelled: true, fixture, warnings: ['人工取消：文件读取已中止。'] }
+      throw error
+    }
+    if (this.cancelled || runToken !== this.runToken) return { cancelled: true, fixture, warnings: ['人工取消：文件读取完成后未启动运行器。'] }
     const result = {
       fixture,
       read: sharedRead.read,
@@ -60,6 +98,8 @@ export class ComparisonOrchestrator {
       aggregates: {},
       correctness: { state: 'limited', performanceComparable: false },
       metricComparisons: {},
+      warmAggregates: {},
+      warmMetricComparisons: {},
       warnings: []
     }
     for (let roundIndex = 0; roundIndex < rounds && !this.cancelled; roundIndex++) {
@@ -84,17 +124,21 @@ export class ComparisonOrchestrator {
     result.aggregates = comparisonAggregates(result.rounds)
     const targetFps = result.rounds.baseline.find(round => Number.isFinite(round?.playback?.targetFps))?.playback.targetFps
     result.metricComparisons = comparisonMetrics(result.rounds, targetFps)
-    result.correctness = correctnessFor(result.rounds)
-    if (this.cancelled) result.warnings.push('人工取消：保留已完成轮次。')
+    result.warmAggregates = warmComparisonAggregates(result.rounds)
+    result.warmMetricComparisons = warmComparisonMetrics(result.rounds, targetFps)
+    result.correctness = comparisonCorrectness(result.rounds)
+    if (this.cancelled || runToken !== this.runToken) return { cancelled: true, fixture, warnings: [...new Set([...result.warnings, '人工取消：未保留不完整素材。'])] }
+    result.complete = result.rounds.baseline.length === rounds && result.rounds.local.length === rounds
     return result
   }
 
   async runRuntime (runtime, buffer, fixture, options, onEvent) {
+    const runToken = this.runToken
     const runner = this.createRunner(runtime, {
       target: this.canvas,
       visible: true,
       onEvent: event => {
-        if (event.event === 'stage') onEvent({ stage: event.stage })
+        if (runToken === this.runToken && event.event === 'stage') onEvent({ stage: event.stage })
       }
     })
     this.activeRunner = runner
@@ -102,7 +146,8 @@ export class ComparisonOrchestrator {
     try {
       await runner.ready
       if (this.cancelled) return await runner.cancel()
-      return await runner.run({ buffer, fixture, options })
+      const event = await runner.run({ buffer, fixture, options })
+      return runToken === this.runToken ? event : { event: 'cancelled' }
     } catch (error) {
       return { event: 'error', error: { stage: 'startup', message: error instanceof Error ? error.message : String(error) } }
     } finally {

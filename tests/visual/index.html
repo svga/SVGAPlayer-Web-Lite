@@ -140,7 +140,26 @@
           </div>
           <span id="comparison-result-note" class="technical-label">运行后显示</span>
         </div>
-        <div id="comparison-metrics" class="comparison-metrics" aria-live="polite"></div>
+        <div class="table-wrap comparison-table-wrap">
+          <table class="comparison-metrics" aria-live="polite">
+            <thead>
+              <tr><th scope="col">指标</th><th scope="col">基线</th><th scope="col">本地</th><th scope="col">结论</th></tr>
+            </thead>
+            <tbody id="comparison-metrics"></tbody>
+          </table>
+        </div>
+        <section id="warm-comparison" class="warm-comparison" aria-labelledby="warm-comparison-heading" hidden>
+          <h3 id="warm-comparison-heading">热播放</h3>
+          <p>单独汇总已挂载播放器的启动、播放与主线程指标；堆内存只显示趋势。</p>
+          <div class="table-wrap comparison-table-wrap">
+            <table class="comparison-metrics">
+              <thead>
+                <tr><th scope="col">指标</th><th scope="col">基线</th><th scope="col">本地</th><th scope="col">结论</th></tr>
+              </thead>
+              <tbody id="warm-comparison-metrics"></tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section class="panel batch-panel" aria-labelledby="batch-heading">
@@ -159,7 +178,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead>
+            <thead class="batch-table-heading">
               <tr><th>文件</th><th>正确性</th><th>基线解析</th><th>本地解析</th><th>基线挂载</th><th>本地挂载</th><th>基线实际 FPS</th><th>本地实际 FPS</th><th>基线跳帧</th><th>本地跳帧</th><th>主要差异/说明</th></tr>
             </thead>
             <tbody id="batch-results"></tbody>

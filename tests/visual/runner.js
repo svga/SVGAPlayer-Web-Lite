@@ -18,19 +18,17 @@ let active = null
 let hiddenDuringRun = document.hidden
 let coldRunStarted = false
 
-function containAsyncRunnerError (error) {
+function captureAsyncRunnerError (error) {
   if (!active || active.terminal) return
   active.asyncError = error instanceof Error ? error.message : String(error)
-  active.finish?.('failed')
+  active.finish?.('async-error')
 }
 
 window.addEventListener('error', event => {
-  containAsyncRunnerError(event.error || event.message)
-  event.preventDefault()
+  captureAsyncRunnerError(event.error || event.message)
 })
 window.addEventListener('unhandledrejection', event => {
-  containAsyncRunnerError(event.reason)
-  event.preventDefault()
+  captureAsyncRunnerError(event.reason)
 })
 
 function send (event, payload = {}) {
@@ -160,11 +158,11 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     if (token.cancelled) throw cancelledError()
     collector.record(player.currentFrame, performance.now())
     const startMs = performance.now() - started
+    const visual = fingerprint(player.currentFrame)
     const paintStarted = performance.now()
     const painted = await waitForPaint(token)
     if (token.cancelled || !painted) throw cancelledError()
     const firstPaintMs = performance.now() - paintStarted
-    const visual = fingerprint(player.currentFrame)
     if (Number.isFinite(maxPlaybackMs)) {
       timeoutId = window.setTimeout(() => {
         if (token.cancelled || completed) return
@@ -174,6 +172,7 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     }
     const reason = await playback
     if (token.cancelled || reason === 'cancelled') throw cancelledError()
+    if (token.asyncError) throw Error(`运行时异步错误：${token.asyncError}`)
     const runtimeResult = finishMonitors()
     const playbackResult = collector.summarize(Math.max(0, performance.now() - started), runtimeResult.rafFrames)
     return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual, playback: playbackResult, runtime: runtimeResult }
@@ -282,7 +281,6 @@ async function run (message) {
       cold.runtime.heapDeltaBytes = cold.runtime.heapAfterBytes - heapBeforeBytes
     } else cold.runtime.heapSupported = false
     if (!cold.visual) warnings.push('首个可观察画面无法读取，未生成视觉指纹。')
-    if (token.asyncError) warnings.push(`运行时异步错误：${token.asyncError}`)
     if (cold.playback.updateCount < 2) warnings.push('播放样本不足，播放质量指标仅供参考。')
     if (hiddenDuringRun) warnings.push('测试期间页面进入后台，浏览器调度可能影响结果。')
     const result = {

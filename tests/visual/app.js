@@ -39,6 +39,8 @@ const elements = {
   comparisonStatus: document.querySelector('[data-testid="comparison-status"]'),
   comparisonWarnings: document.querySelector('#comparison-warnings'),
   runtimeCards: document.querySelector('#runtime-cards'),
+  warmComparison: document.querySelector('#warm-comparison'),
+  warmComparisonMetrics: document.querySelector('#warm-comparison-metrics'),
   runSelected: document.querySelector('[data-testid="run-selected"]'),
   runStatus: document.querySelector('[data-testid="run-status"]'),
   selectedName: document.querySelector('[data-testid="selected-name"]'),
@@ -101,6 +103,7 @@ let comparison = null
 let comparisonReport = null
 const fixtureBuffers = new Map()
 let comparisonFetchController = null
+let singleRunPromise = null
 
 const setStatus = state => {
   elements.runStatus.dataset.state = state
@@ -118,8 +121,9 @@ function runtimeDetails (runtime) {
   if (!runtime) return [['状态', '不可用']]
   return [
     ['版本', runtime.version || '未知'], ['来源', runtime.source || '未知'], ['缓存', runtime.cacheState || '未知'],
-    ['原始', runtime.rawBytes ? formatBytes(runtime.rawBytes) : '未知'], ['gzip', runtime.gzipBytes ? formatBytes(runtime.gzipBytes) : '未知'],
-    [runtime.integrity ? '完整性' : '提交', runtime.integrity || runtime.gitCommit || '未知'], ['工作区', runtime.dirty ? '有未提交改动' : '干净']
+    ['原始', Number.isFinite(runtime.bytes) ? formatBytes(runtime.bytes) : '未知'], ['gzip', Number.isFinite(runtime.gzipBytes) ? formatBytes(runtime.gzipBytes) : '未知'],
+    ['包完整性', runtime.integrity || '未知'], ['脚本完整性', runtime.scriptIntegrity || '未知'], ['提交', runtime.gitCommit || '未知'],
+    ['工作区', runtime.dirty === true ? '有未提交改动' : runtime.dirty === false ? '干净' : '未知']
   ]
 }
 
@@ -171,7 +175,15 @@ async function sharedBufferFor (fixture) {
 
 function clearComparisonOutput () {
   elements.comparisonMetrics.replaceChildren()
+  elements.warmComparisonMetrics.replaceChildren()
+  elements.warmComparison.hidden = true
   elements.comparisonResultNote.textContent = '运行后显示'
+}
+
+function discardComparisonReport () {
+  comparisonReport = null
+  elements.exportJson.disabled = true
+  clearComparisonOutput()
 }
 
 const setPlaybackControls = state => {
@@ -179,6 +191,46 @@ const setPlaybackControls = state => {
   elements.resume.disabled = state !== 'paused'
   elements.stop.disabled = !['reading', 'parsing', 'mounting', 'playing', 'paused'].includes(state)
   elements.replay.disabled = !retained || !['completed', 'sampled', 'stopped'].includes(state)
+}
+
+function syncRunControls () {
+  const batchBusy = ['running', 'cancelling'].includes(elements.batchStatus.dataset.state)
+  const singleBusy = Boolean(singleRunPromise)
+  elements.runSelected.disabled = batchBusy || singleBusy
+  elements.compareSelected.disabled = batchBusy || singleBusy || !runtimes.baseline
+  elements.runAll.disabled = batchBusy || !runtimes.baseline
+  elements.cancelAll.disabled = !batchBusy || elements.batchStatus.dataset.state === 'cancelling'
+  elements.cacheFrames.disabled = batchBusy || singleBusy
+  elements.timerWorker.disabled = batchBusy || singleBusy
+  elements.compareWarm.disabled = batchBusy || singleBusy
+  for (const input of document.querySelectorAll('input[name="comparison-rounds"]')) input.disabled = batchBusy || singleBusy
+  if (batchBusy) {
+    elements.pause.disabled = true
+    elements.resume.disabled = true
+    elements.stop.disabled = true
+    elements.replay.disabled = true
+  }
+  for (const button of elements.fixtureList.querySelectorAll('[data-fixture]')) button.disabled = batchBusy
+}
+
+function trackSingleRun (task) {
+  const pending = Promise.resolve().then(task)
+  singleRunPromise = pending
+  syncRunControls()
+  void pending.finally(() => {
+    if (singleRunPromise === pending) singleRunPromise = null
+    syncRunControls()
+  })
+  return pending
+}
+
+async function stopSingleRun () {
+  cancelActive('cancelled')
+  destroyRetained()
+  const pending = singleRunPromise
+  if (pending) await pending.catch(() => {})
+  await Promise.resolve()
+  setPlaybackControls('cancelled')
 }
 
 function formatValue (value, unit) {
@@ -277,6 +329,7 @@ function selectFixture (fixture) {
   if (active) cancelActive('cancelled')
   if (selectedFixture && selectedFixture.name !== fixture.name) {
     destroyRetained()
+    discardComparisonReport()
     setStatus('idle')
     setPlaybackControls('idle')
     resetPublishedResults()
@@ -599,21 +652,30 @@ function comparisonOutcome (comparison, performanceComparable) {
   return comparison.outcome === 'improvement' ? '变化超出波动带' : comparison.outcome === 'regression' ? '变化超出波动带' : '处于波动带内'
 }
 
-function renderComparisonResult (result) {
-  const note = `${correctnessLabels[result.correctness.state] || result.correctness.state} · ${result.correctness.performanceComparable ? '可比较性能' : '不作性能优劣结论'}`
-  elements.comparisonResultNote.textContent = note
-  const rows = Object.entries(result.metricComparisons).map(([metric, comparison]) => {
-    const row = document.createElement('div')
+function renderComparisonMetricRows (target, aggregates, comparisons, performanceComparable) {
+  const rows = Object.entries(comparisons).map(([metric, comparison]) => {
+    const row = document.createElement('tr')
     row.className = 'comparison-metric-row'
-    const cells = [comparisonMetricLabels[metric] || metric, comparisonValue(metric, result.aggregates.baseline[metric]), comparisonValue(metric, result.aggregates.local[metric]), comparisonOutcome(comparison, result.correctness.performanceComparable)]
+    const cells = [comparisonMetricLabels[metric] || metric, comparisonValue(metric, aggregates.baseline[metric]), comparisonValue(metric, aggregates.local[metric]), comparisonOutcome(comparison, performanceComparable)]
     row.append(...cells.map((text, index) => {
-      const cell = document.createElement(index === 0 ? 'strong' : 'span')
+      const cell = document.createElement(index === 0 ? 'th' : 'td')
+      if (index === 0) cell.scope = 'row'
       cell.textContent = text
       return cell
     }))
     return row
   })
-  elements.comparisonMetrics.replaceChildren(...rows)
+  target.replaceChildren(...rows)
+}
+
+function renderComparisonResult (result) {
+  const note = `${correctnessLabels[result.correctness.state] || result.correctness.state} · ${result.correctness.performanceComparable ? '可比较性能' : '不作性能优劣结论'}`
+  elements.comparisonResultNote.textContent = note
+  renderComparisonMetricRows(elements.comparisonMetrics, result.aggregates, result.metricComparisons, result.correctness.performanceComparable)
+  const warmAvailable = Object.values(result.warmAggregates?.baseline || {}).some(aggregate => aggregate.samples > 0) ||
+    Object.values(result.warmAggregates?.local || {}).some(aggregate => aggregate.samples > 0)
+  elements.warmComparison.hidden = !warmAvailable
+  if (warmAvailable) renderComparisonMetricRows(elements.warmComparisonMetrics, result.warmAggregates, result.warmMetricComparisons, result.correctness.performanceComparable)
 }
 
 function appendBatchRow (fixture, result) {
@@ -647,14 +709,7 @@ function appendBatchRow (fixture, result) {
 function setBatchState (state, text) {
   elements.batchStatus.dataset.state = state
   elements.batchStatus.textContent = text
-  const running = state === 'running'
-  elements.runAll.disabled = running
-  elements.compareSelected.disabled = running || !runtimes.baseline
-  elements.cancelAll.disabled = !running
-  elements.runSelected.disabled = running
-  elements.cacheFrames.disabled = running
-  elements.timerWorker.disabled = running
-  for (const button of elements.fixtureList.querySelectorAll('[data-fixture]')) button.disabled = running
+  syncRunControls()
 }
 
 function ensureComparison () {
@@ -695,21 +750,33 @@ function publishComparisonReport (report) {
 }
 
 async function runSelectedComparison () {
-  if (!selectedFixture || !runtimes.baseline || active || elements.batchStatus.dataset.state === 'running') return
-  destroyRetained()
+  if (!selectedFixture || !runtimes.baseline || ['running', 'cancelling'].includes(elements.batchStatus.dataset.state)) return
+  await stopSingleRun()
   const rounds = Number(document.querySelector('input[name="comparison-rounds"]:checked')?.value || 1)
   const includeWarm = elements.compareWarm.checked
   const config = comparisonConfig('selected', rounds, includeWarm)
-  clearComparisonOutput()
+  discardComparisonReport()
   comparisonState('running', '准备当前素材对比')
   setBatchState('running', '正在对比当前素材')
   try {
     const result = await ensureComparison().runFixture(selectedFixture, { fixtureIndex: fixtures.indexOf(selectedFixture), rounds, maxPlaybackMs: config.sampleMs, includeWarm })
+    if (result.cancelled) {
+      publishComparisonReport(createComparisonReport({ runtimes, environment: environmentProfile(), config, fixtures: [], warnings: ['人工取消：当前素材未完成，未写入报告。'] }))
+      comparisonState('cancelled', '已取消，未保留不完整素材')
+      setBatchState('cancelled', '已取消')
+      return
+    }
     renderComparisonResult(result)
     publishComparisonReport(createComparisonReport({ runtimes, environment: environmentProfile(), config, fixtures: [result], warnings: result.warnings }))
     comparisonState(result.correctness.state, correctnessLabels[result.correctness.state] || result.correctness.state)
     setBatchState(result.warnings.some(warning => warning.includes('人工取消')) ? 'cancelled' : 'completed', '当前素材对比完成')
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      publishComparisonReport(createComparisonReport({ runtimes, environment: environmentProfile(), config, fixtures: [], warnings: ['人工取消：文件读取已中止。'] }))
+      comparisonState('cancelled', '已取消')
+      setBatchState('cancelled', '已取消')
+      return
+    }
     comparisonState('failed', '当前素材对比失败')
     elements.comparisonWarnings.replaceChildren(Object.assign(document.createElement('p'), { textContent: error instanceof Error ? error.message : String(error) }))
     setBatchState('failed', '对比失败')
@@ -720,13 +787,15 @@ async function runSelectedComparison () {
 }
 
 async function runBatch () {
-  if (elements.batchStatus.dataset.state === 'running' || !runtimes.baseline) return
+  if (['running', 'cancelling'].includes(elements.batchStatus.dataset.state) || !runtimes.baseline) return
+  await stopSingleRun()
   batchCancelled = false
   elements.batchResults.replaceChildren()
-  clearComparisonOutput()
+  discardComparisonReport()
   delete elements.batchStatus.dataset.success
   delete elements.batchStatus.dataset.expected
   delete elements.batchStatus.dataset.failed
+  delete elements.batchStatus.dataset.review
   setBatchState('running', `准备运行 0/${fixtures.length}`)
   const completed = []
   const config = comparisonConfig('all', 1, false)
@@ -747,6 +816,7 @@ async function runBatch () {
         fixtureIndex: index, rounds: 1, maxPlaybackMs: config.sampleMs, includeWarm: false,
         runnerOptions: { cacheFrames: false, timerWorker: false }
       })
+      if (result.cancelled || !result.complete) break
       completed.push(result)
       appendBatchRow(fixture, result)
       if (batchCancelled || result.warnings.some(warning => warning.includes('人工取消'))) break
@@ -777,17 +847,18 @@ async function runBatch () {
   elements.batchStatus.dataset.success = String(labels.match || 0)
   elements.batchStatus.dataset.expected = String(labels['expected-rejection'] || 0)
   elements.batchStatus.dataset.failed = String((labels['local-regression'] || 0) + (labels['both-failed'] || 0))
+  elements.batchStatus.dataset.review = String((labels['metadata-change'] || 0) + (labels['visual-change'] || 0) + (labels['capability-change'] || 0) + (labels.limited || 0))
   setBatchState('completed', `${completed.length} 个素材已完成双版本对比`)
   comparisonState('completed', '全量对比完成')
 }
 
-function cancelBatch () {
+async function cancelBatch () {
   if (elements.batchStatus.dataset.state !== 'running') return
   batchCancelled = true
+  setBatchState('cancelling', '正在取消并清理…')
   comparisonFetchController?.abort()
-  void ensureComparison().cancel()
-  cancelActive('cancelled')
-  setBatchState('cancelled', '已取消')
+  await ensureComparison().cancel()
+  await stopSingleRun()
 }
 
 async function loadFixtures () {
@@ -839,15 +910,15 @@ function renderEnvironment () {
 }
 
 elements.runSelected.addEventListener('click', () => {
-  if (selectedFixture) void runFixture(selectedFixture, { retain: true })
+  if (selectedFixture) void trackSingleRun(() => runFixture(selectedFixture, { retain: true }))
 })
 elements.compareSelected.addEventListener('click', () => { void runSelectedComparison() })
 elements.pause.addEventListener('click', () => active?.pause?.())
 elements.resume.addEventListener('click', () => active?.resume?.())
 elements.stop.addEventListener('click', () => active?.stop?.())
-elements.replay.addEventListener('click', () => { void replayRetained() })
+elements.replay.addEventListener('click', () => { void trackSingleRun(() => replayRetained()) })
 elements.runAll.addEventListener('click', () => { void runBatch() })
-elements.cancelAll.addEventListener('click', cancelBatch)
+elements.cancelAll.addEventListener('click', () => { void cancelBatch() })
 elements.exportJson.addEventListener('click', exportComparisonJson)
 elements.memorySnapshot.addEventListener('click', async () => {
   elements.memorySnapshot.disabled = true

@@ -138,16 +138,12 @@ function successful (result) {
 export function compareCorrectness ({ baseline, local }) {
   const baselineSuccess = successful(baseline)
   const localSuccess = successful(local)
-  if (baseline?.limited || local?.limited || baseline?.sampleSufficient === false || local?.sampleSufficient === false) {
-    return { state: 'limited', performanceComparable: false }
-  }
   if (baseline?.status === 'expected-rejection' && local?.status === 'expected-rejection') {
     return { state: 'expected-rejection', performanceComparable: false }
   }
   if (!baselineSuccess && !localSuccess) return { state: 'both-failed', performanceComparable: false }
   if (baselineSuccess && !localSuccess) return { state: 'local-regression', performanceComparable: false }
   if (!baselineSuccess || !localSuccess) return { state: 'capability-change', performanceComparable: false }
-  if (!sameValue(baseline.capabilities, local.capabilities)) return { state: 'capability-change', performanceComparable: false }
   if (!baseline.profile || !local.profile || !profileCoreFields.every(field => Number.isFinite(baseline.profile[field]) && Number.isFinite(local.profile[field]))) {
     return { state: 'limited', performanceComparable: false }
   }
@@ -156,5 +152,9 @@ export function compareCorrectness ({ baseline, local }) {
     return { state: 'limited', performanceComparable: false }
   }
   if (!sameVisual(baseline.visual, local.visual)) return { state: 'visual-change', performanceComparable: false }
+  if (!sameValue(baseline.capabilities, local.capabilities)) return { state: 'capability-change', performanceComparable: false }
+  if (baseline?.limited || local?.limited || baseline?.sampleSufficient === false || local?.sampleSufficient === false) {
+    return { state: 'limited', performanceComparable: false }
+  }
   return { state: 'match', performanceComparable: true }
 }
