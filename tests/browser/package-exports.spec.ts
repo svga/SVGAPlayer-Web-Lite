@@ -108,6 +108,31 @@ test('built UMD direct Parser instances keep inline parser state isolated', asyn
   expect(evidence.secondSize).toEqual({ width: 96, height: 96 })
 })
 
+test('built UMD direct Parser works when globalThis is unavailable', async ({ page }) => {
+  await page.goto('about:blank')
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
+
+  const parserAvailable = await page.evaluate(() => {
+    const browserWindow = window as unknown as Window & {
+      SVGA: { Parser: new (options: { isDisableWebWorker: boolean }) => { destroy: () => void } }
+    }
+    const globalObject = window as unknown as Record<string, unknown>
+    const hadGlobalThis = Object.prototype.hasOwnProperty.call(globalObject, 'globalThis')
+    const originalGlobalThis = globalObject.globalThis
+    try {
+      delete globalObject.globalThis
+      const parser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
+      parser.destroy()
+      return true
+    } finally {
+      if (hadGlobalThis) globalObject.globalThis = originalGlobalThis
+      else delete globalObject.globalThis
+    }
+  })
+
+  expect(parserAvailable).toBe(true)
+})
+
 test('built UMD timer Worker advances and ends a Player timeline', async ({ page }) => {
   await page.goto('about:blank')
   await page.addScriptTag({ path: resolve('dist/index.min.js') })

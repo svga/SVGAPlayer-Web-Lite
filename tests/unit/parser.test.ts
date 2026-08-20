@@ -189,7 +189,7 @@ describe('Parser request lifecycle', () => {
       postMessage: (data: ResponseEnvelope) => void
       requests: RequestEnvelope[]
     }> = []
-    vi.stubGlobal('eval', () => {
+    window.eval = () => {
       const mock = {
         onmessageCallback: (_data: ResponseEnvelope) => {},
         onresponse: (_data: ResponseEnvelope) => {},
@@ -199,7 +199,7 @@ describe('Parser request lifecycle', () => {
       }
       mocks.push(mock)
       window.SVGAParserMockWorker = mock as never
-    })
+    }
     const firstParser = new Parser({ isDisableWebWorker: true })
     const secondParser = new Parser({ isDisableWebWorker: true })
     const first = firstParser.load('/first.svga')
@@ -219,7 +219,7 @@ describe('Parser request lifecycle', () => {
       onmessage: (event: { data: RequestEnvelope }) => void
       postMessage: (data: ResponseEnvelope) => void
     }> = []
-    vi.stubGlobal('eval', () => {
+    window.eval = () => {
       const mock = {
         onmessageCallback: (_data: ResponseEnvelope) => {},
         onresponse: (_data: ResponseEnvelope) => {},
@@ -228,7 +228,7 @@ describe('Parser request lifecycle', () => {
       }
       mocks.push(mock)
       window.SVGAParserMockWorker = mock as never
-    })
+    }
     const first = new Parser({ isDisableWebWorker: true })
     const firstCallback = mocks[0].onmessageCallback
     const firstResponse = mocks[0].onresponse

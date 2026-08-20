@@ -100,7 +100,7 @@ export class Parser {
     const state: ParserState = { pending: new Map() }
     if (isDisableWebWorker === true) {
       // eslint-disable-next-line no-eval
-      globalThis.eval(INLINE_WORKER_FLAG)
+      window.eval(INLINE_WORKER_FLAG)
       if (window.SVGAParserMockWorker === undefined) throw Error('SVGAParserMockWorker undefined')
       this.worker = window.SVGAParserMockWorker
     } else {
