@@ -19,16 +19,17 @@ let hiddenDuringRun = document.hidden
 let coldRunStarted = false
 
 function captureAsyncRunnerError (error) {
-  if (!active || active.terminal) return
+  if (!active || active.terminal) return false
   active.asyncError = { stage: active.stage, message: error instanceof Error ? error.message : String(error) }
   active.finish?.('async-error')
+  return true
 }
 
 window.addEventListener('error', event => {
-  captureAsyncRunnerError(event.error || event.message)
+  if (captureAsyncRunnerError(event.error || event.message)) event.preventDefault()
 })
 window.addEventListener('unhandledrejection', event => {
-  captureAsyncRunnerError(event.reason)
+  if (captureAsyncRunnerError(event.reason)) event.preventDefault()
 })
 
 function send (event, payload = {}) {
@@ -147,11 +148,14 @@ async function playMounted (token, player, video, maxPlaybackMs) {
   const started = performance.now()
   try {
     if (token.cancelled) throw cancelledError()
-    let processVisual = null
+    let processVisualReady = null
     player.onProcess = () => {
       if (token.cancelled) return
-      collector.record(player.currentFrame, performance.now())
-      if (!processVisual) processVisual = fingerprint(player.currentFrame)
+      const frame = player.currentFrame
+      collector.record(frame, performance.now())
+      if (!processVisualReady) {
+        processVisualReady = Promise.resolve().then(() => token.cancelled ? null : fingerprint(frame))
+      }
       const tick = collector.ticks[collector.ticks.length - 1]
       if (tick) send('ticks', { ticks: [tick] })
     }
@@ -177,6 +181,7 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     if (token.asyncError) throw Error(`运行时异步错误：${token.asyncError.message}`)
     const runtimeResult = finishMonitors()
     const playbackResult = collector.summarize(Math.max(0, performance.now() - started), runtimeResult.rafFrames)
+    const processVisual = processVisualReady ? await processVisualReady : null
     return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual: processVisual || startVisual, playback: playbackResult, runtime: runtimeResult }
   } finally {
     window.clearTimeout(timeoutId)

@@ -602,13 +602,15 @@ test('prefers the first process callback visual over an empty start visual and k
           queueMicrotask(() => {
             this.currentFrame = 1
             const context = this.container.getContext('2d')!
+            this.onProcess?.()
             context.fillStyle = '#000'
             context.fillRect(0, 0, 10, 10)
-            this.onProcess?.()
-            context.clearRect(0, 0, 10, 10)
-            this.currentFrame = 2
-            this.onProcess?.()
-            this.onEnd?.()
+            setTimeout(() => {
+              context.clearRect(0, 0, 10, 10)
+              this.currentFrame = 2
+              this.onProcess?.()
+              this.onEnd?.()
+            }, 0)
           })
         }
         pause () {}
@@ -733,16 +735,18 @@ test('reports asynchronous runner errors with the stage where they occurred', as
     runner = (window as any).SVGAVisual.createIsolatedRunner('local', {
       onEvent: (event: { event: string, stage?: string }) => {
         if (event.event === 'stage' && event.stage === 'start') {
-          runner.frame.contentWindow.dispatchEvent(new ErrorEvent('error', { error: Error('late start error') }))
+          dispatched = runner.frame.contentWindow.dispatchEvent(new ErrorEvent('error', { cancelable: true, error: Error('late start error') }))
         }
       }
     })
+    let dispatched = true
     await runner.ready
     const terminal = await runner.run({ buffer, fixture, options: { maxPlaybackMs: 1_000 } })
     runner.dispose()
-    return terminal
+    return { terminal, dispatched }
   })
-  expect(outcome).toMatchObject({ event: 'error', error: { stage: 'start', message: expect.stringContaining('late start error') } })
+  expect(outcome.terminal).toMatchObject({ event: 'error', error: { stage: 'start', message: expect.stringContaining('late start error') } })
+  expect(outcome.dispatched).toBe(false)
 })
 
 test('cancels a pending isolated parser exactly once and releases its realm', async ({ page }) => {
