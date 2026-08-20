@@ -1,6 +1,7 @@
 import { expect, test } from './browser-test'
 
 const visualTestUrl = 'http://127.0.0.1:4173/'
+const isolatedRuntime = process.env.SVGA_VISUAL_RUNTIME === 'baseline' ? 'baseline' : 'local'
 
 test('visual test page inventories every production fixture', async ({ page }) => {
   await page.goto(visualTestUrl)
@@ -119,6 +120,46 @@ test('reports the SVGA 1.x fixture as an expected parsing rejection', async ({ p
   await expect(page.locator('#warnings')).toContainText('解析阶段')
 })
 
+test('runs one isolated local runtime and returns runtime-only startup metrics', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const result = await page.evaluate(async runtime => {
+    const response = await fetch('/fixtures/soundwave.svga')
+    const buffer = await response.arrayBuffer()
+    const runner = (window as unknown as {
+      SVGAVisual: {
+        createIsolatedRunner: (runtime: 'local' | 'baseline', options: { onEvent: (event: { event: string, result?: unknown }) => void }) => {
+          ready: Promise<unknown>
+          run: (input: { buffer: ArrayBuffer, fixture: { name: string, bytes: number, expectation: string }, options: { maxPlaybackMs: number, includeWarm: boolean } }) => void
+          dispose: () => void
+        }
+      }
+    }).SVGAVisual.createIsolatedRunner(runtime as 'local' | 'baseline', {
+      onEvent: event => {
+        if (['result', 'error', 'cancelled'].includes(event.event)) {
+          window.dispatchEvent(new CustomEvent('visual-runner-result', { detail: event }))
+        }
+      }
+    })
+    await runner.ready
+    const done = new Promise(resolve => window.addEventListener('visual-runner-result', event => resolve((event as CustomEvent).detail), { once: true }))
+    runner.run({
+      buffer,
+      fixture: { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' },
+      options: { maxPlaybackMs: 100, includeWarm: true }
+    })
+    const outcome = await done
+    runner.dispose()
+    return (outcome as { result?: unknown }).result || outcome
+  }, isolatedRuntime)
+
+  expect(result).toMatchObject({
+    status: 'sampled',
+    startup: { runtimeLoadMs: expect.any(Number), runtimeReadyMs: expect.any(Number), playerReadyMs: expect.any(Number) },
+    visual: { width: 400, height: 400, nonEmptyPixels: expect.any(Number), rgbaHash: expect.any(String) },
+    warm: { status: 'sampled' }
+  })
+})
+
 test('cancels an in-progress full fixture sweep and releases the controls', async ({ browserDiagnostics, page }) => {
   browserDiagnostics.expectRequestCancellation('/fixtures/')
   await page.goto(visualTestUrl)
@@ -140,6 +181,11 @@ test('serves an isolated no-cache page and rejects fixture path traversal', asyn
   expect(pageResponse.headers()['cache-control']).toBe('no-store')
   expect(pageResponse.headers()['cross-origin-opener-policy']).toBe('same-origin')
   expect(pageResponse.headers()['cross-origin-embedder-policy']).toBe('require-corp')
+  expect(pageResponse.headers()['content-security-policy']).not.toContain("'unsafe-eval'")
+
+  const runnerResponse = await request.get(`${visualTestUrl}runner.html?runtime=local&runId=test`)
+  expect(runnerResponse.status()).toBe(200)
+  expect(runnerResponse.headers()['content-security-policy']).toContain("script-src 'self' 'unsafe-eval'")
 
   const traversal = await request.get(`${visualTestUrl}fixtures/%2e%2e%2fpackage.json`)
   expect(traversal.status()).toBe(404)

@@ -9,6 +9,7 @@ import {
   profileVideo,
   readHeapBytes
 } from './metrics.js'
+import { createIsolatedRunner } from './runner-client.js'
 
 const elements = {
   batchResults: document.querySelector('#batch-results'),
@@ -75,6 +76,9 @@ const statusLabels = {
   playing: '播放中', paused: '已暂停', completed: '已完成', sampled: '样本完成',
   stopped: '已停止', cancelled: '已取消', failed: '测试失败', 'expected-rejection': '预期拒绝'
 }
+
+// 阶段 3 的批量对比通过这个窄接口创建同源、单次运行的 iframe，不改变当前单版本页面流程。
+window.SVGAVisual = Object.freeze({ createIsolatedRunner })
 
 let fixtures = []
 let selectedFixture

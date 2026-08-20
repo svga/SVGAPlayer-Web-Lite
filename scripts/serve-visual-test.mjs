@@ -19,6 +19,11 @@ const securityHeaders = {
   'X-Content-Type-Options': 'nosniff'
 }
 
+const runnerSecurityHeaders = {
+  ...securityHeaders,
+  'Content-Security-Policy': "default-src 'self'; base-uri 'none'; connect-src 'self' blob:; img-src 'self' blob: data:; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self'; worker-src blob:"
+}
+
 async function fixtureInventory (directory = fixtureDir) {
   const names = (await readdir(directory))
     .filter(name => name.endsWith('.svga'))
@@ -32,8 +37,8 @@ async function fixtureInventory (directory = fixtureDir) {
   })))
 }
 
-function send (response, status, body, contentType) {
-  response.writeHead(status, { ...securityHeaders, 'Content-Type': contentType })
+function send (response, status, body, contentType, headers = securityHeaders) {
+  response.writeHead(status, { ...headers, 'Content-Type': contentType })
   response.end(body)
 }
 
@@ -54,6 +59,11 @@ export async function createVisualTestServer (options = {}) {
     ['/', { path: resolve(visual, 'index.html'), type: 'text/html; charset=utf-8' }],
     ['/app.js', { path: resolve(visual, 'app.js'), type: 'text/javascript; charset=utf-8' }],
     ['/metrics.js', { path: resolve(visual, 'metrics.js'), type: 'text/javascript; charset=utf-8' }],
+    ['/comparison.js', { path: resolve(visual, 'comparison.js'), type: 'text/javascript; charset=utf-8' }],
+    ['/runner.html', { path: resolve(visual, 'runner.html'), type: 'text/html; charset=utf-8', headers: runnerSecurityHeaders }],
+    ['/runner.js', { path: resolve(visual, 'runner.js'), type: 'text/javascript; charset=utf-8' }],
+    ['/runner.css', { path: resolve(visual, 'runner.css'), type: 'text/css; charset=utf-8' }],
+    ['/runner-client.js', { path: resolve(visual, 'runner-client.js'), type: 'text/javascript; charset=utf-8' }],
     ['/styles.css', { path: resolve(visual, 'styles.css'), type: 'text/css; charset=utf-8' }],
     ['/dist/index.min.js', { path: local.runtimePath, type: 'text/javascript; charset=utf-8' }]
   ])
@@ -100,7 +110,7 @@ export async function createVisualTestServer (options = {}) {
     if (!file) return send(response, 404, 'Not Found', 'text/plain; charset=utf-8')
     try {
       const bytes = await readFile(file.path)
-      return send(response, 200, request.method === 'HEAD' ? '' : bytes, file.type)
+      return send(response, 200, request.method === 'HEAD' ? '' : bytes, file.type, file.headers)
     } catch (error) {
       const status = error && typeof error === 'object' && error.code === 'ENOENT' ? 404 : 500
       return send(response, status, status === 404 ? 'Not Found' : 'Internal Server Error', 'text/plain; charset=utf-8')
