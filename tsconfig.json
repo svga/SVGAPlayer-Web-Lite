@@ -1,6 +1,13 @@
 {
-  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "declaration": true
-  }
+    "target": "ES2017",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "lib": ["ES2017", "DOM", "WebWorker"],
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "**/*.mts"],
+  "exclude": ["node_modules", "dist"]
 }

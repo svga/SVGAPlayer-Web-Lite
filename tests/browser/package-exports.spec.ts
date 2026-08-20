@@ -16,7 +16,7 @@ test('browser bundles expose the public package exports', async ({ page }) => {
   })
   expect(umdExports).toEqual(expectedExports)
 
-  const esmCode = await readFile(resolve('dist/index.esm.min.js'), 'utf8')
+  const esmCode = await readFile(resolve('dist/index.mjs'), 'utf8')
   const esmUrl = `data:text/javascript;base64,${Buffer.from(esmCode).toString('base64')}`
   const esmExports = await page.evaluate(async url => Object.keys(await import(url)).sort(), esmUrl)
   expect(esmExports).toEqual(expectedExports)

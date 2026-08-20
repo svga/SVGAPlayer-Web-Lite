@@ -1,32 +1,54 @@
-import { readFile, rm } from 'node:fs/promises'
-import { dirname, relative, resolve } from 'node:path'
+import { execFile } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
 
 import commonjs from '@rollup/plugin-commonjs'
 import { nodeResolve } from '@rollup/plugin-node-resolve'
 import terser from '@rollup/plugin-terser'
-import typescript from '@rollup/plugin-typescript'
 import { rollup } from 'rollup'
-import ts from 'typescript'
 
+const execFileAsync = promisify(execFile)
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const distDir = resolve(projectDir, 'dist')
-const tsconfigPath = resolve(projectDir, 'tsconfig.json')
+const buildConfigPath = resolve(projectDir, 'tsconfig.build.json')
+const projectNodeModules = resolve(projectDir, 'node_modules')
 const workerPlaceholder = '#PARSER_V2_INLINE_WROKER#'
 const maxBundleRawBytes = 61440
 const maxBundleGzipBytes = 18432
+const publicDeclarations = [
+  'index.d.ts',
+  'db.d.ts',
+  'parser.d.ts',
+  'player/index.d.ts',
+  'types.d.ts'
+]
+const outputs = [
+  { file: 'index.min.js', format: 'umd', name: 'SVGA' },
+  { file: 'index.cjs', format: 'cjs' },
+  { file: 'index.mjs', format: 'es' }
+]
+
+const require = createRequire(import.meta.url)
+const typescriptPackagePath = require.resolve('typescript/package.json')
+const typescriptPackage = JSON.parse(await readFile(typescriptPackagePath, 'utf8'))
+const typescriptCli = resolve(dirname(typescriptPackagePath), typescriptPackage.bin.tsc)
+
+const failOnWarning = warning => {
+  throw new Error(`Rollup warning (${warning.code}): ${warning.message}`)
+}
 
 const inputPlugins = () => [
-  nodeResolve({ browser: true, preferBuiltins: false }),
-  commonjs(),
-  typescript({
-    tsconfig: tsconfigPath,
-    compilerOptions: {
-      declaration: false,
-      declarationMap: false
-    }
-  })
+  nodeResolve({
+    browser: true,
+    preferBuiltins: false,
+    modulePaths: [projectNodeModules]
+  }),
+  commonjs()
 ]
 
 const minify = () => terser({
@@ -67,9 +89,25 @@ const outputPlugins = workerCode => [
   minify()
 ]
 
-const generateWorker = async () => {
+async function emitTypeScript (temporaryDir) {
+  const outputDir = resolve(temporaryDir, 'javascript')
+  const declarationDir = resolve(temporaryDir, 'declarations')
+  await execFileAsync(process.execPath, [
+    typescriptCli,
+    '--project', buildConfigPath,
+    '--outDir', outputDir,
+    '--declarationDir', declarationDir
+  ], {
+    cwd: projectDir,
+    maxBuffer: 20 * 1024 * 1024
+  })
+  return { outputDir, declarationDir }
+}
+
+async function generateWorker (parserEntry) {
   const bundle = await rollup({
-    input: resolve(projectDir, 'src/parser/index.ts'),
+    input: parserEntry,
+    onwarn: failOnWarning,
     plugins: inputPlugins()
   })
 
@@ -86,57 +124,16 @@ const generateWorker = async () => {
   }
 }
 
-const diagnosticHost = {
-  getCanonicalFileName: fileName => fileName,
-  getCurrentDirectory: () => projectDir,
-  getNewLine: () => '\n'
+async function copyPublicDeclarations (declarationDir) {
+  await Promise.all(publicDeclarations.map(file => readFile(resolve(declarationDir, file))))
+  await Promise.all(publicDeclarations.map(async file => {
+    const destination = resolve(distDir, file)
+    await mkdir(dirname(destination), { recursive: true })
+    await copyFile(resolve(declarationDir, file), destination)
+  }))
 }
 
-const emitDeclarations = () => {
-  const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
-  if (configFile.error !== undefined) {
-    throw new Error(ts.formatDiagnostic(configFile.error, diagnosticHost))
-  }
-
-  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, projectDir)
-  const sourceDir = resolve(projectDir, 'src')
-  const sourceFiles = parsed.fileNames.filter(fileName => {
-    const sourceRelativePath = relative(sourceDir, fileName)
-    return sourceRelativePath !== '' && !sourceRelativePath.startsWith('..')
-  })
-  const program = ts.createProgram(sourceFiles, {
-    ...parsed.options,
-    declaration: true,
-    declarationDir: distDir,
-    declarationMap: false,
-    emitDeclarationOnly: true,
-    noEmit: false,
-    rootDir: sourceDir
-  })
-  const diagnostics = ts.getPreEmitDiagnostics(program)
-  if (diagnostics.length > 0) {
-    throw new Error(ts.formatDiagnosticsWithColorAndContext(diagnostics, diagnosticHost))
-  }
-
-  const result = program.emit()
-  if (result.emitSkipped) throw new Error('TypeScript skipped declaration emit')
-}
-
-await rm(distDir, { recursive: true, force: true })
-
-const workerCode = await generateWorker()
-const bundle = await rollup({
-  input: resolve(projectDir, 'src/index.ts'),
-  plugins: inputPlugins()
-})
-
-const outputs = [
-  { file: 'index.min.js', format: 'umd', name: 'SVGA' },
-  { file: 'index.cjs.min.js', format: 'cjs' },
-  { file: 'index.esm.min.js', format: 'es' }
-]
-
-const verifyArtifacts = async () => {
+async function verifyArtifacts () {
   for (const output of outputs) {
     const bytes = await readFile(resolve(distDir, output.file))
     const rawSize = bytes.byteLength
@@ -148,20 +145,36 @@ const verifyArtifacts = async () => {
   }
 }
 
-try {
-  for (const output of outputs) {
-    await bundle.write({
-      exports: 'named',
-      file: resolve(distDir, output.file),
-      format: output.format,
-      name: output.name,
-      plugins: outputPlugins(workerCode),
-      sourcemap: false
+async function build () {
+  const temporaryDir = await mkdtemp(resolve(tmpdir(), 'svga-build-'))
+  try {
+    const { outputDir, declarationDir } = await emitTypeScript(temporaryDir)
+    const workerCode = await generateWorker(resolve(outputDir, 'parser/index.js'))
+    await rm(distDir, { recursive: true, force: true })
+    const bundle = await rollup({
+      input: resolve(outputDir, 'index.js'),
+      onwarn: failOnWarning,
+      plugins: inputPlugins()
     })
+    try {
+      for (const output of outputs) {
+        await bundle.write({
+          exports: 'named',
+          file: resolve(distDir, output.file),
+          format: output.format,
+          name: output.name,
+          plugins: outputPlugins(workerCode),
+          sourcemap: false
+        })
+      }
+    } finally {
+      await bundle.close()
+    }
+    await copyPublicDeclarations(declarationDir)
+    await verifyArtifacts()
+  } finally {
+    await rm(temporaryDir, { force: true, recursive: true })
   }
-} finally {
-  await bundle.close()
 }
 
-emitDeclarations()
-await verifyArtifacts()
+await build()
