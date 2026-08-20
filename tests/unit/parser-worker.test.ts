@@ -146,6 +146,22 @@ describe('parser worker', () => {
     expect(response.video?.size).toEqual({ width: 100, height: 100 })
   })
 
+  it('enforces the compressed limit for streamed response bodies', async () => {
+    fetchResult.bytes = new Uint8Array(8 * 1024 * 1024 + 1)
+    fetchResult.chunks = [fetchResult.bytes.length]
+    expect((await runWorker()).error?.message).toContain('8 MiB')
+  })
+
+  it('normalizes non-Error download failures', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw 'network failed' }))
+    expect((await runWorker()).error).toMatchObject({ name: 'Error', message: expect.stringContaining('network failed') })
+  })
+
+  it('rejects an empty compressed payload', async () => {
+    fetchResult.bytes = new Uint8Array()
+    expect((await runWorker()).error).toBeDefined()
+  })
+
   it('accepts exactly 8 MiB compressed and rejects one byte over', async () => {
     const valid = compressedMovie()
     fetchResult.bytes = concat(valid, new Uint8Array(8 * 1024 * 1024 - valid.length))
@@ -207,6 +223,39 @@ describe('parser worker', () => {
 
     expect((await runWorker()).error?.message).toContain('wire')
     expect(decode).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an overflowing varint', Uint8Array.of(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f)],
+    ['a ten-byte continuation varint', Uint8Array.of(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80)],
+    ['a truncated fixed64 field', Uint8Array.of((99 << 3) | 1, 0)],
+    ['a truncated fixed32 field', Uint8Array.of((99 << 3) | 5, 0)]
+  ])('rejects malformed wire data containing %s', async (_name, bytes) => {
+    fetchResult.bytes = compressedWire(bytes)
+    expect((await runWorker()).error?.message).toContain('wire')
+  })
+
+  it('accepts unknown fixed-width wire fields before decoding the remaining movie', async () => {
+    fetchResult.bytes = compressedWire(concat(
+      field(99, 1, new Uint8Array(8)),
+      field(100, 5, new Uint8Array(4)),
+      movieBytes()
+    ))
+    expect((await runWorker()).video?.size).toEqual({ width: 100, height: 100 })
+  })
+
+  it('aborts one direct in-flight request by ID', async () => {
+    let signal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: { signal: AbortSignal }) => {
+      signal = options.signal
+      return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
+    }))
+    await import('../../src/parser/index')
+    const parsing = workerScope.onmessage?.({ data: { requestId: 12, url: 'https://example.test/file.svga' } } as MessageEvent<ParserWorkerRequest>)
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    await workerScope.onmessage?.({ data: { requestId: 12, cancel: true } } as MessageEvent<ParserWorkerRequest>)
+    expect(signal?.aborted).toBe(true)
+    await parsing
   })
 
   it('aborts direct in-flight work on the single cancel-all protocol message', async () => {

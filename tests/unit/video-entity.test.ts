@@ -98,4 +98,35 @@ describe('createVideo', () => {
     expect(path).toEqual({ d: 'M0 0' })
     expect(Object.getPrototypeOf(path)).toBe(Object.prototype)
   })
+
+  it('converts every shape geometry and line-style code', () => {
+    const rect = {
+      type: SHAPE_TYPE_CODE.RECT,
+      shape: null,
+      rect: { x: 1, y: 2, width: 3, height: 4, cornerRadius: 5 },
+      ellipse: null,
+      styles: { ...styles, lineDashI: null, lineDashII: 2, lineDashIII: 3, lineCap: LINE_CAP_CODE.SQUARE, lineJoin: LINE_JOIN_CODE.ROUND },
+      transform: null
+    }
+    const ellipse = {
+      type: SHAPE_TYPE_CODE.ELLIPSE,
+      shape: null,
+      rect: null,
+      ellipse: { x: 6, y: 7, radiusX: 8, radiusY: 9 },
+      styles: { ...styles, lineDashI: 1, lineDashII: null, lineDashIII: 3, lineCap: LINE_CAP_CODE.BUTT, lineJoin: LINE_JOIN_CODE.MITER },
+      transform: null
+    }
+    const parsed = createVideo(movie([frame([rect, ellipse])])).sprites[0].frames[0].shapes
+
+    expect(parsed[0]).toMatchObject({
+      type: 'rect',
+      path: rect.rect,
+      styles: { lineCap: 'square', lineDash: [0, 2, 3], lineJoin: 'round' }
+    })
+    expect(parsed[1]).toMatchObject({
+      type: 'ellipse',
+      path: ellipse.ellipse,
+      styles: { lineCap: 'butt', lineDash: [1, 0, 3], lineJoin: 'miter' }
+    })
+  })
 })

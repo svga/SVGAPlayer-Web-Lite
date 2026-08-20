@@ -181,6 +181,24 @@ describe('validateVideo structure and numeric fields', () => {
     rejects(video => { video.frames = 2 })
   })
 
+  it('rejects invalid style strings and unsupported shape types', () => {
+    rejects(video => { video.sprites[0].frames[0].shapes = [validShape()]; video.sprites[0].frames[0].shapes[0].styles.fill = 1 as never })
+    rejects(video => { video.sprites[0].frames[0].shapes = [validShape()]; video.sprites[0].frames[0].shapes[0].styles.stroke = 1 as never })
+    rejects(video => { video.sprites[0].frames[0].shapes = [validShape()]; video.sprites[0].frames[0].shapes[0].styles.lineCap = 'invalid' as never })
+    rejects(video => { video.sprites[0].frames[0].shapes = [validShape()]; video.sprites[0].frames[0].shapes[0].styles.lineJoin = 'invalid' as never })
+    rejects(video => { video.sprites[0].frames[0].shapes = [validShape()]; video.sprites[0].frames[0].shapes[0].styles.lineDash = {} as never })
+    rejects(video => { const shape = validShape(); shape.type = 'unknown' as never; video.sprites[0].frames[0].shapes = [shape] })
+  })
+
+  it('accepts valid ellipse geometry', () => {
+    const video = validVideo()
+    const shape = validShape() as Extract<VideoFrameShape, { type: 'ellipse' }>
+    shape.type = 'ellipse' as never
+    shape.path = { x: 1, y: 2, radiusX: 3, radiusY: 4 }
+    video.sprites[0].frames[0].shapes = [shape]
+    expect(validateVideo(video)).toBe(video)
+  })
+
   it('rejects inherited video and nested records', () => {
     const inherited = Object.create(validVideo()) as Video
     expect(() => validateVideo(inherited)).toThrow('Invalid SVGA video')

@@ -155,7 +155,7 @@ function clipPath (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   d: string
 ): boolean {
-  const normalized = d.replace(/\s+/g, ' ')
+  const normalized = d.replace(/[ \t\r\n]+/g, ' ')
   if (
     typeof CSS === 'undefined' || typeof CSS.supports !== 'function' ||
     !CSS.supports('offset-path', 'path(' + JSON.stringify(normalized) + ')')

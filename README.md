@@ -5,7 +5,7 @@
 ## 实现
 
 - [x] 单个 JavaScript 产物 < 88 KiB（gzip < 25 KiB）
-- [x] 面向 Android 8.0+（API 26，使用受维护且可更新的 Chrome 或 WebView）与 iOS/iPadOS 16+ Safari/WKWebView
+- [x] 自动化验收覆盖 Chromium、Firefox、WebKit
 - [x] 使用 ES2017 语法；安装包检查会验证 ES2017 语法解析
 - [x] 更好的异步操作
 - [x] 多线程 (WebWorker) 解析文件数据
@@ -30,13 +30,17 @@
 npm install svga
 ```
 
-这是一个 Web 包，不设置 Android `minSdk` 或 iOS/iPadOS `Deployment Target`；原生宿主应用的最低版本由宿主自行设置。当前本地 Playwright 测试用于浏览器行为和包消费验证，不代表最低版本设备上的真机认证。
+这是一个 Web 包，不设置 Android `minSdk` 或 iOS/iPadOS `Deployment Target`；原生宿主应用的最低版本由宿主自行设置。项目会在 Chromium、Firefox、WebKit 中自动验收，但不代表任何移动设备或最低系统版本的真机认证。
 
 ### CDN
 
 ```html
 <script src="https://unpkg.com/svga/dist/index.min.js"></script>
 ```
+
+包只公开根入口 `svga`：ES module 使用 `dist/index.mjs`，CommonJS 使用
+`dist/index.cjs`，浏览器 UMD 使用 `dist/index.min.js`。不支持从
+`svga/dist/*` 深层导入。
 
 ## 使用
 
@@ -91,13 +95,28 @@ new Parser({
 })
 ```
 
+默认模式在 Blob Worker 中下载并解析文件，不需要 `unsafe-eval`。严格 CSP
+至少需要允许实际资源来源，并设置 `worker-src blob:`；旧浏览器可同时设置
+`child-src blob:`。只有显式设置 `isDisableWebWorker: true` 的直接模式使用
+动态代码执行，因此该模式需要宿主允许 `unsafe-eval`。
+
+Parser 返回的 `Video.images` 是可缓存的 `Uint8Array` 字节。Player 在挂载时
+按顺序解码图片，并只释放自己创建的位图或临时对象 URL；调用方提供的替换
+元素和动态元素不会被 Player 释放。
+
+解析器拒绝非 2xx 响应、超过 8 MiB 的压缩输入和超过 16 MiB 的解压输出。
+解析后还会限制画布边长 4096、画布总像素 16,777,216、帧率 120、帧数
+10,000、精灵 2,000、精灵帧 500,000、图形 100,000、图片 512，以及
+总路径数据 1,048,576。Player 另限制单张图片 16,777,216 像素、全部图片
+33,554,432 像素。
+
 ### PlayerConfigOptions
 
 ```ts
 const enum PLAYER_FILL_MODE {
-  // 播放完成后停在首帧
-  FORWARDS = 'forwards',
   // 播放完成后停在尾帧
+  FORWARDS = 'forwards',
+  // 播放完成后停在首帧
   BACKWARDS = 'backwards'
 }
 
@@ -148,6 +167,9 @@ new Player({
 })
 ```
 
+`player.config` 返回只读快照。配置变更必须通过 `player.setConfig(...)`，无效
+的循环、帧范围、容器或布尔配置会立即被拒绝。
+
 ### 替换元素 / 插入动态元素
 
 可通过修改解析后的数据元，从而实现修改元素、插入动态元素功能
@@ -196,6 +218,10 @@ try {
   console.error(error)
 }
 ```
+
+DB 在第一次读写时才打开数据库，使用结构化克隆保存稳定的 Video 数据。
+替换元素和动态元素不会进入缓存；旧格式、损坏或超出安全限制的记录按缓存
+未命中处理，并在同一事务中尽力删除。
 
 ## TypeScript 声明 SVGA 文件
 
@@ -257,14 +283,15 @@ const svga = await parser.load(xx)
 
 ### 环境要求
 
-项目开发基线为 Node.js 24 和 `package.json` 中 `packageManager` 指定的 npm 版本。
+项目开发基线为 Node.js 24.18.1、npm 12.0.2 和 TypeScript 7。构建只调用
+TypeScript 7 命令行，不依赖已删除的 TypeScript 编程接口。
 
 ```sh
 # 选择 Node.js 24（使用 nvm 时）
 nvm use
 
 # 按锁文件安装依赖
-npm ci --allow-git=root
+npm ci
 
 # 监听模式，供本地开发时持续运行
 npm run dev
@@ -276,11 +303,11 @@ npm run dev
 
 - `npm test`：运行一次完整单元测试。
 - `npm run coverage`：运行一次单元测试并单独报告语句、分支、函数和行覆盖率。
-- `npm run test:browser`：先构建，再在桌面 Chromium、Firefox、WebKit 和移动 Chromium 视口中运行真实浏览器流程。
+- `npm run test:browser`：先构建，再在 Chromium、Firefox、WebKit 中运行真实浏览器流程。
 - `npm run test:package`：先构建，再生成真实 npm 压缩包，检查确定性构建、精确文件清单、ES2017 语法以及 CommonJS、ESM、UMD、TypeScript 消费方式。
-- `npm run verify`：依次运行代码规范、类型、覆盖率、四种浏览器和真实包消费检查；不会在覆盖率之外重复运行单元测试。
+- `npm run verify`：依次运行代码规范、类型、覆盖率、三种浏览器和真实包消费检查；不会在覆盖率之外重复运行单元测试。
 
-测试通过率表示测试用例是否全部成功，覆盖率百分比表示源码被测试执行到的比例，两者是不同指标，不能互相替代。
+测试通过率表示测试用例是否全部成功，覆盖率百分比表示源码被测试执行到的比例，两者是不同指标，不能互相替代。覆盖率硬门槛为 statements 95%、branches 90%、functions 95%、lines 95%；生成的 protobuf 解码器和纯类型声明不参与统计。
 
 ## LICENSE
 

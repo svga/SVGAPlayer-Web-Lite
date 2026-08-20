@@ -53,18 +53,29 @@ describe('Parser request lifecycle', () => {
     vi.unstubAllGlobals()
   })
 
-  it('revokes the Blob URL immediately after successful Worker construction', () => {
+  it('revokes the Blob URL after successful Worker startup can begin', async () => {
+    vi.useFakeTimers()
     new Parser()
     expect(FakeWorker.instances[0].blobUrl).toBe('blob:parser')
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    await vi.runAllTimersAsync()
     expect(revokeObjectURL).toHaveBeenCalledOnce()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:parser')
   })
 
-  it('revokes the Blob URL and preserves a construction failure', () => {
+  it('revokes the Blob URL and preserves a construction failure', async () => {
+    vi.useFakeTimers()
     const failure = Error('construction failed')
     vi.stubGlobal('Worker', class { constructor () { throw failure } })
     expect(() => new Parser()).toThrow(failure)
+    await vi.runAllTimersAsync()
     expect(revokeObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('preserves a direct-mode construction failure without retaining state', async () => {
+    const failure = Error('dynamic execution blocked')
+    vi.stubGlobal('Function', function () { throw failure })
+    expect(() => new Parser({ isDisableWebWorker: true })).toThrow(failure)
   })
 
   it('posts at most four loads, queues FIFO, and matches out-of-order responses', async () => {
@@ -148,6 +159,53 @@ describe('Parser request lifecycle', () => {
     parser.destroy()
     await Promise.all(observed)
     await expect(parser.load('/later.svga')).rejects.toThrow('destroyed')
+    expect(worker.terminated).toBe(1)
+  })
+
+  it('rejects worker errors, invalid responses, and invalid videos without disturbing later loads', async () => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+
+    const failed = parser.load('/failed.svga')
+    let request = worker.requests[worker.requests.length - 1] as { requestId: number }
+    worker.respond({ requestId: request.requestId, error: { name: 'DecodeError', message: 'broken' } })
+    await expect(failed).rejects.toMatchObject({ name: 'DecodeError', message: 'broken' })
+
+    const empty = parser.load('/empty.svga')
+    request = worker.requests[worker.requests.length - 1] as { requestId: number }
+    worker.respond({ requestId: request.requestId })
+    await expect(empty).rejects.toThrow('Invalid worker response')
+
+    const invalid = parser.load('/invalid.svga')
+    request = worker.requests[worker.requests.length - 1] as { requestId: number }
+    const invalidVideo = video('invalid')
+    invalidVideo.size.width = 0
+    worker.respond({ requestId: request.requestId, video: invalidVideo })
+    await expect(invalid).rejects.toThrow('Invalid SVGA video')
+
+    worker.respond({ requestId: -1, video: video('late') })
+    const valid = parser.load('/valid.svga')
+    request = worker.requests[worker.requests.length - 1] as { requestId: number }
+    worker.respond({ requestId: request.requestId, video: video('valid') })
+    await expect(valid).resolves.toMatchObject({ version: 'valid' })
+  })
+
+  it('turns synchronous post failures into request rejections', async () => {
+    const parser = new Parser()
+    const post = vi.spyOn(FakeWorker.prototype, 'postMessage').mockImplementationOnce(() => { throw 'post failed' })
+    await expect(parser.load('/failed.svga')).rejects.toThrow('post failed')
+    post.mockRestore()
+  })
+
+  it.each(['error', 'messageerror'] as const)('releases pending work on Worker %s', async eventName => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const pending = parser.load('/pending.svga')
+
+    if (eventName === 'error') worker.onerror?.({ message: '' } as ErrorEvent)
+    else worker.onmessageerror?.({} as MessageEvent)
+
+    await expect(pending).rejects.toThrow(eventName === 'error' ? 'Worker failure' : 'Worker message failure')
     expect(worker.terminated).toBe(1)
   })
 

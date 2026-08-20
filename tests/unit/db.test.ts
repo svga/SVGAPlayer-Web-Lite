@@ -84,6 +84,11 @@ describe('DB stable Video records', () => {
     expect(open).toHaveBeenCalledOnce()
   })
 
+  it('rejects when IndexedDB is unavailable', async () => {
+    vi.stubGlobal('window', { indexedDB: undefined })
+    await expect(new DB(options()).find('missing')).rejects.toThrow('IndexedDB operation failed')
+  })
+
   it('round-trips Uint8Array records directly and resets transient maps', async () => {
     const config = options()
     const db = new DB(config)
@@ -157,6 +162,23 @@ describe('DB stable Video records', () => {
     const db = new DB(config)
     await expect(db.find('video')).resolves.toBeUndefined()
     await expect(rawFind(config, 'video')).resolves.toBeUndefined()
+  })
+
+  it('treats an image map with an unsupported prototype as invalid cache data', async () => {
+    const config = options()
+    const invalid = sampleVideo() as unknown as Record<string, unknown>
+    invalid.images = new Date()
+    await seed(config, 'video', invalid)
+    await expect(new DB(config).find('video')).resolves.toBeUndefined()
+    await expect(rawFind(config, 'video')).resolves.toBeUndefined()
+  })
+
+  it('rejects when invalid-record cleanup throws synchronously', async () => {
+    const config = options()
+    await seed(config, 'video', 'old')
+    const remove = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementationOnce(() => { throw Error('delete failed') })
+    await expect(new DB(config).find('video')).rejects.toThrow('delete failed')
+    remove.mockRestore()
   })
 
   it('does not delete a concurrent valid write after reading an invalid cache entry', async () => {

@@ -140,7 +140,7 @@ export class Parser {
       try {
         worker = new Worker(blobUrl)
       } finally {
-        window.URL.revokeObjectURL(blobUrl)
+        setTimeout(window.URL.revokeObjectURL, 0, blobUrl)
       }
       state = { port: worker, direct: false, pending: new Map(), queue: [], inFlight: 0 }
       states.set(this, state)

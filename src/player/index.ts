@@ -356,21 +356,16 @@ export class Player {
     this.__svgaClear()
 
     validateVideo(videoEntity)
-    const totalFrames = videoEntity.frames - 1
+    let totalFrames = videoEntity.frames - 1
     validateConfig(this.__svgaConfig, totalFrames)
 
     let pixels = 0
-    const keys = Object.keys(videoEntity.images)
-    for (let index = 0; index < keys.length; index++) {
-      if (pixels >= 33_554_432) {
-        releaseImages(imageReleases)
-        if (this.__svgaImages === bitmapsCache) this.__svgaImages = Object.create(null) as BitmapsCache
-        throw Error('image pixels')
-      }
-      const key = keys[index]
+    const images = Object.entries(videoEntity.images)
+    for (let index = 0; index < images.length; index++) {
+      const [key, bytes] = images[index]
       try {
         const resource = await decodeBitmap(
-          videoEntity.images[key], key, imageReleases,
+          bytes, key, imageReleases,
           () => this.__svgaImages === bitmapsCache
         )
         if (!resource || this.__svgaImages !== bitmapsCache) {
@@ -379,7 +374,7 @@ export class Player {
         }
         bitmapsCache[key] = resource
         pixels += resource.width * resource.height
-        if (pixels > 33_554_432) throw Error('image pixels')
+        if (pixels > 33_554_432 || (pixels === 33_554_432 && index < images.length - 1)) throw Error('image pixels')
       } catch (error) {
         releaseImages(imageReleases)
         if (this.__svgaImages === bitmapsCache) this.__svgaImages = Object.create(null) as BitmapsCache
@@ -392,6 +387,11 @@ export class Player {
     }
     try {
       validateVideo(videoEntity)
+      totalFrames = videoEntity.frames - 1
+      if (
+        images.length !== Object.keys(videoEntity.images).length ||
+        images.some(([key, bytes]) => videoEntity.images[key] !== bytes)
+      ) throw Error('video')
       validateConfig(this.__svgaConfig, totalFrames)
     } catch (error) {
       releaseImages(imageReleases)

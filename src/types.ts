@@ -203,11 +203,11 @@ export interface Video {
 
 export const enum PLAYER_FILL_MODE {
   /**
-   * 播放完成后停在首帧
+   * 播放完成后停在尾帧
    */
   FORWARDS = 'forwards',
   /**
-   * 播放完成后停在尾帧
+   * 播放完成后停在首帧
    */
   BACKWARDS = 'backwards'
 }

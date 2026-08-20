@@ -16,7 +16,13 @@ export default defineConfig({
       ],
       exclude: ['src/parser/svga.generated.ts'],
       provider: 'v8',
-      reporter: ['text']
+      reporter: ['text'],
+      thresholds: {
+        branches: 90,
+        functions: 95,
+        lines: 95,
+        statements: 95
+      }
     },
     include: ['tests/unit/**/*.test.ts']
   }

@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { expect, test } from './browser-test'
 
 const readFixture = async (name: string): Promise<string> => {
-  return (await readFile(resolve(`__test__/svga/${name}.svga`))).toString('base64')
+  return (await readFile(resolve(`tests/fixtures/svga/${name}.svga`))).toString('base64')
 }
 
 test('built UMD validates complete clipPath grammar in the native browser', async ({ page }) => {
@@ -56,13 +56,17 @@ test('built UMD validates complete clipPath grammar in the native browser', asyn
     }
 
     return {
+      nonBreakingSpace: await renderAlpha('M0 0\u00a0H4 V4 H0 Z'),
       validNewline: await renderAlpha('M0 0\nH4 V4 H0 Z'),
+      verticalTab: await renderAlpha('M0 0\u000bH4 V4 H0 Z'),
       trailingGarbage: await renderAlpha('M0 0 H4 V4 H0 Z invalid'),
       trailingCommand: await renderAlpha('M0 0 L')
     }
   })
 
+  expect(evidence.nonBreakingSpace).toBe(0)
   expect(evidence.validNewline).toBe(255)
+  expect(evidence.verticalTab).toBe(0)
   expect(evidence.trailingGarbage).toBe(0)
   expect(evidence.trailingCommand).toBe(0)
 })
@@ -300,6 +304,155 @@ test('built UMD transfers default Worker image bytes and Player decodes them for
 
   expect(evidence.rasterValuesAreBytes).toBe(true)
   expect(evidence.nonEmptyPixels).toBeGreaterThan(0)
+})
+
+test('default Worker parses, caches, reopens and renders under strict CSP', async ({ page }, testInfo) => {
+  const [fixture, bundle] = await Promise.all([
+    readFixture('11'),
+    readFile(resolve('dist/index.min.js'), 'utf8')
+  ])
+  const policy = "default-src 'none'; script-src 'self' blob:; worker-src blob:; child-src blob:; connect-src data: blob:; img-src 'self' data: blob:"
+  await page.route('https://svga-csp.test/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    await route.fulfill(path === '/svga.js'
+      ? { body: bundle, contentType: 'application/javascript' }
+      : {
+          body: '<!doctype html><title>SVGA strict CSP test</title>',
+          contentType: 'text/html',
+          headers: { 'Content-Security-Policy': policy }
+        })
+  })
+  await page.goto('https://svga-csp.test/')
+  await page.addScriptTag({ url: 'https://svga-csp.test/svga.js' })
+
+  const evidence = await page.evaluate(async ({ data, suffix }) => {
+    interface BrowserVideo {
+      frames: number
+    }
+    interface BrowserParser {
+      load: (url: string) => Promise<BrowserVideo>
+      destroy: () => void
+    }
+    interface BrowserDb {
+      find: (id: IDBValidKey) => Promise<BrowserVideo | undefined>
+      insert: (id: IDBValidKey, video: BrowserVideo) => Promise<void>
+    }
+    interface BrowserPlayer {
+      mount: (video: BrowserVideo) => Promise<void>
+      start: () => void
+      destroy: () => void
+    }
+    const browserWindow = window as unknown as Window & {
+      SVGA: {
+        DB: new (options: { name: string, version: number, storeName: string }) => BrowserDb
+        Parser: new () => BrowserParser
+        Player: new (container: HTMLCanvasElement) => BrowserPlayer
+      }
+    }
+    const name = `svga-csp-${suffix}-${Date.now()}`
+    const options = { name, version: 1, storeName: 'videos' }
+    const parser = new browserWindow.SVGA.Parser()
+    try {
+      const parsed = await parser.load(`data:application/octet-stream;base64,${data}`)
+      const first = new browserWindow.SVGA.DB(options)
+      await first.insert('fixture', parsed)
+      const reopened = new browserWindow.SVGA.DB(options)
+      const cached = await reopened.find('fixture')
+      if (!cached) throw new Error('cache reopen missed valid video')
+
+      const canvas = document.createElement('canvas')
+      document.body.appendChild(canvas)
+      const player = new browserWindow.SVGA.Player(canvas)
+      await player.mount(cached)
+      player.start()
+      const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data
+      let nonEmptyPixels = 0
+      if (pixels) {
+        for (let index = 3; index < pixels.length; index += 4) {
+          if (pixels[index] > 0) nonEmptyPixels++
+        }
+      }
+      player.destroy()
+
+      return { frames: cached.frames, nonEmptyPixels }
+    } finally {
+      parser.destroy()
+    }
+  }, { data: fixture, suffix: `${testInfo.project.name}-${testInfo.workerIndex}` })
+
+  expect(evidence.frames).toBeGreaterThan(0)
+  expect(evidence.nonEmptyPixels).toBeGreaterThan(0)
+})
+
+test('Player reuses one offscreen surface and clears pixels between frames', async ({ page }) => {
+  await page.goto('about:blank')
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
+
+  const evidence = await page.evaluate(async () => {
+    interface BrowserPlayer {
+      onEnd?: () => void
+      mount: (video: unknown) => Promise<void>
+      start: () => void
+      destroy: () => void
+    }
+    const browserWindow = window as unknown as Window & {
+      SVGA: { Player: new (options: unknown) => BrowserPlayer }
+    }
+    const NativeOffscreenCanvas = window.OffscreenCanvas
+    const supportsOffscreen = typeof NativeOffscreenCanvas === 'function'
+    let offscreenConstructions = 0
+    if (supportsOffscreen) {
+      Object.defineProperty(window, 'OffscreenCanvas', {
+        configurable: true,
+        value: new Proxy(NativeOffscreenCanvas, {
+          construct: (target, args) => {
+            offscreenConstructions++
+            return Reflect.construct(target, args)
+          }
+        })
+      })
+    }
+
+    const source = document.createElement('canvas')
+    source.width = source.height = 4
+    const sourceContext = source.getContext('2d')
+    if (!sourceContext) throw new Error('source context unavailable')
+    sourceContext.fillStyle = '#ff0000'
+    sourceContext.fillRect(0, 0, 4, 4)
+    const visible = document.createElement('canvas')
+    const player = new browserWindow.SVGA.Player({ container: visible, loop: false })
+    const baseFrame = {
+      transform: null,
+      layout: { x: 0, y: 0, width: 4, height: 4 },
+      clipPath: '',
+      shapes: []
+    }
+    await player.mount({
+      version: '2.0',
+      size: { width: 4, height: 4 },
+      fps: 60,
+      frames: 2,
+      images: Object.create(null),
+      replaceElements: Object.assign(Object.create(null), { sprite: source }),
+      dynamicElements: Object.create(null),
+      sprites: [{ imageKey: 'sprite', frames: [{ ...baseFrame, alpha: 1 }, { ...baseFrame, alpha: 0 }] }]
+    })
+    const alpha = (): number => visible.getContext('2d')?.getImageData(0, 0, 1, 1).data[3] ?? 0
+    const ended = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('playback timeout')), 1000)
+      player.onEnd = () => { clearTimeout(timer); resolve() }
+    })
+    player.start()
+    const before = alpha()
+    await ended
+    const after = alpha()
+    player.destroy()
+    return { after, before, offscreenConstructions, supportsOffscreen }
+  })
+
+  expect(evidence.before).toBe(255)
+  expect(evidence.after).toBe(0)
+  expect(evidence.offscreenConstructions).toBe(evidence.supportsOffscreen ? 1 : 0)
 })
 
 test('built UMD runs lifecycle methods in callback order and clears destroyed players', async ({ page }) => {
@@ -642,6 +795,22 @@ test('built UMD persists, deletes, and reopens data with real browser IndexedDB'
       request.onerror = () => reject(request.error || new Error('delete database failed'))
       request.onblocked = () => reject(new Error('delete database blocked'))
     })
+    const rawStore = <T>(
+      name: string,
+      mode: IDBTransactionMode,
+      action: (store: IDBObjectStore) => IDBRequest<T>
+    ): Promise<T> => new Promise((resolve, reject) => {
+      const request = indexedDB.open(name, 1)
+      request.onerror = () => reject(request.error || new Error('raw database open failed'))
+      request.onsuccess = () => {
+        const database = request.result
+        const transaction = database.transaction('videos', mode)
+        const operation = action(transaction.objectStore('videos'))
+        transaction.oncomplete = () => { database.close(); resolve(operation.result) }
+        transaction.onerror = () => { database.close(); reject(transaction.error || new Error('raw transaction failed')) }
+        transaction.onabort = transaction.onerror
+      }
+    })
     const name = `svga-browser-${suffix}-${Date.now()}`
     const options = { name, version: 1, storeName: 'videos' }
     const parser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
@@ -654,6 +823,9 @@ test('built UMD persists, deletes, and reopens data with real browser IndexedDB'
       const foundAfterNewConnection = await reopened.find('fixture')
       await reopened.delete('fixture')
       const deleted = await first.find('fixture')
+      await rawStore(name, 'readwrite', store => store.put({ version: '2.0' }, 'invalid'))
+      const invalid = await first.find('invalid')
+      const invalidAfterCleanup = await rawStore(name, 'readonly', store => store.get('invalid'))
 
       await deleteDatabase(name)
       const afterDatabaseReopen = await first.find('fixture')
@@ -667,6 +839,7 @@ test('built UMD persists, deletes, and reopens data with real browser IndexedDB'
         deletedAfterReopenMissing: deletedAfterReopen === undefined,
         deletedMissing: deleted === undefined,
         foundAfterNewConnection: foundAfterNewConnection?.size,
+        invalidMissing: invalid === undefined && invalidAfterCleanup === undefined,
         insertedAfterReopen: insertedAfterReopen?.frames,
         insertedSize: inserted?.size
       }
@@ -678,6 +851,7 @@ test('built UMD persists, deletes, and reopens data with real browser IndexedDB'
   expect(evidence.insertedSize).toEqual({ width: 1280, height: 720 })
   expect(evidence.foundAfterNewConnection).toEqual({ width: 1280, height: 720 })
   expect(evidence.deletedMissing).toBe(true)
+  expect(evidence.invalidMissing).toBe(true)
   expect(evidence.afterDatabaseReopenMissing).toBe(true)
   expect(evidence.insertedAfterReopen).toBe(40)
   expect(evidence.deletedAfterReopenMissing).toBe(true)

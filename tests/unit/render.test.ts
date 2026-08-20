@@ -234,6 +234,18 @@ describe('default renderer native path handling', () => {
     }
   )
 
+  it.each(['\u00a0', '\u000b'])(
+    'does not normalize an invalid SVG whitespace character %s',
+    whitespace => {
+      const mask = `M0 0${whitespace}H10 V10 H0 Z`
+      vi.mocked(CSS.supports).mockReturnValue(false)
+      const context = draw([frame([], { clipPath: mask })], { sprite: {} as HTMLImageElement })
+
+      expect(CSS.supports).toHaveBeenCalledWith('offset-path', 'path(' + JSON.stringify(mask) + ')')
+      expect(argsFor(context, 'drawImage')).toEqual([])
+    }
+  )
+
   it('fails closed for a nonempty clipPath when CSS.supports is unavailable', () => {
     vi.stubGlobal('CSS', undefined)
     const context = draw([frame([], { clipPath: 'M0 0 H10 V10 H0 Z' })], { sprite: {} as HTMLImageElement })
@@ -278,6 +290,37 @@ describe('default renderer native path handling', () => {
 })
 
 describe('default renderer lifecycle and preserved drawing behavior', () => {
+  it('rejects a missing rendering context', () => {
+    const canvas = { getContext: () => null }
+    expect(() => render(canvas as unknown as HTMLCanvasElement, {}, {}, {}, video([]), 0)).toThrow('Invalid render context')
+  })
+
+  it('applies every explicit shape style and clamps oversized rectangle radii', () => {
+    const styles: VideoStyles = {
+      fill: 'rgba(1, 2, 3, 1)',
+      stroke: 'rgba(4, 5, 6, 1)',
+      strokeWidth: 2,
+      lineCap: 'round',
+      lineJoin: 'bevel',
+      miterLimit: 4,
+      lineDash: [1, 2]
+    }
+    const context = draw([frame([{
+      type: SHAPE_TYPE.RECT,
+      path: { x: 0, y: 0, width: 6, height: 4, cornerRadius: 10 },
+      transform: identity,
+      styles
+    }])])
+
+    expect(context.lineWidth).toBe(2)
+    expect(context.miterLimit).toBe(4)
+    expect(context.lineCap).toBe('round')
+    expect(context.lineJoin).toBe('bevel')
+    expect(argsFor(context, 'setLineDash')).toEqual([[1, 2]])
+    const path = RecordingPath2D.instances.find(candidate => candidate.operations.some(operation => operation.name === 'arcTo'))
+    expect(path?.operations[0]).toEqual({ name: 'moveTo', args: [2, 0] })
+  })
+
   it('ignores a sprite whose requested frame is missing', () => {
     const context = draw([])
 

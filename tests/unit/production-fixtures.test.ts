@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Video } from '../../src/types'
 import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from '../../src/parser/protocol'
 
-const fixtureDir = '__test__/svga'
+const fixtureDir = 'tests/fixtures/svga'
 const fixtureBlobs = new Map([
   ['1.svga', '9c70d97f006244f767fad5f53197905df0647889'],
   ['11.svga', 'da95698669082d28c0c7a1c95ff864098d7ea285'],

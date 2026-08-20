@@ -24,8 +24,8 @@ test('browser bundles expose the public package exports', async ({ page }) => {
 
 test('built UMD direct Parser instances keep local state without public worker globals', async ({ page }) => {
   const [firstFile, secondFile] = await Promise.all([
-    readFile(resolve('__test__/svga/11.svga')),
-    readFile(resolve('__test__/svga/soundwave.svga'))
+    readFile(resolve('tests/fixtures/svga/11.svga')),
+    readFile(resolve('tests/fixtures/svga/soundwave.svga'))
   ])
   await page.goto('about:blank')
   await page.addScriptTag({ path: resolve('dist/index.min.js') })

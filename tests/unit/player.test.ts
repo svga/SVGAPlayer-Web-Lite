@@ -839,6 +839,38 @@ describe('Player mount and playback lifecycle', () => {
     expect(decoded.close).toHaveBeenCalledOnce()
   })
 
+  it('derives the final frame range again after delayed image decoding', async () => {
+    let finish: ((bitmap: FakeImageBitmap) => void) | undefined
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<FakeImageBitmap>(resolve => { finish = resolve })))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const video = makeVideo({ images: Object.assign(Object.create(null), { delayed: Uint8Array.of(1) }) })
+    const mounting = player.mount(video)
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    video.frames = 2
+    const decoded = new FakeImageBitmap(1, 1)
+    finish?.(decoded)
+
+    await expect(mounting).resolves.toBeUndefined()
+    expect(player.videoEntity).toBe(video)
+    expect(player.totalFrames).toBe(1)
+  })
+
+  it('rejects an image collection changed during delayed decoding', async () => {
+    let finish: ((bitmap: FakeImageBitmap) => void) | undefined
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<FakeImageBitmap>(resolve => { finish = resolve })))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const video = makeVideo({ images: Object.assign(Object.create(null), { delayed: Uint8Array.of(1) }) })
+    const mounting = player.mount(video)
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    video.images.added = Uint8Array.of(2)
+    const decoded = new FakeImageBitmap(1, 1)
+    finish?.(decoded)
+
+    await expect(mounting).rejects.toThrow(/video/)
+    expect(player.videoEntity).toBeUndefined()
+    expect(decoded.close).toHaveBeenCalledOnce()
+  })
+
   it('stops an active timeline when a replacement video is mounted', async () => {
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
     await player.mount(makeVideo())

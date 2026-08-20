@@ -42,7 +42,16 @@ const failOnWarning = warning => {
   throw new Error(`Rollup warning (${warning.code}): ${warning.message}`)
 }
 
+// The SVGA schema has no 64-bit fields, so the optional Long adapter and its
+// WebAssembly capability probe are deliberately absent from browser bundles.
+const omitLong = {
+  name: 'omit-unused-long',
+  resolveId: id => id === 'long' ? '\0unused-long' : null,
+  load: id => id === '\0unused-long' ? 'export default null' : null
+}
+
 const inputPlugins = () => [
+  omitLong,
   nodeResolve({
     browser: true,
     preferBuiltins: false,
@@ -52,7 +61,7 @@ const inputPlugins = () => [
 ]
 
 const minify = () => terser({
-  compress: { ecma: 2017, inline: 1, passes: 2 },
+  compress: { ecma: 2017, inline: 2, passes: 3 },
   ecma: 2017,
   format: { ecma: 2017 },
   mangle: { eval: true, properties: { regex: /^__svga/ } }
