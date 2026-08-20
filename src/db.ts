@@ -14,6 +14,7 @@ interface DBState extends DBOptions {
 
 const states = new WeakMap<DB, DBState>()
 const dbError = (): Error => Error('IndexedDB operation failed')
+const clone = <T>(value: T): T => structuredClone(value)
 
 function close (state: DBState, database: IDBDatabase): void {
   database.close()
@@ -111,7 +112,7 @@ function copyImages (value: unknown): Video['images'] {
 
 function stableRecord (video: Video): Video {
   validateVideo(video)
-  const record = structuredClone({
+  const record = clone({
     version: video.version,
     size: video.size,
     fps: video.fps,
@@ -146,22 +147,25 @@ export class DB {
   }
 
   async find (id: IDBValidKey): Promise<Video | undefined> {
-    return await transact<unknown, Video | undefined>(this, 'readwrite', store => store.get(id), (value, store) => {
+    const key = clone(id)
+    return await transact<unknown, Video | undefined>(this, 'readwrite', store => store.get(key), (value, store) => {
       if (value === undefined) return undefined
       try { return restoreRecord(value) } catch {
-        const request = store.delete(id)
-        request.onerror = event => { event.preventDefault() }
+        const request = store.delete(key)
+        request.onerror = event => { event.preventDefault(); event.stopPropagation() }
         return undefined
       }
     })
   }
 
   async insert (id: IDBValidKey, data: Video): Promise<void> {
+    const key = clone(id)
     const record = stableRecord(data)
-    await transact(this, 'readwrite', store => store.put(record, id))
+    await transact(this, 'readwrite', store => store.put(record, key))
   }
 
   async delete (id: IDBValidKey): Promise<void> {
-    await transact(this, 'readwrite', store => store.delete(id))
+    const key = clone(id)
+    await transact(this, 'readwrite', store => store.delete(key))
   }
 }

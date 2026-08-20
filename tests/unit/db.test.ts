@@ -178,6 +178,72 @@ describe('DB stable Video records', () => {
     await expect(rawFind(config, 'video')).resolves.toMatchObject({ version: '2.0' })
   })
 
+  it('resolves a cache miss when best-effort invalid deletion fails asynchronously', async () => {
+    const config = options()
+    await seed(config, 'video', 'old')
+    const db = new DB(config)
+    const remove = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementationOnce(function (this: IDBObjectStore) {
+      const transaction = this.transaction as IDBTransaction & {
+        _execRequestAsync: (operation: { operation: () => never, source: IDBObjectStore }) => IDBRequest<undefined>
+      }
+      return transaction._execRequestAsync({
+        operation: () => { throw new DOMException('delete failed', 'ConstraintError') },
+        source: this
+      })
+    })
+
+    await expect(db.find('video')).resolves.toBeUndefined()
+    remove.mockRestore()
+    await expect(rawFind(config, 'video')).resolves.toBe('old')
+  })
+
+  it('snapshots a mutable find key once for both get and invalid-record deletion', async () => {
+    const config = options()
+    await seed(config, ['invalid'], 'old')
+    await seed(config, ['valid'], sampleVideo())
+    const db = new DB(config)
+    const key: IDBValidKey[] = ['invalid']
+    const originalGet = IDBObjectStore.prototype.get
+    const get = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementationOnce(function (this: IDBObjectStore, id) {
+      const request = originalGet.call(this, id)
+      key[0] = 'valid'
+      return request
+    })
+
+    await expect(db.find(key)).resolves.toBeUndefined()
+    get.mockRestore()
+    const invalidRemains = await rawFind(config, ['invalid']) !== undefined
+    const validDeleted = await rawFind(config, ['valid']) === undefined
+    expect({ invalidRemains, validDeleted }).toEqual({ invalidRemains: false, validDeleted: false })
+  })
+
+  it('snapshots mutable find, insert, and delete keys before their first async boundary', async () => {
+    const config = options()
+    await seed(config, ['find'], sampleVideo())
+    await seed(config, ['delete'], sampleVideo())
+    await seed(config, ['keep'], sampleVideo())
+    const db = new DB(config)
+
+    const findKey: IDBValidKey[] = ['find']
+    const finding = db.find(findKey)
+    findKey[0] = 'missing'
+    await expect(finding).resolves.toMatchObject({ version: '2.0' })
+
+    const insertKey: IDBValidKey[] = ['insert']
+    const inserting = db.insert(insertKey, sampleVideo())
+    insertKey[0] = 'mutated-insert'
+    await inserting
+    await expect(rawFind(config, ['insert'])).resolves.toMatchObject({ version: '2.0' })
+    await expect(rawFind(config, ['mutated-insert'])).resolves.toBeUndefined()
+
+    const deleteKey: IDBValidKey[] = ['delete']
+    const deleting = db.delete(deleteKey)
+    deleteKey[0] = 'keep'
+    await deleting
+    await expect(rawFind(config, ['delete'])).resolves.toBeUndefined()
+    await expect(rawFind(config, ['keep'])).resolves.toMatchObject({ version: '2.0' })
+  })
+
   it('preserves insert/find/delete signatures and closes each operation deterministically', async () => {
     const db = new DB(options())
     await expect(db.insert('video', sampleVideo())).resolves.toBeUndefined()
