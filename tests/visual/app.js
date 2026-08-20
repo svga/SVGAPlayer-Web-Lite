@@ -384,6 +384,14 @@ function cancelActive (state = 'cancelled') {
   setPlaybackControls(state)
 }
 
+function isCurrentToken (token) {
+  return active === token && token?.cancelled !== true
+}
+
+function requireCurrentToken (token) {
+  if (!isCurrentToken(token)) throw DOMException('Cancelled', 'AbortError')
+}
+
 function collectRuntime (longTasks, runtime) {
   const longTaskResult = longTasks.finish()
   const runtimeResult = runtime.finish()
@@ -402,7 +410,8 @@ function collectRuntime (longTasks, runtime) {
   }
 }
 
-async function playMounted ({ player, video, maxPlaybackMs = Infinity }) {
+async function playMounted ({ token, player, video, maxPlaybackMs = Infinity }) {
+  requireCurrentToken(token)
   const collector = new PlaybackCollector(video.fps)
   const longTasks = createLongTaskMonitor()
   const runtime = createRuntimeMonitor()
@@ -420,24 +429,28 @@ async function playMounted ({ player, video, maxPlaybackMs = Infinity }) {
     clearTimeout(timeoutId)
     resolvePlayback(reason)
   }
-  active.finishPlayback = finish
-  active.pause = () => {
+  token.finishPlayback = finish
+  token.pause = () => {
     if (finished || pausedAt) return
     player.pause()
     pausedAt = performance.now()
     collector.split()
-    setStatus('paused')
-    setPlaybackControls('paused')
+    if (isCurrentToken(token)) {
+      setStatus('paused')
+      setPlaybackControls('paused')
+    }
   }
-  active.resume = () => {
+  token.resume = () => {
     if (finished || !pausedAt) return
     pausedMs += performance.now() - pausedAt
     pausedAt = 0
     player.resume()
-    setStatus('playing')
-    setPlaybackControls('playing')
+    if (isCurrentToken(token)) {
+      setStatus('playing')
+      setPlaybackControls('playing')
+    }
   }
-  active.stop = () => {
+  token.stop = () => {
     if (finished) return
     if (pausedAt) pausedMs += performance.now() - pausedAt
     pausedAt = 0
@@ -445,6 +458,7 @@ async function playMounted ({ player, video, maxPlaybackMs = Infinity }) {
     finish('stopped')
   }
   player.onProcess = () => {
+    if (!isCurrentToken(token)) return
     const timestamp = performance.now()
     collector.record(player.currentFrame, timestamp)
     if (timestamp - lastTrackPaint >= 100) {
@@ -454,16 +468,21 @@ async function playMounted ({ player, video, maxPlaybackMs = Infinity }) {
   }
   player.onEnd = () => finish('completed')
   player.onStart = () => {
-    setStatus('playing')
-    setPlaybackControls('playing')
+    if (isCurrentToken(token)) {
+      setStatus('playing')
+      setPlaybackControls('playing')
+    }
   }
   player.onResume = () => {
-    setStatus('playing')
-    setPlaybackControls('playing')
+    if (isCurrentToken(token)) {
+      setStatus('playing')
+      setPlaybackControls('playing')
+    }
   }
   player.onPause = () => {}
   player.onStop = () => {}
 
+  requireCurrentToken(token)
   setStatus('playing')
   setPlaybackControls('playing')
   const startCall = performance.now()
@@ -473,6 +492,7 @@ async function playMounted ({ player, video, maxPlaybackMs = Infinity }) {
   const startMs = performance.now() - startCall
   const paintStart = performance.now()
   await nextPaint()
+  requireCurrentToken(token)
   const firstPaintMs = performance.now() - paintStart
   if (Number.isFinite(maxPlaybackMs)) timeoutId = window.setTimeout(() => {
     player.pause()
@@ -480,6 +500,7 @@ async function playMounted ({ player, video, maxPlaybackMs = Infinity }) {
   }, maxPlaybackMs)
 
   const reason = await playback
+  requireCurrentToken(token)
   const endedAt = performance.now()
   if (pausedAt) pausedMs += endedAt - pausedAt
   const runtimeResult = collectRuntime(longTasks, runtime)
@@ -508,12 +529,14 @@ async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, 
     elements.canvasMessage.hidden = false
     const readStarted = performance.now()
     const response = await fetch(fixture.url, { cache: 'no-store', signal: token.abort.signal })
+    requireCurrentToken(token)
     if (!response.ok) throw Error(`文件读取失败：${response.status}`)
     const bytes = await response.arrayBuffer()
     const readMs = performance.now() - readStarted
-    if (token.cancelled) throw DOMException('Cancelled', 'AbortError')
+    requireCurrentToken(token)
 
     stage = 'parsing'
+    requireCurrentToken(token)
     setStatus(stage)
     parser = token.parser = new window.SVGA.Parser()
     blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }))
@@ -525,10 +548,12 @@ async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, 
       URL.revokeObjectURL(blobUrl)
       blobUrl = null
     }
+    requireCurrentToken(token)
     const parseMs = performance.now() - parseStarted
     if (fixture.expectation === 'unsupported-v1') throw Error('旧版素材未被拒绝')
 
     stage = 'mounting'
+    requireCurrentToken(token)
     setStatus(stage)
     const profile = profileVideo(video, fixture.bytes)
     player = token.player = new window.SVGA.Player({
@@ -539,16 +564,13 @@ async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, 
     })
     const mountStarted = performance.now()
     await player.mount(video)
+    requireCurrentToken(token)
     const mountMs = performance.now() - mountStarted
     const heapMountBytes = readHeapBytes()
     elements.canvasMessage.hidden = true
 
-    const played = await playMounted({ player, video, maxPlaybackMs })
-    if (active !== token || token.cancelled) {
-      try { player.destroy() } catch {}
-      token.player = null
-      return { status: 'cancelled' }
-    }
+    const played = await playMounted({ token, player, video, maxPlaybackMs })
+    requireCurrentToken(token)
     const startup = {
       readMs: Number(readMs.toFixed(2)),
       throughputBytesPerSecond: Math.round(bytes.byteLength / Math.max(readMs, 0.01) * 1000),
@@ -568,17 +590,23 @@ async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, 
     }
     if (hiddenDuringRun) warnings.push('测试期间页面进入后台，结果可能受浏览器调度影响，建议重跑。')
     const result = { fixture, profile, startup, playback: played.playback, runtime: played.runtime, warnings }
+    requireCurrentToken(token)
     setStatus(played.reason)
     if (retain && ['completed', 'sampled', 'stopped'].includes(played.reason)) {
+      requireCurrentToken(token)
       retained = { player, video, result }
       token.player = null
     } else {
       player.destroy()
       token.player = null
     }
-    active = null
+    requireCurrentToken(token)
     setPlaybackControls(played.reason)
-    if (publish) renderResult(result)
+    if (publish) {
+      requireCurrentToken(token)
+      renderResult(result)
+    }
+    if (active === token) active = null
     return { status: played.reason, result }
   } catch (error) {
     if (blobUrl) URL.revokeObjectURL(blobUrl)
@@ -618,7 +646,14 @@ async function replayRetained () {
   const token = { cancelled: false, player: retained.player }
   active = token
   hiddenDuringRun = false
-  const played = await playMounted({ player: retained.player, video: retained.video })
+  let played
+  try {
+    played = await playMounted({ token, player: retained.player, video: retained.video })
+  } catch (error) {
+    if (token.cancelled || active !== token || error?.name === 'AbortError') return
+    throw error
+  }
+  requireCurrentToken(token)
   if (hiddenDuringRun) retained.result.warnings.push('热播放期间页面进入后台，结果可能受浏览器调度影响。')
   retained.result.warm = {
     startMs: Number(played.startMs.toFixed(2)),
@@ -628,10 +663,13 @@ async function replayRetained () {
   }
   retained.result.playback = played.playback
   retained.result.runtime = played.runtime
-  active = null
+  requireCurrentToken(token)
   setStatus(played.reason)
+  requireCurrentToken(token)
   setPlaybackControls(played.reason)
+  requireCurrentToken(token)
   renderResult(retained.result, '热播放（启动数据保留冷启动结果）')
+  if (active === token) active = null
 }
 
 const correctnessLabels = {

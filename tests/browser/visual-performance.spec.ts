@@ -162,6 +162,65 @@ test('switching fixtures cancels an old local run without overwriting the new id
   await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
 })
 
+test('a late parser resolution cannot publish over the newly selected fixture', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  await page.evaluate(() => {
+    const browserWindow = window as any
+    const Parser = browserWindow.SVGA.Parser
+    browserWindow.SVGA.Parser = new Proxy(Parser, {
+      construct (target, argumentsList, newTarget) {
+        const parser = Reflect.construct(target, argumentsList, newTarget)
+        const destroy = parser.destroy.bind(parser)
+        parser.destroy = () => {
+          browserWindow.deferredParserDestroyCount = (browserWindow.deferredParserDestroyCount || 0) + 1
+          destroy()
+        }
+        parser.load = () => new Promise(resolve => { browserWindow.releaseDeferredParser = () => resolve({}) })
+        return parser
+      }
+    })
+  })
+  await page.getByTestId('run-selected').click()
+  await expect.poll(() => page.evaluate(() => typeof (window as any).releaseDeferredParser)).toBe('function')
+  await page.locator('[data-fixture="11.svga"]').click()
+  await page.evaluate(() => (window as any).releaseDeferredParser())
+  await expect(page.getByTestId('selected-name')).toHaveText('11.svga')
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
+  await expect(page.locator('#canvas-message')).toBeVisible()
+  await expect(page.locator('#canvas-message')).toContainText('准备运行真实文件')
+  expect(await page.evaluate(() => (window as any).deferredParserDestroyCount)).toBeGreaterThan(0)
+})
+
+test('a late mount resolution cannot hide the new fixture prompt', async ({ page }) => {
+  test.setTimeout(15_000)
+  await page.goto(visualTestUrl)
+  await page.evaluate(() => {
+    const browserWindow = window as any
+    const Player = browserWindow.SVGA.Player
+    browserWindow.SVGA.Player = new Proxy(Player, {
+      construct (target, argumentsList, newTarget) {
+        const player = Reflect.construct(target, argumentsList, newTarget)
+        const destroy = player.destroy.bind(player)
+        player.destroy = () => {
+          browserWindow.deferredMountDestroyCount = (browserWindow.deferredMountDestroyCount || 0) + 1
+          destroy()
+        }
+        player.mount = () => new Promise<void>(resolve => { browserWindow.releaseDeferredMount = () => resolve() })
+        return player
+      }
+    })
+  })
+  await page.getByTestId('run-selected').click()
+  await expect.poll(() => page.evaluate(() => typeof (window as any).releaseDeferredMount)).toBe('function')
+  await page.locator('[data-fixture="11.svga"]').click()
+  await page.evaluate(() => (window as any).releaseDeferredMount())
+  await expect(page.getByTestId('selected-name')).toHaveText('11.svga')
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
+  await expect(page.locator('#canvas-message')).toBeVisible()
+  await expect(page.locator('#canvas-message')).toContainText('准备运行真实文件')
+  expect(await page.evaluate(() => (window as any).deferredMountDestroyCount)).toBeGreaterThan(0)
+})
+
 test('changing fixtures clears the previous comparison report before a new run', async ({ page }) => {
   test.setTimeout(20_000)
   await page.goto(visualTestUrl)
