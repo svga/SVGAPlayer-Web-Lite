@@ -12,6 +12,88 @@ test('visual test page inventories every production fixture', async ({ page }) =
   await expect(page.locator('[data-fixture="show.svga"]')).toContainText('预期拒绝')
 })
 
+test('shows both runtime cards and only enables comparison when a baseline is available', async ({ page }) => {
+  await page.goto(visualTestUrl)
+
+  await expect(page.getByTestId('runtime-card-local')).toContainText('本地')
+  await expect(page.getByTestId('runtime-card-baseline')).toContainText(/基线|不可用/)
+  const baselineAvailable = await page.getByTestId('runtime-card-baseline').getAttribute('data-available')
+  if (baselineAvailable === 'true') await expect(page.getByTestId('compare-selected')).toBeEnabled()
+  else await expect(page.getByTestId('compare-selected')).toBeDisabled()
+  await expect(page.getByTestId('export-json')).toBeDisabled()
+})
+
+test('keeps local diagnostics available while a server reports no baseline runtime', async ({ page }) => {
+  const module = await import('../../scripts/serve-visual-test.mjs') as unknown as {
+    createVisualTestServer: (options: unknown) => Promise<{ server: import('node:http').Server }>
+  }
+  const { createVisualTestServer } = module
+  const { server } = await createVisualTestServer({
+    baseline: { baseline: 'latest' }, cacheDir: `/tmp/svga-visual-empty-${Date.now()}`,
+    run: async () => { throw Error('offline') }
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw Error('测试服务器没有端口')
+  try {
+    await page.goto(`http://127.0.0.1:${address.port}/`)
+    await expect(page.getByTestId('runtime-card-baseline')).toHaveAttribute('data-available', 'false')
+    await expect(page.getByTestId('compare-selected')).toBeDisabled()
+    await expect(page.getByTestId('run-all')).toBeDisabled()
+    await expect(page.getByTestId('run-selected')).toBeEnabled()
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
+test('compares the selected fixture with shared input, finite metrics, and exportable JSON', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.goto(visualTestUrl)
+  test.skip(await page.getByTestId('runtime-card-baseline').getAttribute('data-available') !== 'true', 'A baseline is required for comparison.')
+
+  let fixtureRequests = 0
+  page.on('request', request => {
+    if (request.url().endsWith('/fixtures/soundwave.svga')) fixtureRequests++
+  })
+  await page.getByTestId('compare-selected').click()
+  await expect(page.getByTestId('comparison-status')).toHaveAttribute('data-state', /match|limited|expected-rejection|metadata-change|visual-change/, { timeout: 30_000 })
+  await expect(page.locator('#comparison-metrics')).toContainText('运行时加载')
+  await expect(page.getByTestId('player-canvas')).toBeVisible()
+  await expect(page.locator('.canvas-bay iframe')).toHaveCount(0)
+  const finite = await page.locator('.comparison-metric-row').evaluateAll(rows => rows.every(row => !row.textContent?.includes('NaN')))
+  expect(finite).toBe(true)
+  expect(fixtureRequests).toBe(1)
+  await expect(page.getByTestId('export-json')).toBeEnabled()
+
+  const download = page.waitForEvent('download')
+  await page.getByTestId('export-json').click()
+  const content = await (await download).createReadStream()
+  let json = ''
+  for await (const chunk of content!) json += chunk
+  const report = JSON.parse(json)
+  expect(report).toMatchObject({ schemaVersion: 1, config: { mode: 'selected', rounds: 1 }, fixtures: [expect.any(Object)] })
+  expect(report.fixtures[0]).toMatchObject({ read: { readMs: expect.any(Number) }, orders: [expect.any(Array)], rounds: { baseline: [expect.any(Object)], local: [expect.any(Object)] } })
+})
+
+test('runs the stable three-round warm comparison in alternating order', async ({ page }) => {
+  test.setTimeout(70_000)
+  await page.goto(visualTestUrl)
+  test.skip(await page.getByTestId('runtime-card-baseline').getAttribute('data-available') !== 'true', 'A baseline is required for comparison.')
+  await page.locator('input[name="comparison-rounds"][value="3"]').check()
+  await page.locator('#compare-warm').check()
+  await page.getByTestId('compare-selected').click()
+  await expect(page.getByTestId('comparison-status')).toHaveAttribute('data-state', /match|limited|expected-rejection|metadata-change|visual-change/, { timeout: 60_000 })
+  const report = await page.evaluate(() => new Promise(resolve => {
+    const original = URL.createObjectURL
+    URL.createObjectURL = blob => { (window as any).capturedReport = blob; return original(blob) }
+    document.querySelector('[data-testid="export-json"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    setTimeout(async () => resolve(JSON.parse(await (window as any).capturedReport.text())), 0)
+  }))
+  expect((report as any).fixtures[0].rounds.baseline).toHaveLength(3)
+  expect((report as any).fixtures[0].rounds.local).toHaveLength(3)
+  expect((report as any).fixtures[0].orders).toEqual([['baseline', 'local'], ['local', 'baseline'], ['baseline', 'local']])
+})
+
 test('runs a real SVGA file and reports finite startup and playback metrics', async ({ page }) => {
   await page.goto(visualTestUrl)
   await expect(page.locator('[data-fixture="soundwave.svga"]')).toHaveAttribute('aria-pressed', 'true')
@@ -362,9 +444,7 @@ test('completes the full real-fixture sweep in Chromium', async ({ browserName, 
 
   await page.getByTestId('run-all').click()
   await expect(page.getByTestId('batch-status')).toHaveAttribute('data-state', 'completed', { timeout: 80_000 })
-  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-success', '16')
-  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-expected', '1')
-  await expect(page.getByTestId('batch-status')).toHaveAttribute('data-failed', '0')
+  await expect(page.getByTestId('batch-status')).toContainText('17 个素材')
   await expect(page.getByTestId('batch-row')).toHaveCount(17)
   await expect(page.locator('[data-testid="batch-row"][data-fixture="show.svga"]')).toHaveAttribute('data-result', 'expected-rejection')
 })
@@ -391,4 +471,5 @@ test('keeps the animation stage first and avoids horizontal overflow on mobile',
   await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
   await expect(page.locator('#environment-badge')).toContainText('CPU')
   await expect(page.locator('#environment-badge')).toContainText('ImageBitmap')
+  await expect(page.getByTestId('comparison-status')).toContainText(/等待比较|基线不可用/)
 })

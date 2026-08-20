@@ -1,6 +1,11 @@
 const protocol = 'svga-visual-runner'
 const cancelGraceMs = 250
 const startupTimeoutMs = 30_000
+const browserTimeoutMaxMs = 0x7fffffff
+
+function safeTimeout (value) {
+  return Math.min(browserTimeoutMaxMs, Math.max(1, Math.floor(value)))
+}
 
 function createRunId () {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -10,21 +15,21 @@ function createRunId () {
 }
 
 export function runnerTimeoutFor (options = {}) {
-  if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) return options.timeoutMs
+  if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) return safeTimeout(options.timeoutMs)
   if (!Number.isFinite(options.maxPlaybackMs) || options.maxPlaybackMs < 0) return startupTimeoutMs
-  return startupTimeoutMs + options.maxPlaybackMs * (options.includeWarm === true ? 2 : 1)
+  return safeTimeout(startupTimeoutMs + options.maxPlaybackMs * (options.includeWarm === true ? 2 : 1))
 }
 
-export function createIsolatedRunner (runtime, { target = document.body, onEvent = () => {} } = {}) {
+export function createIsolatedRunner (runtime, { target = document.body, onEvent = () => {}, visible = false } = {}) {
   if (runtime !== 'local' && runtime !== 'baseline') throw Error('runtime 必须是 local 或 baseline')
   const runId = createRunId()
   const origin = location.origin
   const frame = document.createElement('iframe')
   frame.title = `SVGA ${runtime} 隔离运行器`
-  frame.setAttribute('aria-hidden', 'true')
-  Object.assign(frame.style, {
-    border: '0', height: '1px', left: '0', pointerEvents: 'none', position: 'absolute', top: '0', width: '1px'
-  })
+  frame.setAttribute('aria-hidden', visible ? 'false' : 'true')
+  Object.assign(frame.style, visible
+    ? { border: '0', height: '100%', inset: '0', pointerEvents: 'none', position: 'absolute', width: '100%' }
+    : { border: '0', height: '1px', left: '0', pointerEvents: 'none', position: 'absolute', top: '0', width: '1px' })
   frame.src = `/runner.html?runtime=${encodeURIComponent(runtime)}&runId=${encodeURIComponent(runId)}`
   let disposed = false
   let readyState = false

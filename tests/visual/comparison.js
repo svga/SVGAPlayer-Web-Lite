@@ -122,7 +122,7 @@ const profileCoreFields = [
 ]
 
 function sameProfile (baseline, local) {
-  return profileCoreFields.every(field => baseline?.[field] === local?.[field])
+  return profileCoreFields.every(field => Number.isFinite(baseline?.[field]) && Number.isFinite(local?.[field]) && baseline[field] === local[field])
 }
 
 function sameVisual (baseline, local) {
@@ -148,7 +148,9 @@ export function compareCorrectness ({ baseline, local }) {
   if (baselineSuccess && !localSuccess) return { state: 'local-regression', performanceComparable: false }
   if (!baselineSuccess || !localSuccess) return { state: 'capability-change', performanceComparable: false }
   if (!sameValue(baseline.capabilities, local.capabilities)) return { state: 'capability-change', performanceComparable: false }
-  if (!baseline.profile || !local.profile) return { state: 'limited', performanceComparable: false }
+  if (!baseline.profile || !local.profile || !profileCoreFields.every(field => Number.isFinite(baseline.profile[field]) && Number.isFinite(local.profile[field]))) {
+    return { state: 'limited', performanceComparable: false }
+  }
   if (!sameProfile(baseline.profile, local.profile)) return { state: 'metadata-change', performanceComparable: false }
   if (!baseline.visual || !local.visual || baseline.visual.frame !== local.visual.frame) {
     return { state: 'limited', performanceComparable: false }

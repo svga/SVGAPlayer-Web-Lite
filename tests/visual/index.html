@@ -20,6 +20,18 @@
     </header>
 
     <main class="page-shell">
+      <section class="panel comparison-overview" aria-labelledby="comparison-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">runtime 对比</p>
+            <h2 id="comparison-heading">本地与基线运行时</h2>
+          </div>
+          <span data-testid="comparison-status" class="status-pill" data-state="idle">等待比较</span>
+        </div>
+        <div id="runtime-cards" class="runtime-cards" aria-live="polite"></div>
+        <div id="comparison-warnings" class="warnings" aria-live="polite"></div>
+      </section>
+
       <div class="workbench">
         <section class="panel stage-panel" aria-labelledby="stage-heading">
           <div class="panel-heading stage-heading">
@@ -45,6 +57,7 @@
 
           <div class="control-row" aria-label="播放控制">
             <button type="button" class="button button-primary" data-testid="run-selected">运行完整测试</button>
+            <button type="button" class="button button-primary" data-testid="compare-selected" disabled>对比当前素材</button>
             <button type="button" class="button" data-testid="pause" disabled>暂停</button>
             <button type="button" class="button" data-testid="resume" disabled>继续</button>
             <button type="button" class="button" data-testid="replay" disabled>再次播放</button>
@@ -56,6 +69,12 @@
             <label><input type="checkbox" id="cache-frames"> 帧缓存</label>
             <label><input type="checkbox" id="timer-worker"> 计时 Worker</label>
             <span>解析始终使用默认 Worker</span>
+          </fieldset>
+          <fieldset class="config-row comparison-config">
+            <legend>当前素材对比</legend>
+            <label><input type="radio" name="comparison-rounds" value="1" checked> 快速 1 轮</label>
+            <label><input type="radio" name="comparison-rounds" value="3"> 稳定 3 轮</label>
+            <label><input type="checkbox" id="compare-warm"> 同时比较热播放</label>
           </fieldset>
         </section>
 
@@ -113,23 +132,35 @@
         </div>
       </section>
 
+      <section class="panel comparison-results-panel" aria-labelledby="comparison-results-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">对比结果</p>
+            <h2 id="comparison-results-heading">两版核心指标</h2>
+          </div>
+          <span id="comparison-result-note" class="technical-label">运行后显示</span>
+        </div>
+        <div id="comparison-metrics" class="comparison-metrics" aria-live="polite"></div>
+      </section>
+
       <section class="panel batch-panel" aria-labelledby="batch-heading">
         <div class="panel-heading batch-heading">
           <div>
             <p class="section-kicker">全量巡检</p>
-            <h2 id="batch-heading">17 个真实文件顺序测试</h2>
-            <p>每个可播放文件采集启动指标及最多 2 秒播放样本。</p>
+            <h2 id="batch-heading">17 个真实文件双版本对比</h2>
+            <p>每个可播放版本最多采样 2 秒；每次均使用新的隔离运行器，强制冷启动。</p>
           </div>
           <div class="batch-actions">
             <span data-testid="batch-status" data-state="idle">尚未运行</span>
-            <button type="button" class="button button-primary" data-testid="run-all">运行全量巡检</button>
+            <button type="button" class="button button-primary" data-testid="run-all" disabled>运行全量对比</button>
             <button type="button" class="button button-danger" data-testid="cancel-all" disabled>取消</button>
+            <button type="button" class="button" data-testid="export-json" disabled>导出 JSON</button>
           </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>文件</th><th>结果</th><th>解析</th><th>挂载</th><th>实际 FPS</th><th>跳帧</th><th>说明</th></tr>
+              <tr><th>文件</th><th>正确性</th><th>基线解析</th><th>本地解析</th><th>基线挂载</th><th>本地挂载</th><th>基线实际 FPS</th><th>本地实际 FPS</th><th>基线跳帧</th><th>本地跳帧</th><th>主要差异/说明</th></tr>
             </thead>
             <tbody id="batch-results"></tbody>
           </table>

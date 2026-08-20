@@ -111,6 +111,71 @@ input:focus-visible {
   box-shadow: var(--shadow);
 }
 
+.comparison-overview,
+.comparison-results-panel {
+  padding: 1.25rem;
+}
+
+.comparison-overview > .panel-heading,
+.comparison-results-panel > .panel-heading {
+  padding: 0 0 1rem;
+}
+
+.runtime-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.runtime-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  padding: 0.9rem;
+  background: #fafbfd;
+}
+
+.runtime-card[data-available="false"] {
+  border-style: dashed;
+}
+
+.runtime-card h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.84rem;
+}
+
+.runtime-card dl {
+  display: grid;
+  margin: 0;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 0.32rem 0.6rem;
+  font-size: 0.68rem;
+}
+
+.runtime-card dt { color: var(--muted); }
+.runtime-card dd { overflow-wrap: anywhere; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+.comparison-metrics {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+
+.comparison-metric-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 1.2fr);
+  border-bottom: 1px solid #e6ebf2;
+  padding: 0.6rem 0.75rem;
+  gap: 0.65rem;
+  font-size: 0.7rem;
+}
+
+.comparison-metric-row:last-child { border-bottom: 0; }
+.comparison-metric-row span { color: var(--muted); overflow-wrap: anywhere; }
+.comparison-metric-row span:nth-child(2)::before { content: "基线："; }
+.comparison-metric-row span:nth-child(3)::before { content: "本地："; }
+
 .workbench {
   display: grid;
   grid-template-areas: "fixtures stage summary";
@@ -691,6 +756,8 @@ tbody tr[data-result="failed"] {
   .stage-panel,
   .summary-panel,
   .detail-panel,
+  .comparison-overview,
+  .comparison-results-panel,
   .batch-panel,
   .method-panel {
     padding: 1rem;
@@ -730,6 +797,42 @@ tbody tr[data-result="failed"] {
   .batch-actions {
     justify-content: flex-start;
   }
+
+  .runtime-cards { grid-template-columns: minmax(0, 1fr); }
+
+  .comparison-metric-row { grid-template-columns: minmax(0, 1fr); gap: 0.32rem; }
+
+  .table-wrap { overflow: visible; border: 0; }
+
+  .batch-panel table,
+  .batch-panel tbody,
+  .batch-panel tr,
+  .batch-panel th,
+  .batch-panel td { display: block; width: 100%; white-space: normal; }
+
+  .batch-panel thead { display: none; }
+
+  .batch-panel tr {
+    margin-bottom: 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    padding: 0.35rem 0.65rem;
+    background: #fff;
+  }
+
+  .batch-panel th,
+  .batch-panel td {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.78fr) minmax(0, 1.22fr);
+    border: 0;
+    border-bottom: 1px solid #e6ebf2;
+    padding: 0.42rem 0;
+    overflow-wrap: anywhere;
+    gap: 0.5rem;
+  }
+
+  .batch-panel th::before,
+  .batch-panel td::before { content: attr(data-label); color: var(--muted); font-family: inherit; font-size: 0.64rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

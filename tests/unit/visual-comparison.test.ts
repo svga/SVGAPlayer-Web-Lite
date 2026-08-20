@@ -61,7 +61,10 @@ describe('visual comparison statistics', () => {
 describe('visual comparison correctness states', () => {
   const successful = {
     status: 'completed',
-    profile: { width: 100, height: 100, fps: 20, frames: 10, images: 1 },
+    profile: {
+      fileBytes: 10, width: 100, height: 100, pixels: 10_000, fps: 20, frames: 10, durationMs: 500,
+      images: 1, imageBytes: 10, sprites: 1, spriteFrames: 10, shapes: 1, rgbaBytes: 40_000
+    },
     visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 }
   }
 
@@ -86,5 +89,10 @@ describe('visual comparison correctness states', () => {
   ])('marks same-frame visual %s changes as visual-change', (field, value) => {
     const local = { ...successful, visual: { ...successful.visual, [field]: value } }
     expect(compareCorrectness({ baseline: successful, local })).toEqual({ state: 'visual-change', performanceComparable: false })
+  })
+
+  it('treats incomplete profiles as limited instead of a match', () => {
+    const incomplete = { status: 'completed', profile: { width: 100 }, visual: successful.visual, capabilities: undefined }
+    expect(compareCorrectness({ baseline: incomplete, local: incomplete })).toEqual({ state: 'limited', performanceComparable: false })
   })
 })

@@ -17,4 +17,9 @@ describe('isolated runner timeout budget', () => {
   it('honors an explicit overall deadline so slow parsing is not mistaken for playback timeout', () => {
     expect(runnerTimeoutFor({ maxPlaybackMs: 1_000, includeWarm: true, timeoutMs: 90_000 })).toBe(90_000)
   })
+
+  it('clamps runner timeouts to the browser-safe timer maximum', () => {
+    expect(runnerTimeoutFor({ timeoutMs: Number.MAX_SAFE_INTEGER })).toBe(0x7fffffff)
+    expect(runnerTimeoutFor({ maxPlaybackMs: Number.MAX_SAFE_INTEGER, includeWarm: true })).toBe(0x7fffffff)
+  })
 })

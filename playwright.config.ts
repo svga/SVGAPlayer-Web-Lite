@@ -4,7 +4,7 @@ export default defineConfig({
   forbidOnly: true,
   outputDir: 'test-results',
   webServer: {
-    command: 'node scripts/serve-visual-test.mjs',
+    command: 'node scripts/serve-visual-test.mjs --baseline local',
     reuseExistingServer: !process.env.CI,
     url: 'http://127.0.0.1:4173'
   },

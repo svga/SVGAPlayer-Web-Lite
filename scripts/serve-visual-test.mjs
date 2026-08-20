@@ -66,6 +66,7 @@ export async function createVisualTestServer (options = {}) {
     ['/app.js', { path: resolve(visual, 'app.js'), type: 'text/javascript; charset=utf-8' }],
     ['/metrics.js', { path: resolve(visual, 'metrics.js'), type: 'text/javascript; charset=utf-8' }],
     ['/comparison.js', { path: resolve(visual, 'comparison.js'), type: 'text/javascript; charset=utf-8' }],
+    ['/comparison-orchestrator.js', { path: resolve(visual, 'comparison-orchestrator.js'), type: 'text/javascript; charset=utf-8' }],
     ['/runner.html', { path: resolve(visual, 'runner.html'), type: 'text/html; charset=utf-8' }],
     ['/runner.js', { path: resolve(visual, 'runner.js'), type: 'text/javascript; charset=utf-8' }],
     ['/runner.css', { path: resolve(visual, 'runner.css'), type: 'text/css; charset=utf-8' }],
