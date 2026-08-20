@@ -119,7 +119,10 @@ describe('baseline runtime preparation', () => {
 
   it.each([
     ['invalid JavaScript', Buffer.from('const = ;')],
-    ['ordinary JavaScript without SVGA exports', Buffer.from('const Player = class {}; const Parser = class {};')]
+    ['ordinary JavaScript without SVGA exports', Buffer.from('const Player = class {}; const Parser = class {};')],
+    ['comments containing UMD-looking markers', Buffer.from('/* typeof exports; typeof module; root.SVGA = {}; exports.Parser = 1; exports.Player = 1; */')],
+    ['strings containing UMD-looking markers', Buffer.from('const marker = "typeof exports typeof module root.SVGA = {} exports.Parser = 1 exports.Player = 1";')],
+    ['ordinary JavaScript with unwrapped UMD-looking assignments', Buffer.from('if (typeof exports && typeof module) { globalThis.SVGA = {}; exports.Parser = 1; exports.Player = 1; }')]
   ])('rejects %s as a local runtime', async (_name, bytes) => {
     const projectDir = await temporaryDirectory()
     await writeRuntime(projectDir, '2.2.0', bytes)
@@ -161,6 +164,40 @@ describe('baseline runtime preparation', () => {
     expect(runtime).toBeNull()
     expect(calls).toEqual(['npm view'])
     await expect(readFile(join(cacheDir, 'versions', '2.1.9', 'dist/index.min.js'))).resolves.toEqual(original)
+  })
+
+  it('publishes one valid cache when four cold exact requests finish together', async () => {
+    const projectDir = await temporaryDirectory()
+    const cacheDir = join(projectDir, '.cache')
+    await writeRuntime(projectDir, '2.2.0')
+    let arrived = 0
+    let release: (() => void) | undefined
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    const run = async (command: string, arguments_: string[]): Promise<string> => {
+      if (command === 'npm' && arguments_[0] === 'view') return JSON.stringify({ version: '2.1.9', 'dist.integrity': integrity })
+      if (command === 'npm' && arguments_[0] === 'pack') return JSON.stringify({ svga: { filename: 'svga-2.1.9.tgz' } })
+      if (command === 'tar') {
+        const target = arguments_[arguments_.indexOf('-C') + 1]
+        await writeRuntime(target, '2.1.9')
+        arrived++
+        if (arrived === 4) release?.()
+        await barrier
+        return ''
+      }
+      throw new Error(`unexpected command: ${command}`)
+    }
+
+    const runtimes = await Promise.all(Array.from({ length: 4 }, () => prepareBaselineRuntime({ baseline: '2.1.9' }, { projectDir, cacheDir, run })))
+
+    expect(runtimes).toHaveLength(4)
+    expect(runtimes.every(runtime => runtime?.version === '2.1.9' && runtime.scriptIntegrity === scriptIntegrity)).toBe(true)
+    expect(runtimes.filter(runtime => runtime?.cacheState === 'downloaded')).toHaveLength(1)
+    await expect(readFile(join(cacheDir, 'versions', '2.1.9', 'dist/index.min.js'))).resolves.toEqual(packageBytes)
+    await expect(prepareBaselineRuntime({ baseline: '2.1.9' }, {
+      projectDir,
+      cacheDir,
+      run: async () => { throw new Error('cache should be used') }
+    })).resolves.toMatchObject({ cacheState: 'cache', scriptIntegrity })
   })
 
   it('fails an exact baseline request with its version and acquisition reason', async () => {

@@ -48,6 +48,62 @@ async function readJson (path) {
   }
 }
 
+function walkAst (value, visitor) {
+  if (Array.isArray(value)) {
+    for (const item of value) walkAst(item, visitor)
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  if (typeof value.type === 'string') visitor(value)
+  for (const child of Object.values(value)) walkAst(child, visitor)
+}
+
+function identifierIs (node, name) {
+  return node?.type === 'Identifier' && node.name === name
+}
+
+function assignmentHasProperty (node, property, objectName) {
+  return node.type === 'AssignmentExpression' && node.left.type === 'MemberExpression' &&
+    !node.left.computed && identifierIs(node.left.property, property) &&
+    (!objectName || identifierIs(node.left.object, objectName))
+}
+
+function hasUmdRuntimeShape (program) {
+  let accepted = false
+  walkAst(program, node => {
+    if (accepted || node.type !== 'CallExpression' || node.callee.type !== 'FunctionExpression') return
+    const factoryIndex = node.arguments.findIndex(argument => argument?.type === 'FunctionExpression')
+    const factory = node.arguments[factoryIndex]
+    const factoryParameter = node.callee.params[factoryIndex]
+    const exportedObject = factory?.params[0]
+    if (!factory || !identifierIs(factoryParameter, factoryParameter?.name) || !identifierIs(exportedObject, exportedObject?.name)) return
+
+    let hasExportsTypeof = false
+    let hasModuleTypeof = false
+    let callsFactoryWithExports = false
+    let assignsSvgaNamespace = false
+    walkAst(node.callee.body, candidate => {
+      if (candidate.type === 'UnaryExpression' && candidate.operator === 'typeof') {
+        hasExportsTypeof ||= identifierIs(candidate.argument, 'exports')
+        hasModuleTypeof ||= identifierIs(candidate.argument, 'module')
+      }
+      if (candidate.type === 'CallExpression' && identifierIs(candidate.callee, factoryParameter.name)) {
+        callsFactoryWithExports ||= candidate.arguments.some(argument => identifierIs(argument, 'exports'))
+      }
+      assignsSvgaNamespace ||= assignmentHasProperty(candidate, 'SVGA')
+    })
+
+    let exportsParser = false
+    let exportsPlayer = false
+    walkAst(factory.body, candidate => {
+      exportsParser ||= assignmentHasProperty(candidate, 'Parser', exportedObject.name)
+      exportsPlayer ||= assignmentHasProperty(candidate, 'Player', exportedObject.name)
+    })
+    accepted = hasExportsTypeof && hasModuleTypeof && callsFactoryWithExports && assignsSvgaNamespace && exportsParser && exportsPlayer
+  })
+  return accepted
+}
+
 async function inspectRuntime (directory, metadata) {
   const manifest = await readJson(join(directory, 'package.json'))
   if (!manifest || manifest.name !== 'svga' || typeof manifest.version !== 'string') return null
@@ -59,16 +115,13 @@ async function inspectRuntime (directory, metadata) {
   } catch {
     return null
   }
-  const source = bytes.toString('utf8')
+  let program
   try {
-    parse(source, { ecmaVersion: 'latest', sourceType: 'script' })
+    program = parse(bytes.toString('utf8'), { ecmaVersion: 'latest', sourceType: 'script' })
   } catch {
     return null
   }
-  const hasUmdExports = /\btypeof\s+exports\b/.test(source) && /\btypeof\s+module\b/.test(source)
-  const hasSvgaNamespace = /\.SVGA\s*=/.test(source)
-  const hasPlayerAndParserExports = /\.Parser\s*=/.test(source) && /\.Player\s*=/.test(source)
-  if (!hasUmdExports || !hasSvgaNamespace || !hasPlayerAndParserExports) return null
+  if (!hasUmdRuntimeShape(program)) return null
 
   const calculatedScriptIntegrity = scriptIntegrity(bytes)
   if (metadata.expectedScriptIntegrity && metadata.expectedScriptIntegrity !== calculatedScriptIntegrity) return null
@@ -192,19 +245,22 @@ async function downloadRuntime (version, integrity, dependencies) {
       scriptIntegrity: validated.scriptIntegrity
     })
     await mkdir(versionsDir, { recursive: true })
-    const existing = await cachedRuntime({
-      cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
-    })
-    if (existing) {
-      if (existing.integrity !== integrity) {
-        throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+    try {
+      await rename(unpacked, target)
+      validated.runtimePath = join(target, 'dist/index.min.js')
+      return validated
+    } catch (error) {
+      const conflict = error && typeof error === 'object' && ['EEXIST', 'ENOTEMPTY'].includes(error.code)
+      if (!conflict) throw error
+      const published = await cachedRuntime({
+        cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true,
+        expectedIntegrity: integrity, expectedScriptIntegrity: validated.scriptIntegrity, projectDir
+      })
+      if (!published) {
+        throw new Error(`Baseline cache publish collision for ${version} did not produce a matching runtime`)
       }
-      return existing
+      return published
     }
-    await rm(target, { force: true, recursive: true })
-    await rename(unpacked, target)
-    validated.runtimePath = join(target, 'dist/index.min.js')
-    return validated
   } finally {
     await rm(staging, { force: true, recursive: true })
   }
