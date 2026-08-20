@@ -119,7 +119,8 @@ test('reports the SVGA 1.x fixture as an expected parsing rejection', async ({ p
   await expect(page.locator('#warnings')).toContainText('解析阶段')
 })
 
-test('cancels an in-progress full fixture sweep and releases the controls', async ({ page }) => {
+test('cancels an in-progress full fixture sweep and releases the controls', async ({ browserDiagnostics, page }) => {
+  browserDiagnostics.expectRequestCancellation('/fixtures/')
   await page.goto(visualTestUrl)
   await page.getByTestId('run-all').click()
   await expect(page.getByTestId('batch-status')).toHaveAttribute('data-state', 'running')
