@@ -100,6 +100,7 @@ function installParserWorker (scope: ParserWorkerScope): void {
     const controller = new AbortController()
     controllers.set(request.requestId, controller)
     let response: ParserWorkerResult
+    let completed = false
     try {
       const compressed = await download(request.url, controller.signal)
       if (compressed[0] === 80 && compressed[1] === 75 && compressed[2] === 3 && compressed[3] === 4) {
@@ -111,6 +112,7 @@ function installParserWorker (scope: ParserWorkerScope): void {
       const video = validateVideo(createVideo(decoded, imageMap(decoded)))
       response = { requestId: request.requestId, video }
       scope.postMessage(response, transferList(video))
+      completed = true
       return
     } catch (error) {
       const source = error instanceof Error ? error : Error(String(error))
@@ -120,7 +122,7 @@ function installParserWorker (scope: ParserWorkerScope): void {
       }
       scope.postMessage(response)
     } finally {
-      controller.abort()
+      if (!completed) controller.abort()
       controllers.delete(request.requestId)
     }
   }

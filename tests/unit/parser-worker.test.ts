@@ -167,6 +167,11 @@ describe('parser worker', () => {
     expect(response.video?.size).toEqual({ width: 100, height: 100 })
   })
 
+  it('does not abort a completed HTTP response after returning the video', async () => {
+    expect((await runWorker()).video).toBeDefined()
+    expect(fetchSignal?.aborted).toBe(false)
+  })
+
   it('enforces the compressed limit for streamed response bodies', async () => {
     fetchResult.bytes = new Uint8Array(8 * 1024 * 1024 + 1)
     fetchResult.chunks = [fetchResult.bytes.length]
