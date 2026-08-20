@@ -221,6 +221,117 @@ test('a late mount resolution cannot hide the new fixture prompt', async ({ page
   expect(await page.evaluate(() => (window as any).deferredMountDestroyCount)).toBeGreaterThan(0)
 })
 
+test('switching fixtures during local playback releases every monitor', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  await page.evaluate(() => {
+    const browserWindow = window as any
+    const intervals = new Set<number>()
+    const frames = new Set<number>()
+    const originalSetInterval = window.setInterval.bind(window)
+    const originalClearInterval = window.clearInterval.bind(window)
+    const originalRequestFrame = window.requestAnimationFrame.bind(window)
+    const originalCancelFrame = window.cancelAnimationFrame.bind(window)
+    browserWindow.visualMonitorStats = { intervals, frames, observed: 0, disconnected: 0 }
+    window.setInterval = ((callback: TimerHandler, timeout?: number, ...args: any[]) => {
+      const id = originalSetInterval(callback, timeout, ...args) as unknown as number
+      intervals.add(id)
+      return id as unknown as number
+    }) as typeof window.setInterval
+    window.clearInterval = ((id?: number) => {
+      intervals.delete(id || 0)
+      return originalClearInterval(id)
+    }) as typeof window.clearInterval
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      let id = 0
+      id = originalRequestFrame(timestamp => {
+        frames.delete(id)
+        callback(timestamp)
+      })
+      frames.add(id)
+      return id
+    }) as typeof window.requestAnimationFrame
+    window.cancelAnimationFrame = ((id: number) => {
+      frames.delete(id)
+      return originalCancelFrame(id)
+    }) as typeof window.cancelAnimationFrame
+    const OriginalObserver = window.PerformanceObserver
+    if (OriginalObserver) {
+      class ObservedPerformanceObserver extends OriginalObserver {
+        observe (options: PerformanceObserverInit) {
+          browserWindow.visualMonitorStats.observed++
+          return super.observe(options)
+        }
+
+        disconnect () {
+          browserWindow.visualMonitorStats.disconnected++
+          return super.disconnect()
+        }
+      }
+      Object.defineProperty(ObservedPerformanceObserver, 'supportedEntryTypes', { value: OriginalObserver.supportedEntryTypes })
+      browserWindow.PerformanceObserver = ObservedPerformanceObserver
+    }
+  })
+  await page.getByTestId('run-selected').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'playing')
+  await page.locator('[data-fixture="11.svga"]').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
+  await expect.poll(() => page.evaluate(() => ({
+    intervals: (window as any).visualMonitorStats.intervals.size,
+    frames: (window as any).visualMonitorStats.frames.size,
+    observed: (window as any).visualMonitorStats.observed,
+    disconnected: (window as any).visualMonitorStats.disconnected
+  }))).toMatchObject({ intervals: 0, frames: 0 })
+  const observer = await page.evaluate(() => (window as any).visualMonitorStats)
+  expect(observer.disconnected).toBe(observer.observed)
+})
+
+test('switching fixtures during replay releases every monitor', async ({ page }) => {
+  test.setTimeout(20_000)
+  await page.goto(visualTestUrl)
+  await page.evaluate(() => {
+    const browserWindow = window as any
+    const intervals = new Set<number>()
+    const frames = new Set<number>()
+    const originalSetInterval = window.setInterval.bind(window)
+    const originalClearInterval = window.clearInterval.bind(window)
+    const originalRequestFrame = window.requestAnimationFrame.bind(window)
+    const originalCancelFrame = window.cancelAnimationFrame.bind(window)
+    browserWindow.visualReplayMonitorStats = { intervals, frames }
+    window.setInterval = ((callback: TimerHandler, timeout?: number, ...args: any[]) => {
+      const id = originalSetInterval(callback, timeout, ...args) as unknown as number
+      intervals.add(id)
+      return id as unknown as number
+    }) as typeof window.setInterval
+    window.clearInterval = ((id?: number) => {
+      intervals.delete(id || 0)
+      return originalClearInterval(id)
+    }) as typeof window.clearInterval
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      let id = 0
+      id = originalRequestFrame(timestamp => {
+        frames.delete(id)
+        callback(timestamp)
+      })
+      frames.add(id)
+      return id
+    }) as typeof window.requestAnimationFrame
+    window.cancelAnimationFrame = ((id: number) => {
+      frames.delete(id)
+      return originalCancelFrame(id)
+    }) as typeof window.cancelAnimationFrame
+  })
+  await page.getByTestId('run-selected').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'completed', { timeout: 15_000 })
+  await page.getByTestId('replay').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'playing')
+  await page.locator('[data-fixture="11.svga"]').click()
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
+  await expect.poll(() => page.evaluate(() => ({
+    intervals: (window as any).visualReplayMonitorStats.intervals.size,
+    frames: (window as any).visualReplayMonitorStats.frames.size
+  }))).toEqual({ intervals: 0, frames: 0 })
+})
+
 test('changing fixtures clears the previous comparison report before a new run', async ({ page }) => {
   test.setTimeout(20_000)
   await page.goto(visualTestUrl)

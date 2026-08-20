@@ -110,6 +110,7 @@ export function createLongTaskMonitor () {
     PerformanceObserver.supportedEntryTypes?.includes('longtask')
   const durations = []
   let observer
+  let result
   if (supported) {
     observer = new PerformanceObserver(list => {
       for (const entry of list.getEntries()) durations.push(entry.duration)
@@ -118,8 +119,9 @@ export function createLongTaskMonitor () {
   }
   return {
     finish () {
+      if (result) return result
       observer?.disconnect()
-      return supported
+      result = supported
         ? {
             supported: true,
             count: durations.length,
@@ -128,6 +130,7 @@ export function createLongTaskMonitor () {
             blockingMs: round(durations.reduce((sum, value) => sum + Math.max(0, value - 50), 0))
           }
         : { supported: false }
+      return result
     }
   }
 }
@@ -138,6 +141,7 @@ export function createRuntimeMonitor () {
   let rafFrames = 0
   let stopped = false
   let rafId = 0
+  let result
   const sampleHeap = () => {
     if (memory && Number.isFinite(memory.usedJSHeapSize)) heapSamples.push(memory.usedJSHeapSize)
   }
@@ -151,12 +155,13 @@ export function createRuntimeMonitor () {
   rafId = requestAnimationFrame(frame)
   return {
     finish () {
+      if (result) return result
       stopped = true
       cancelAnimationFrame(rafId)
       clearInterval(heapTimer)
       sampleHeap()
       const lastHeapSample = heapSamples[heapSamples.length - 1] || 0
-      return {
+      result = {
         rafFrames,
         heap: memory
           ? {
@@ -168,6 +173,7 @@ export function createRuntimeMonitor () {
             }
           : { supported: false }
       }
+      return result
     }
   }
 }

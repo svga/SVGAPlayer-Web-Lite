@@ -422,6 +422,11 @@ async function playMounted ({ token, player, video, maxPlaybackMs = Infinity }) 
   let finished = false
   let resolvePlayback
   let lastTrackPaint = 0
+  let monitorResult
+  const finishMonitors = () => {
+    if (!monitorResult) monitorResult = collectRuntime(longTasks, runtime)
+    return monitorResult
+  }
   const playback = new Promise(resolve => { resolvePlayback = resolve })
   const finish = reason => {
     if (finished) return
@@ -429,6 +434,7 @@ async function playMounted ({ token, player, video, maxPlaybackMs = Infinity }) 
     clearTimeout(timeoutId)
     resolvePlayback(reason)
   }
+  try {
   token.finishPlayback = finish
   token.pause = () => {
     if (finished || pausedAt) return
@@ -503,10 +509,15 @@ async function playMounted ({ token, player, video, maxPlaybackMs = Infinity }) 
   requireCurrentToken(token)
   const endedAt = performance.now()
   if (pausedAt) pausedMs += endedAt - pausedAt
-  const runtimeResult = collectRuntime(longTasks, runtime)
+  const runtimeResult = finishMonitors()
   const activeDurationMs = Math.max(0, endedAt - startedAt - pausedMs)
   const playbackResult = collector.summarize(activeDurationMs, runtimeResult.rafFrames)
   return { reason, startMs, firstPaintMs, playback: playbackResult, runtime: runtimeResult }
+  } finally {
+    clearTimeout(timeoutId)
+    if (token.finishPlayback === finish) token.finishPlayback = null
+    finishMonitors()
+  }
 }
 
 async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, publish = true } = {}) {
