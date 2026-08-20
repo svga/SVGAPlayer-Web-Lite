@@ -48,39 +48,6 @@ async function readJson (path) {
   }
 }
 
-function walkReachable (value, visitor) {
-  if (Array.isArray(value)) {
-    for (const item of value) walkReachable(item, visitor)
-    return
-  }
-  if (!value || typeof value !== 'object') return
-  if (value.type === 'IfStatement') {
-    visitor(value)
-    walkReachable(value.test, visitor)
-    if (value.test.type === 'Literal' && typeof value.test.value === 'boolean') {
-      walkReachable(value.test.value ? value.consequent : value.alternate, visitor)
-    } else {
-      walkReachable(value.consequent, visitor)
-      walkReachable(value.alternate, visitor)
-    }
-    return
-  }
-  if (value.type === 'ConditionalExpression') {
-    visitor(value)
-    walkReachable(value.test, visitor)
-    if (value.test.type === 'Literal' && typeof value.test.value === 'boolean') {
-      walkReachable(value.test.value ? value.consequent : value.alternate, visitor)
-    } else {
-      walkReachable(value.consequent, visitor)
-      walkReachable(value.alternate, visitor)
-    }
-    return
-  }
-  if (value.type === 'FunctionExpression' || value.type === 'ArrowFunctionExpression') return
-  if (typeof value.type === 'string') visitor(value)
-  for (const child of Object.values(value)) walkReachable(child, visitor)
-}
-
 function identifierIs (node, name) {
   return node?.type === 'Identifier' && node.name === name
 }
@@ -93,19 +60,34 @@ function assignmentHasProperty (node, property, objectName) {
 
 function usesIdentifier (node, name) {
   let found = false
-  walkReachable(node, candidate => { found ||= identifierIs(candidate, name) })
+  const visit = value => {
+    if (found || !value || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    if (identifierIs(value, name)) {
+      found = true
+      return
+    }
+    if (value.type === 'FunctionExpression' || value.type === 'ArrowFunctionExpression') return
+    for (const child of Object.values(value)) visit(child)
+  }
+  visit(node)
   return found
 }
 
 function hasCommonJsTypeofTest (test) {
-  let hasExports = false
-  let hasModule = false
-  walkReachable(test, candidate => {
-    if (candidate.type !== 'UnaryExpression' || candidate.operator !== 'typeof') return
-    hasExports ||= identifierIs(candidate.argument, 'exports')
-    hasModule ||= identifierIs(candidate.argument, 'module')
-  })
-  return hasExports && hasModule
+  const typeofNames = new Set()
+  const visit = node => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) return void node.forEach(visit)
+    if (node.type === 'UnaryExpression' && node.operator === 'typeof' && node.argument.type === 'Identifier') typeofNames.add(node.argument.name)
+    if (node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') return
+    for (const child of Object.values(node)) visit(child)
+  }
+  visit(test)
+  return typeofNames.has('exports') && typeofNames.has('module')
 }
 
 function isCommonJsExportTarget (node) {
@@ -119,14 +101,49 @@ function isGlobalSvgaAssignment (node, globalName) {
     identifierIs(node.left.property, 'SVGA') && usesIdentifier(node.left.object, globalName)
 }
 
-function branchCallsFactory (branch, factoryName, acceptsArgument) {
-  let found = false
-  walkReachable(branch, candidate => {
-    if (candidate.type === 'CallExpression' && identifierIs(candidate.callee, factoryName)) {
-      found ||= candidate.arguments.some(acceptsArgument)
-    }
-  })
-  return found
+function expressionCallsFactory (expression, factoryName, acceptsArgument) {
+  if (expression?.type === 'CallExpression' && identifierIs(expression.callee, factoryName)) {
+    return expression.arguments.some(acceptsArgument)
+  }
+  if (expression?.type === 'SequenceExpression') return expression.expressions.some(candidate => expressionCallsFactory(candidate, factoryName, acceptsArgument))
+  if (expression?.type === 'ConditionalExpression') {
+    return expressionCallsFactory(expression.consequent, factoryName, acceptsArgument) || expressionCallsFactory(expression.alternate, factoryName, acceptsArgument)
+  }
+  return false
+}
+
+function expressionAssignsExport (expression, property, exportedObject) {
+  if (assignmentHasProperty(expression, property, exportedObject)) return true
+  return expression?.type === 'SequenceExpression' && expression.expressions.some(candidate => assignmentHasProperty(candidate, property, exportedObject))
+}
+
+function reachableTopLevelStatements (body) {
+  const statements = []
+  for (const statement of body.body) {
+    if (statement.type === 'ReturnStatement' || statement.type === 'ThrowStatement') break
+    statements.push(statement)
+  }
+  return statements
+}
+
+function patternBindsName (pattern, names) {
+  if (pattern?.type === 'Identifier') return names.has(pattern.name)
+  if (pattern?.type === 'RestElement') return patternBindsName(pattern.argument, names)
+  if (pattern?.type === 'AssignmentPattern') return patternBindsName(pattern.left, names)
+  if (pattern?.type === 'ArrayPattern') return pattern.elements.some(element => patternBindsName(element, names))
+  if (pattern?.type === 'ObjectPattern') return pattern.properties.some(property => patternBindsName(property.value, names))
+  return false
+}
+
+function hasShadowedBinding (value, names) {
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return value.some(item => hasShadowedBinding(item, names))
+  if (value.type === 'FunctionExpression' || value.type === 'ArrowFunctionExpression') return false
+  if (value.type === 'FunctionDeclaration') return names.has(value.id.name)
+  if (value.type === 'ClassDeclaration') return names.has(value.id.name)
+  if (value.type === 'VariableDeclarator' && patternBindsName(value.id, names)) return true
+  if (value.type === 'CatchClause' && patternBindsName(value.param, names)) return true
+  return Object.values(value).some(child => hasShadowedBinding(child, names))
 }
 
 function unwrapIifeCall (expression) {
@@ -155,24 +172,28 @@ function hasUmdRuntimeShape (program) {
   const exportedObject = factory.params[0]
   if (!identifierIs(factoryParameter, factoryParameter?.name) || !identifierIs(globalParameter, globalParameter?.name) || !identifierIs(exportedObject, exportedObject?.name)) return false
 
+  const wrapperStatements = reachableTopLevelStatements(wrapper.body)
+  const factoryStatements = reachableTopLevelStatements(factory.body)
+  if (hasShadowedBinding(wrapperStatements, new Set([factoryParameter.name, globalParameter.name])) || hasShadowedBinding(factoryStatements, new Set([exportedObject.name]))) return false
+
   let exportsParser = false
   let exportsPlayer = false
-  walkReachable(factory.body, candidate => {
-    exportsParser ||= assignmentHasProperty(candidate, 'Parser', exportedObject.name)
-    exportsPlayer ||= assignmentHasProperty(candidate, 'Player', exportedObject.name)
-  })
+  for (const statement of factoryStatements) {
+    if (statement.type !== 'ExpressionStatement') continue
+    exportsParser ||= expressionAssignsExport(statement.expression, 'Parser', exportedObject.name)
+    exportsPlayer ||= expressionAssignsExport(statement.expression, 'Player', exportedObject.name)
+  }
   if (!exportsParser || !exportsPlayer) return false
 
   let hasLinkedBranches = false
-  walkReachable(wrapper.body, candidate => {
-    if (candidate.type !== 'IfStatement' && candidate.type !== 'ConditionalExpression') return
-    const consequent = candidate.consequent
-    const alternate = candidate.alternate
-    if (!alternate || !hasCommonJsTypeofTest(candidate.test)) return
-    const commonJsCallsFactory = branchCallsFactory(consequent, factoryParameter.name, isCommonJsExportTarget)
-    const globalCallsFactory = branchCallsFactory(alternate, factoryParameter.name, argument => isGlobalSvgaAssignment(argument, globalParameter.name))
+  for (const statement of wrapperStatements) {
+    if (statement.type !== 'ExpressionStatement' || statement.expression.type !== 'ConditionalExpression') continue
+    const candidate = statement.expression
+    if (!hasCommonJsTypeofTest(candidate.test)) continue
+    const commonJsCallsFactory = expressionCallsFactory(candidate.consequent, factoryParameter.name, isCommonJsExportTarget)
+    const globalCallsFactory = expressionCallsFactory(candidate.alternate, factoryParameter.name, argument => isGlobalSvgaAssignment(argument, globalParameter.name))
     hasLinkedBranches ||= commonJsCallsFactory && globalCallsFactory
-  })
+  }
   return hasLinkedBranches
 }
 
@@ -323,64 +344,99 @@ async function downloadRuntime (version, integrity, dependencies) {
       scriptIntegrity: validated.scriptIntegrity
     })
     await mkdir(versionsDir, { recursive: true })
-    try {
-      await rename(unpacked, target)
-      validated.runtimePath = join(target, 'dist/index.min.js')
-      return validated
-    } catch (error) {
-      const conflict = error && typeof error === 'object' && ['EEXIST', 'ENOTEMPTY'].includes(error.code)
-      if (!conflict) throw error
-      const expectedRuntime = {
-        cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true,
-        expectedIntegrity: integrity, expectedScriptIntegrity: validated.scriptIntegrity, projectDir
-      }
-      const published = await cachedRuntime(expectedRuntime)
-      if (published) return published
-
+    const expectedRuntime = {
+      cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true,
+      expectedIntegrity: integrity, expectedScriptIntegrity: validated.scriptIntegrity, projectDir
+    }
+    const inspectTarget = async () => {
+      const matching = await cachedRuntime(expectedRuntime)
+      if (matching) return { matching, existing: null }
       const existing = await cachedRuntime({
         cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
       })
-      if (existing) {
-        throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+      return { matching: null, existing }
+    }
+    const matchesExpectedRuntime = runtime => runtime && runtime.integrity === integrity && runtime.scriptIntegrity === validated.scriptIntegrity
+    const isCollision = error => error && typeof error === 'object' && ['EEXIST', 'ENOTEMPTY'].includes(error.code)
+    let lastError = null
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const before = await inspectTarget()
+      if (before.matching) return before.matching
+      if (matchesExpectedRuntime(before.existing)) return before.existing
+      if (before.existing) throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+
+      try {
+        await rename(unpacked, target)
+        validated.runtimePath = join(target, 'dist/index.min.js')
+        return validated
+      } catch (error) {
+        if (!isCollision(error)) throw error
+        lastError = error
       }
 
+      const afterPublishConflict = await inspectTarget()
+      if (afterPublishConflict.matching) return afterPublishConflict.matching
+      if (matchesExpectedRuntime(afterPublishConflict.existing)) return afterPublishConflict.existing
+      if (afterPublishConflict.existing) throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+
       const quarantine = join(versionsDir, `.${version}.quarantine-${randomUUID()}`)
-      let movedToQuarantine = false
+      let quarantineIsInvalid = false
       try {
         try {
           await rename(target, quarantine)
-          movedToQuarantine = true
-        } catch (quarantineError) {
-          const targetMoved = quarantineError && typeof quarantineError === 'object' && quarantineError.code === 'ENOENT'
-          if (!targetMoved) throw quarantineError
+        } catch (error) {
+          if (error && typeof error === 'object' && error.code === 'ENOENT') continue
+          throw error
         }
 
-        if (movedToQuarantine) {
-          const movedRuntime = await cachedRuntimeAt({
-            directory: quarantine, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
-          })
-          if (movedRuntime) {
+        const movedMatching = await cachedRuntimeAt({
+          directory: quarantine, version, cacheState: 'confirmed-cache', onlineConfirmed: true,
+          expectedIntegrity: integrity, expectedScriptIntegrity: validated.scriptIntegrity, projectDir
+        })
+        const movedExisting = movedMatching || await cachedRuntimeAt({
+          directory: quarantine, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
+        })
+        if (movedExisting) {
+          try {
             await rename(quarantine, target)
-            movedToQuarantine = false
-            const restored = await cachedRuntime(expectedRuntime)
-            if (restored) return restored
-            throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+          } catch (error) {
+            const winner = await inspectTarget()
+            if (winner.matching) {
+              await rm(quarantine, { force: true, recursive: true })
+              return winner.matching
+            }
+            if (matchesExpectedRuntime(winner.existing)) {
+              await rm(quarantine, { force: true, recursive: true })
+              return winner.existing
+            }
+            if (winner.existing) throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+            throw error
           }
+          const restored = await inspectTarget()
+          if (restored.matching) return restored.matching
+          if (matchesExpectedRuntime(restored.existing)) return restored.existing
+          if (restored.existing) throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+          continue
         }
 
+        quarantineIsInvalid = true
         try {
           await rename(unpacked, target)
           validated.runtimePath = join(target, 'dist/index.min.js')
           return validated
-        } catch (publishError) {
-          const winner = await cachedRuntime(expectedRuntime)
-          if (winner) return winner
-          throw publishError
+        } catch (error) {
+          lastError = error
+          const winner = await inspectTarget()
+          if (winner.matching) return winner.matching
+          if (matchesExpectedRuntime(winner.existing)) return winner.existing
+          if (winner.existing) throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
         }
       } finally {
-        if (movedToQuarantine) await rm(quarantine, { force: true, recursive: true })
+        if (quarantineIsInvalid) await rm(quarantine, { force: true, recursive: true })
       }
     }
+    throw new Error(`Baseline cache publish collision for ${version} did not produce a matching runtime: ${lastError instanceof Error ? lastError.message : String(lastError)}`)
   } finally {
     await rm(staging, { force: true, recursive: true })
   }

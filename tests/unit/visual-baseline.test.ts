@@ -138,6 +138,16 @@ describe('baseline runtime preparation', () => {
     await expect(prepareBaselineRuntime({ baseline: 'local' }, { projectDir })).resolves.toBeNull()
   })
 
+  it.each([
+    ['exports only after a return', Buffer.from('!function(global, factory) { typeof exports && typeof module ? factory(exports) : factory(global.SVGA = {}) }(this, function(output) { return; output.Parser = 1; output.Player = 1 })')],
+    ['a block-level factory parameter shadow', Buffer.from('!function(global, factory) { if (typeof exports && typeof module) { const factory = () => {}; factory(exports) } else factory(global.SVGA = {}) }(this, function(output) { output.Parser = 1; output.Player = 1 })')],
+    ['a block-level factory output shadow', Buffer.from('!function(global, factory) { typeof exports && typeof module ? factory(exports) : factory(global.SVGA = {}) }(this, function(output) { { const output = {}; output.Parser = 1; output.Player = 1 } })')]
+  ])('rejects a UMD-like IIFE with %s', async (_name, bytes) => {
+    const projectDir = await temporaryDirectory()
+    await writeRuntime(projectDir, '2.2.0', bytes)
+    await expect(prepareBaselineRuntime({ baseline: 'local' }, { projectDir })).resolves.toBeNull()
+  })
+
   it('rejects a tampered cached script while offline instead of reporting a replacement hash', async () => {
     const projectDir = await temporaryDirectory()
     const cacheDir = join(projectDir, '.cache')
@@ -248,6 +258,39 @@ describe('baseline runtime preparation', () => {
       cacheDir,
       run: async () => { throw new Error('cache should be used') }
     })).resolves.toMatchObject({ cacheState: 'cache', scriptIntegrity })
+  })
+
+  it.each(['missing metadata', 'tampered script'])('repairs %s for four concurrent exact requests across two rounds', async corruption => {
+    const projectDir = await temporaryDirectory()
+    const cacheDir = join(projectDir, '.cache')
+    const version = '2.1.9'
+    await writeRuntime(projectDir, '2.2.0')
+    await writeCachedRuntime(cacheDir, version)
+
+    for (const round of [1, 2]) {
+      if (corruption === 'missing metadata') await rm(join(cacheDir, 'versions', version, 'metadata.json'), { force: true })
+      else await writeFile(join(cacheDir, 'versions', version, 'dist/index.min.js'), `const brokenRound = ${round}`)
+
+      let arrived = 0
+      let release: (() => void) | undefined
+      const barrier = new Promise<void>(resolve => { release = resolve })
+      const run = async (command: string, arguments_: string[]): Promise<string> => {
+        if (command === 'npm' && arguments_[0] === 'view') return JSON.stringify({ version, 'dist.integrity': integrity })
+        if (command === 'npm' && arguments_[0] === 'pack') return JSON.stringify({ svga: { filename: 'svga-2.1.9.tgz' } })
+        if (command === 'tar') {
+          await writeRuntime(arguments_[arguments_.indexOf('-C') + 1], version)
+          arrived++
+          if (arrived === 4) release?.()
+          await barrier
+          return ''
+        }
+        throw new Error(`unexpected command: ${command}`)
+      }
+
+      const runtimes = await Promise.all(Array.from({ length: 4 }, () => prepareBaselineRuntime({ baseline: version }, { projectDir, cacheDir, run })))
+      expect(runtimes.every(runtime => runtime?.scriptIntegrity === scriptIntegrity)).toBe(true)
+      await expect(readFile(join(cacheDir, 'versions', version, 'dist/index.min.js'))).resolves.toEqual(packageBytes)
+    }
   })
 
   it('fails an exact baseline request with its version and acquisition reason', async () => {
