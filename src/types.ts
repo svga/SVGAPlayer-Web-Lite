@@ -160,24 +160,19 @@ export interface VideoSprite {
   frames: VideoFrame[]
 }
 
-export type Bitmap = HTMLImageElement | OffscreenCanvas | ImageBitmap
+export type Drawable = HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap
 
 export interface BitmapsCache {
-  [key: string]: Bitmap | ImageBitmap
+  [key: string]: Drawable
 }
 
-export type ReplaceElement = HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
+export type PlayerElement = HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
 
 export interface ReplaceElements {
-  [key: string]: ReplaceElement
+  [key: string]: PlayerElement
 }
 
-export type DynamicElement = HTMLImageElement | HTMLCanvasElement | OffscreenCanvas
-
-export interface DynamicElements {
-  [key: string]: DynamicElement
-}
-
+export type DynamicElements = ReplaceElements
 export interface Movie {
   version: string
   images: {

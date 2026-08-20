@@ -1,6 +1,5 @@
 import {
   DynamicElements,
-  DynamicElement,
   Video,
   Transform,
   SHAPE_TYPE,
@@ -8,8 +7,8 @@ import {
   VideoFrameShape,
   VideoSprite,
   BitmapsCache,
-  Bitmap,
-  ReplaceElement,
+  Drawable,
+  PlayerElement,
   ReplaceElements
 } from '../types'
 
@@ -50,9 +49,9 @@ function drawSprite (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   sprite: VideoSprite,
   currentFrame: number,
-  bitmap: Bitmap | undefined,
-  replaceElement: ReplaceElement | undefined,
-  dynamicElement: DynamicElement | undefined
+  bitmap: Drawable | undefined,
+  replaceElement: PlayerElement | undefined,
+  dynamicElement: PlayerElement | undefined
 ): void {
   const frame = sprite.frames[currentFrame]
   if (!frame || frame.alpha < 0.05) return
@@ -62,12 +61,10 @@ function drawSprite (
     context.globalAlpha = frame.alpha
     const transform = frame.transform
     if (transform) context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
+    if (frame.clipPath && !clipPath(context, frame.clipPath)) return
 
-    if (bitmap) {
-      if (frame.clipPath.length > 0 && !clipPath(context, frame.clipPath, undefined)) return
-      if (replaceElement) context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
-      else context.drawImage(bitmap, 0, 0, frame.layout.width, frame.layout.height)
-    }
+    const image = replaceElement || bitmap
+    if (image) context.drawImage(image, 0, 0, frame.layout.width, frame.layout.height)
 
     if (dynamicElement) {
       context.drawImage(dynamicElement, (frame.layout.width - dynamicElement.width) / 2, (frame.layout.height - dynamicElement.height) / 2)
@@ -156,31 +153,11 @@ function drawSvgPath (
 
 function clipPath (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  d: string | undefined,
-  transform: Transform | undefined
+  d: string
 ): boolean {
   const path = svgPath(d)
   if (!path) return false
-  if (!transform) {
-    context.clip(path)
-    return true
-  }
-
-  const { a, b, c, d: scaleY, tx, ty } = transform
-  if (![a, b, c, scaleY, tx, ty].every(Number.isFinite)) return false
-  const determinant = a * scaleY - b * c
-  if (!Number.isFinite(determinant) || determinant === 0) return false
-  context.transform(a, b, c, scaleY, tx, ty)
-  try {
-    context.clip(path)
-  } finally {
-    context.transform(
-      scaleY / determinant, -b / determinant,
-      -c / determinant, a / determinant,
-      (c * ty - scaleY * tx) / determinant,
-      (b * tx - a * ty) / determinant
-    )
-  }
+  context.clip(path)
   return true
 }
 

@@ -45,14 +45,14 @@ describe('Animator lifecycle', () => {
   it('keeps exactly one RAF scheduler after 1000 starts', () => {
     const raf = installRaf()
     const animator = new Animator()
-    animator.startValue = 2
-    animator.endValue = 20
-    animator.duration = 1000
-    animator.currentTimeMillsecond = () => 0
+    animator.__svgaStart = 2
+    animator.__svgaEnd = 20
+    animator.__svgaDuration = 1000
+    animator.__svgaClock = () => 0
     const updates: number[] = []
-    animator.onUpdate = value => updates.push(value)
+    animator.__svgaOnUpdate = value => updates.push(value)
 
-    for (let index = 0; index < 1000; index++) animator.start()
+    for (let index = 0; index < 1000; index++) animator.__svgaRun()
 
     expect(raf.callbacks).toHaveLength(1)
     expect(raf.cancelled).toHaveLength(999)
@@ -63,17 +63,17 @@ describe('Animator lifecycle', () => {
   it('ignores an already queued callback from an older run', () => {
     const raf = installRaf()
     const animator = new Animator()
-    animator.startValue = 3
-    animator.endValue = 9
-    animator.duration = 100
+    animator.__svgaStart = 3
+    animator.__svgaEnd = 9
+    animator.__svgaDuration = 100
     let now = 0
-    animator.currentTimeMillsecond = () => now
+    animator.__svgaClock = () => now
     const updates: number[] = []
-    animator.onUpdate = value => updates.push(value)
+    animator.__svgaOnUpdate = value => updates.push(value)
 
-    animator.start()
+    animator.__svgaRun()
     const staleCallback = raf.callbacks.get(raf.requested[0])
-    animator.start()
+    animator.__svgaRun()
     now = 50
     staleCallback?.(50)
 
@@ -85,15 +85,15 @@ describe('Animator lifecycle', () => {
   it('publishes the start value and ends without scheduling for zero duration', () => {
     const raf = installRaf()
     const animator = new Animator()
-    animator.startValue = 7
-    animator.endValue = 7
-    animator.duration = 0
+    animator.__svgaStart = 7
+    animator.__svgaEnd = 7
+    animator.__svgaDuration = 0
     const updates: number[] = []
     const onEnd = vi.fn()
-    animator.onUpdate = value => updates.push(value)
-    animator.onEnd = onEnd
+    animator.__svgaOnUpdate = value => updates.push(value)
+    animator.__svgaOnEnd = onEnd
 
-    animator.start()
+    animator.__svgaRun()
 
     expect(updates).toEqual([7])
     expect(onEnd).toHaveBeenCalledOnce()
@@ -101,18 +101,18 @@ describe('Animator lifecycle', () => {
     expect(raf.callbacks).toHaveLength(0)
   })
 
-  it.each(['onStart', 'onUpdate', 'onEnd'] as const)(
+  it.each(['__svgaOnStart', '__svgaOnUpdate', '__svgaOnEnd'] as const)(
     'retires the scheduler when %s throws and preserves the error',
     callbackName => {
       const raf = installRaf()
       const animator = new Animator()
-      animator.startValue = 0
-      animator.endValue = callbackName === 'onEnd' ? 0 : 10
-      animator.duration = callbackName === 'onEnd' ? 0 : 100
+      animator.__svgaStart = 0
+      animator.__svgaEnd = callbackName === '__svgaOnEnd' ? 0 : 10
+      animator.__svgaDuration = callbackName === '__svgaOnEnd' ? 0 : 100
       const expected = new Error(callbackName)
       animator[callbackName] = () => { throw expected }
 
-      expect(() => animator.start()).toThrow(expected)
+      expect(() => animator.__svgaRun()).toThrow(expected)
       expect(raf.callbacks).toHaveLength(0)
     }
   )
@@ -120,19 +120,19 @@ describe('Animator lifecycle', () => {
   it('retires a queued RAF when an update callback throws', () => {
     const raf = installRaf()
     const animator = new Animator()
-    animator.startValue = 0
-    animator.endValue = 10
-    animator.duration = 100
+    animator.__svgaStart = 0
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
     let now = 0
-    animator.currentTimeMillsecond = () => now
+    animator.__svgaClock = () => now
     let updateCount = 0
     const expected = new Error('scheduled update')
-    animator.onUpdate = () => {
+    animator.__svgaOnUpdate = () => {
       updateCount++
       if (updateCount === 2) throw expected
     }
 
-    animator.start()
+    animator.__svgaRun()
     const requestId = raf.requested[0]
     const callback = raf.callbacks.get(requestId)
     raf.callbacks.delete(requestId)
@@ -145,17 +145,17 @@ describe('Animator lifecycle', () => {
   it('does not let onUpdate reentrancy schedule a second chain', () => {
     const raf = installRaf()
     const animator = new Animator()
-    animator.endValue = 10
-    animator.duration = 100
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
     let now = 0
     let updates = 0
-    animator.currentTimeMillsecond = () => now
-    animator.onUpdate = () => {
+    animator.__svgaClock = () => now
+    animator.__svgaOnUpdate = () => {
       updates++
-      if (updates === 2) animator.start()
+      if (updates === 2) animator.__svgaRun()
     }
 
-    animator.start()
+    animator.__svgaRun()
     const requestId = raf.requested[0]
     const callback = raf.callbacks.get(requestId)
     raf.callbacks.delete(requestId)
@@ -168,13 +168,13 @@ describe('Animator lifecycle', () => {
   it('does not let onEnd reentrancy schedule a second chain', () => {
     const raf = installRaf()
     const animator = new Animator()
-    animator.endValue = 10
-    animator.duration = 100
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
     let now = 0
-    animator.currentTimeMillsecond = () => now
-    animator.onEnd = () => animator.start()
+    animator.__svgaClock = () => now
+    animator.__svgaOnEnd = () => animator.__svgaRun()
 
-    animator.start()
+    animator.__svgaRun()
     const requestId = raf.requested[0]
     const callback = raf.callbacks.get(requestId)
     raf.callbacks.delete(requestId)
@@ -217,16 +217,16 @@ describe('Animator lifecycle', () => {
     })
 
     const animator = new Animator()
-    animator.isOpenNoExecutionDelay = true
-    animator.startValue = 0
-    animator.endValue = 10
-    animator.duration = 100
-    animator.currentTimeMillsecond = () => 0
+    animator.__svgaNoDelay = true
+    animator.__svgaStart = 0
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+    animator.__svgaClock = () => 0
 
-    animator.start()
-    animator.start()
-    animator.stop()
-    animator.stop()
+    animator.__svgaRun()
+    animator.__svgaRun()
+    animator.__svgaStop()
+    animator.__svgaStop()
 
     expect(workers).toHaveLength(2)
     expect(workers[0].terminate).toHaveBeenCalledOnce()
@@ -235,5 +235,104 @@ describe('Animator lifecycle', () => {
     expect(workers[1].postMessage).toHaveBeenCalledOnce()
     expect(createdUrls).toEqual(revokedUrls)
     expect(raf.callbacks).toHaveLength(0)
+  })
+
+  it('falls back to one RAF chain when Worker construction fails', () => {
+    const raf = installRaf()
+    vi.stubGlobal('Worker', class {
+      constructor () { throw new Error('worker unavailable') }
+    })
+    const animator = new Animator()
+    animator.__svgaNoDelay = true
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+
+    expect(() => animator.__svgaRun()).not.toThrow()
+    expect(raf.callbacks).toHaveLength(1)
+    expect(raf.requested).toHaveLength(1)
+  })
+
+  it('terminates and falls back to RAF when the initial Worker postMessage fails', () => {
+    const raf = installRaf()
+    const terminate = vi.fn()
+    vi.stubGlobal('Worker', class {
+      public onmessage: (() => void) | null = null
+      public readonly terminate = terminate
+      public postMessage (): void { throw new Error('post failed') }
+    })
+    const animator = new Animator()
+    animator.__svgaNoDelay = true
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+
+    expect(() => animator.__svgaRun()).not.toThrow()
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(raf.callbacks).toHaveLength(1)
+  })
+
+  it.each(['onerror', 'onmessageerror'] as const)(
+    'terminates and falls back to one RAF chain after Worker %s',
+    eventName => {
+      const raf = installRaf()
+      const worker: {
+        onmessage: (() => void) | null
+        onerror: (() => void) | null
+        onmessageerror: (() => void) | null
+        terminate: ReturnType<typeof vi.fn>
+        postMessage: ReturnType<typeof vi.fn>
+      } = { onmessage: null, onerror: null, onmessageerror: null, terminate: vi.fn(), postMessage: vi.fn() }
+      vi.stubGlobal('Worker', function () { return worker })
+      const animator = new Animator()
+      animator.__svgaNoDelay = true
+      animator.__svgaEnd = 10
+      animator.__svgaDuration = 100
+      animator.__svgaRun()
+
+      worker?.[eventName]?.()
+      worker?.[eventName]?.()
+
+      expect(worker?.terminate).toHaveBeenCalledOnce()
+      expect(raf.callbacks).toHaveLength(1)
+      expect(raf.requested).toHaveLength(1)
+    }
+  )
+
+  it('continues the same timeline on one RAF when a runtime Worker post fails', () => {
+    const raf = installRaf()
+      const worker: {
+        onmessage: (() => void) | null
+        terminate: ReturnType<typeof vi.fn>
+        onerror: (() => void) | null
+        onmessageerror: (() => void) | null
+        postMessage: () => void
+      } = {
+        onmessage: null,
+        onerror: null,
+        onmessageerror: null,
+        terminate: vi.fn(),
+        postMessage: () => {
+          posts++
+          if (posts === 2) throw new Error('runtime post failed')
+        }
+      }
+      let posts = 0
+    vi.stubGlobal('Worker', function () { return worker })
+    const animator = new Animator()
+    let now = 0
+    const updates: number[] = []
+    animator.__svgaNoDelay = true
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+    animator.__svgaClock = () => now
+    animator.__svgaOnUpdate = value => updates.push(value)
+    animator.__svgaRun()
+
+    now = 50
+    expect(() => worker?.onmessage?.()).not.toThrow()
+
+    expect(updates).toEqual([0, 5])
+    expect(worker?.terminate).toHaveBeenCalledOnce()
+    expect(raf.callbacks).toHaveLength(1)
+    expect(raf.requested).toHaveLength(1)
   })
 })

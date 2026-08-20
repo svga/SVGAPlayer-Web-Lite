@@ -175,6 +175,7 @@ function captureConstructorFailure (create: () => void, capture: RuntimeCapture)
 describe('Player configuration and visibility observer', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     pendingImages.length = 0
     observers.length = 0
     rafCallbacks.clear()
@@ -183,10 +184,28 @@ describe('Player configuration and visibility observer', () => {
     nextRafId = 1
     now = 0
     observeImplementation = undefined
+    vi.stubGlobal('HTMLCanvasElement', FakeCanvas)
+    vi.stubGlobal('HTMLImageElement', FakeImage)
+    vi.stubGlobal('ImageBitmap', FakeImageBitmap)
+    vi.stubGlobal('Image', FakeImage)
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
+    vi.stubGlobal('document', {
+      createElement: (tagName: string) => tagName === 'img' ? new FakeImage() : new FakeCanvas()
+    })
+    vi.stubGlobal('performance', { now: () => now })
+    vi.stubGlobal('window', {
+      IntersectionObserver: FakeIntersectionObserver,
+      OffscreenCanvas: undefined,
+      navigator: { userAgent: 'Vitest' },
+      performance: { now: () => now },
+      requestAnimationFrame,
+      cancelAnimationFrame,
+      URL: globalThis.URL
+    })
   })
 
   it('removes its runtime and stops its Animator when constructor config validation fails', () => {
-    const stop = vi.spyOn(Animator.prototype, 'stop')
+    const stop = vi.spyOn(Animator.prototype, '__svgaStop')
     const capture: RuntimeCapture = {}
 
     const error = captureConstructorFailure(() => {
@@ -201,11 +220,11 @@ describe('Player configuration and visibility observer', () => {
 
   it('disconnects its observer, closes owned cache, and removes its runtime when observe throws', () => {
     const expected = new Error('observe failed')
-    const stop = vi.spyOn(Animator.prototype, 'stop')
+    const stop = vi.spyOn(Animator.prototype, '__svgaStop')
     const capture: RuntimeCapture = {}
     const owned = new FakeImageBitmap(1, 1)
     observeImplementation = () => {
-      const cache = (capture.player as unknown as { cacheFrames: Record<string, FakeImageBitmap> }).cacheFrames
+      const cache = (capture.player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> }).__svgaFrames
       cache.owned = owned
       throw expected
     }
@@ -223,35 +242,24 @@ describe('Player configuration and visibility observer', () => {
     stop.mockRestore()
   })
 
-  it('disconnects its observer and removes its runtime when OffscreenCanvas construction throws', () => {
-    const expected = new Error('OffscreenCanvas failed')
-    const stop = vi.spyOn(Animator.prototype, 'stop')
-    const capture: RuntimeCapture = {}
-    const originalWindow = window
+  it('falls back to an HTML canvas when OffscreenCanvas construction throws', () => {
     vi.stubGlobal('window', {
-      ...originalWindow,
+      ...window,
       OffscreenCanvas: class {
-        constructor () { throw expected }
+        constructor () { throw new Error('OffscreenCanvas failed') }
       }
     })
 
-    const error = captureConstructorFailure(() => {
-      new Player({ isUseIntersectionObserver: true })
-    }, capture)
-    vi.stubGlobal('window', originalWindow)
-
-    expect(error).toBe(expected)
-    expect(stop).toHaveBeenCalledOnce()
-    expect(observers[0].disconnect).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
-    stop.mockRestore()
+    const player = new Player({ isUseIntersectionObserver: true })
+    expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeCanvas)
+    expect(observers[0].disconnect).not.toHaveBeenCalled()
   })
 
   it('does not dispatch a no-op destroy override while cleaning a config failure', () => {
     class NoopDestroyPlayer extends Player {
       public override destroy (): void {}
     }
-    const stop = vi.spyOn(Animator.prototype, 'stop')
+    const stop = vi.spyOn(Animator.prototype, '__svgaStop')
     const capture: RuntimeCapture = {}
 
     const error = captureConstructorFailure(() => {
@@ -271,7 +279,7 @@ describe('Player configuration and visibility observer', () => {
       public override setConfig (_options: PlayerConfigOptions): void { throw expected }
       public override destroy (): void { throw cleanupError }
     }
-    const stop = vi.spyOn(Animator.prototype, 'stop')
+    const stop = vi.spyOn(Animator.prototype, '__svgaStop')
     const capture: RuntimeCapture = {}
 
     const error = captureConstructorFailure(() => {
@@ -290,11 +298,11 @@ describe('Player configuration and visibility observer', () => {
     class ThrowingDestroyPlayer extends Player {
       public override destroy (): void { throw cleanupError }
     }
-    const stop = vi.spyOn(Animator.prototype, 'stop')
+    const stop = vi.spyOn(Animator.prototype, '__svgaStop')
     const capture: RuntimeCapture = {}
     const owned = new FakeImageBitmap(1, 1)
     observeImplementation = () => {
-      const cache = (capture.player as unknown as { cacheFrames: Record<string, FakeImageBitmap> }).cacheFrames
+      const cache = (capture.player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> }).__svgaFrames
       cache.owned = owned
       throw expected
     }
@@ -312,32 +320,18 @@ describe('Player configuration and visibility observer', () => {
     stop.mockRestore()
   })
 
-  it('preserves an OffscreenCanvas error when destroy is overridden to throw', () => {
-    const expected = new Error('OffscreenCanvas failed')
-    const cleanupError = new Error('overridden destroy failed')
-    class ThrowingDestroyPlayer extends Player {
-      public override destroy (): void { throw cleanupError }
-    }
-    const stop = vi.spyOn(Animator.prototype, 'stop')
-    const capture: RuntimeCapture = {}
-    const originalWindow = window
+  it('falls back when OffscreenCanvas has no usable 2D context', () => {
     vi.stubGlobal('window', {
-      ...originalWindow,
+      ...window,
       OffscreenCanvas: class {
-        constructor () { throw expected }
+        public width = 1
+        public height = 1
+        public getContext (): null { return null }
       }
     })
 
-    const error = captureConstructorFailure(() => {
-      new ThrowingDestroyPlayer({ isUseIntersectionObserver: true })
-    }, capture)
-    vi.stubGlobal('window', originalWindow)
-
-    expect(error).toBe(expected)
-    expect(stop).toHaveBeenCalledOnce()
-    expect(observers[0].disconnect).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
-    stop.mockRestore()
+    const player = new Player({})
+    expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeCanvas)
   })
 
   it('merges partial configuration without resetting unspecified values', () => {
@@ -365,8 +359,8 @@ describe('Player configuration and visibility observer', () => {
       isUseIntersectionObserver: true,
       isOpenNoExecutionDelay: true
     })
-    expect(observers).toHaveLength(2)
-    expect(observers[0].disconnect).toHaveBeenCalledOnce()
+    expect(observers).toHaveLength(1)
+    expect(observers[0].disconnect).not.toHaveBeenCalled()
   })
 
   it('applies every valid partial option when constructed without a container', () => {
@@ -418,6 +412,37 @@ describe('Player configuration and visibility observer', () => {
     expect(Object.prototype.hasOwnProperty.call(player.config, 'unknown')).toBe(false)
   })
 
+  it('returns frozen readonly snapshots that cannot mutate private configuration', () => {
+    const player = new Player({ loop: 3 })
+    const first = player.config
+
+    expect(Object.isFrozen(first)).toBe(true)
+    expect(() => { (first as unknown as { loop: number }).loop = 9 }).toThrow()
+    player.setConfig({ loop: 4 })
+
+    expect(first.loop).toBe(3)
+    expect(player.config.loop).toBe(4)
+    expect(player.config).not.toBe(first)
+  })
+
+  it.each([
+    { container: {} as HTMLCanvasElement },
+    { loop: -1 },
+    { loop: 1.5 },
+    { loop: Number.POSITIVE_INFINITY },
+    { fillMode: 'invalid' as PLAYER_FILL_MODE },
+    { playMode: 'backwards' as PLAYER_PLAY_MODE },
+    { isCacheFrames: 1 as unknown as boolean },
+    { isUseIntersectionObserver: null as unknown as boolean },
+    { isOpenNoExecutionDelay: 'true' as unknown as boolean }
+  ] satisfies PlayerConfigOptions[])('rejects every invalid non-frame option: %j', options => {
+    const player = new Player({ loop: 2 })
+    const previous = player.config
+
+    expect(() => player.setConfig(options)).toThrow()
+    expect(player.config).toEqual(previous)
+  })
+
   it.each([
     [{ startFrame: -1 }, /frame/],
     [{ endFrame: 1.5 }, /frame/],
@@ -455,24 +480,26 @@ describe('Player configuration and visibility observer', () => {
     player.setConfig({ isUseIntersectionObserver: false })
 
     expect(observer.disconnect).toHaveBeenCalledOnce()
-    expect((player as unknown as { isBeIntersection: boolean }).isBeIntersection).toBe(true)
+    expect((player as unknown as { __svgaVisible: boolean }).__svgaVisible).toBe(true)
     expect(player.config.isUseIntersectionObserver).toBe(false)
   })
 
-  it('ignores queued callbacks from a replaced observer', () => {
+  it('does not replace its observer for unrelated configuration changes', () => {
     const player = new Player({
       container: new FakeCanvas() as unknown as HTMLCanvasElement,
       isUseIntersectionObserver: true
     })
-    const staleObserver = observers[0]
+    const observer = observers[0]
 
     player.setConfig({ loop: 2 })
-    staleObserver.callback(
+    observer.callback(
       [{ intersectionRatio: 0 }] as IntersectionObserverEntry[],
-      staleObserver as unknown as IntersectionObserver
+      observer as unknown as IntersectionObserver
     )
 
-    expect((player as unknown as { isBeIntersection: boolean }).isBeIntersection).toBe(true)
+    expect(observers).toHaveLength(1)
+    expect(observer.disconnect).not.toHaveBeenCalled()
+    expect((player as unknown as { __svgaVisible: boolean }).__svgaVisible).toBe(false)
   })
 
   it('validates partial frame updates against the mounted video range', async () => {
@@ -481,6 +508,43 @@ describe('Player configuration and visibility observer', () => {
 
     expect(() => player.setConfig({ startFrame: 4 })).toThrow(/frame/)
     expect(() => player.setConfig({ loopStartFrame: 4 })).toThrow(/frame/)
+  })
+
+  it.each([true, 0, 2])('rejects a zero-length loop segment for loop %j', async loop => {
+    const player = new Player({ loop })
+    await player.mount(makeVideo({ frames: 4 }))
+
+    expect(() => player.setConfig({ loopStartFrame: 3 })).toThrow(/loop/)
+  })
+
+  it('rejects a zero-length configured range while looping', () => {
+    expect(() => new Player({
+      loop: true,
+      startFrame: 3,
+      endFrame: 3,
+      loopStartFrame: 3
+    })).toThrow(/loop/)
+  })
+
+  it('redraws the advanced current frame immediately when visibility returns', async () => {
+    const canvas = new FakeCanvas()
+    const player = new Player({
+      container: canvas as unknown as HTMLCanvasElement,
+      isUseIntersectionObserver: true,
+      loop: false
+    })
+    await player.mount(makeVideo({ frames: 4, fps: 10 }))
+    const observer = observers[0]
+    observer.callback([{ intersectionRatio: 0 }] as IntersectionObserverEntry[], observer as unknown as IntersectionObserver)
+    canvas.context.drawImage.mockClear()
+
+    player.start()
+    runRaf(rafRequests[rafRequests.length - 1], 300)
+    expect(player.currentFrame).toBe(3)
+    expect(canvas.context.drawImage).not.toHaveBeenCalled()
+    observer.callback([{ intersectionRatio: 1 }] as IntersectionObserverEntry[], observer as unknown as IntersectionObserver)
+
+    expect(canvas.context.drawImage).toHaveBeenCalledOnce()
   })
 })
 
@@ -538,11 +602,134 @@ describe('Player mount and playback lifecycle', () => {
     expect(player.videoEntity).toBeUndefined()
   })
 
-  it.each([[4097, 1], [4096, 4097], [0, 1]])('rejects decoded image dimensions %sx%s', async (width, height) => {
+  it.each([[16_777_217, 1], [4096, 4097], [0, 1]])('rejects decoded image dimensions %sx%s', async (width, height) => {
     vi.stubGlobal('createImageBitmap', vi.fn(async () => new FakeImageBitmap(width, height)))
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
     const images = Object.assign(Object.create(null), { image: Uint8Array.from([1]) })
     await expect(player.mount(makeVideo({ images }))).rejects.toThrow('image:image')
+  })
+
+  it('allows a decoded dimension over 4096 when its total pixels remain in budget', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => new FakeImageBitmap(4097, 1)))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), { image: Uint8Array.from([1]) })
+
+    await expect(player.mount(makeVideo({ images }))).resolves.toBeUndefined()
+  })
+
+  it('rejects and closes every decoded image when their combined pixels exceed the total budget', async () => {
+    const first = new FakeImageBitmap(4096, 4096)
+    const second = new FakeImageBitmap(4096, 4096)
+    const extra = new FakeImageBitmap(1, 1)
+    vi.stubGlobal('createImageBitmap', vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+      .mockResolvedValueOnce(extra))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), {
+      first: Uint8Array.of(1), second: Uint8Array.of(2), extra: Uint8Array.of(3)
+    })
+
+    await expect(player.mount(makeVideo({ images }))).rejects.toThrow(/pixels/)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).toHaveBeenCalledOnce()
+    expect(extra.close).toHaveBeenCalledOnce()
+  })
+
+  it('continues owned-image cleanup when one close operation throws', async () => {
+    const first = new FakeImageBitmap(4096, 4096)
+    const second = new FakeImageBitmap(4096, 4096)
+    const extra = new FakeImageBitmap(1, 1)
+    first.close.mockImplementation(() => { throw new Error('close failed') })
+    vi.stubGlobal('createImageBitmap', vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+      .mockResolvedValueOnce(extra))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), {
+      first: Uint8Array.of(1), second: Uint8Array.of(2), extra: Uint8Array.of(3)
+    })
+
+    await expect(player.mount(makeVideo({ images }))).rejects.toThrow('image pixels')
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).toHaveBeenCalledOnce()
+    expect(extra.close).toHaveBeenCalledOnce()
+  })
+
+  it('waits for partial decode completion and closes a late bitmap after another image fails', async () => {
+    let resolveLate: ((bitmap: FakeImageBitmap) => void) | undefined
+    const late = new Promise<FakeImageBitmap>(resolve => { resolveLate = resolve })
+    vi.stubGlobal('createImageBitmap', vi.fn()
+      .mockReturnValueOnce(late)
+      .mockRejectedValueOnce(new Error('broken image')))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), { late: Uint8Array.of(1), broken: Uint8Array.of(2) })
+    let settled = false
+    const mounting = player.mount(makeVideo({ images })).finally(() => { settled = true })
+    const bitmap = new FakeImageBitmap(10, 10)
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    resolveLate?.(bitmap)
+    await expect(mounting).rejects.toThrow('broken image')
+    expect(bitmap.close).toHaveBeenCalledOnce()
+  })
+
+  it('keeps fallback object URLs alive until remount and revokes each exactly once', async () => {
+    vi.stubGlobal('createImageBitmap', undefined)
+    const revokeObjectURL = vi.fn()
+    const originalWindow = window
+    vi.stubGlobal('window', {
+      ...originalWindow,
+      URL: { createObjectURL: vi.fn(() => 'blob:owned'), revokeObjectURL }
+    })
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), { image: Uint8Array.of(1) })
+    const mounting = player.mount(makeVideo({ images }))
+    pendingImages[0].onload?.()
+
+    await mounting
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    await player.mount(makeVideo())
+    player.destroy()
+
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('revokes a failed fallback object URL exactly once', async () => {
+    vi.stubGlobal('createImageBitmap', undefined)
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('window', {
+      ...window,
+      URL: { createObjectURL: vi.fn(() => 'blob:failed'), revokeObjectURL }
+    })
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), { image: Uint8Array.of(1) })
+    const mounting = player.mount(makeVideo({ images }))
+
+    pendingImages[0].onerror?.()
+    pendingImages[0].onerror?.()
+
+    await expect(mounting).rejects.toThrow('image:image')
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('never releases caller-owned replacement or dynamic elements', async () => {
+    const replacement = { close: vi.fn(), width: 1, height: 1 }
+    const dynamic = { close: vi.fn(), width: 1, height: 1 }
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const video = makeVideo({
+      replaceElements: Object.assign(Object.create(null), { caller: replacement as unknown as HTMLImageElement }),
+      dynamicElements: Object.assign(Object.create(null), { caller: dynamic as unknown as HTMLImageElement })
+    })
+
+    await player.mount(video)
+    await player.mount(makeVideo())
+    player.destroy()
+
+    expect(replacement.close).not.toHaveBeenCalled()
+    expect(dynamic.close).not.toHaveBeenCalled()
   })
 
   it('prevents an older concurrent byte-image mount from overwriting a newer one', async () => {
@@ -553,11 +740,15 @@ describe('Player mount and playback lifecycle', () => {
     const newer = makeVideo({ images: Object.assign(Object.create(null), { new: Uint8Array.of(2) }), size: { width: 200, height: 200 } })
     const olderMount = player.mount(older)
     const newerMount = player.mount(newer)
-    pending[1](new FakeImageBitmap(1, 1))
+    const newerBitmap = new FakeImageBitmap(1, 1)
+    const olderBitmap = new FakeImageBitmap(1, 1)
+    pending[1](newerBitmap)
     await newerMount
-    pending[0](new FakeImageBitmap(1, 1))
+    pending[0](olderBitmap)
     await olderMount
     expect(player.videoEntity).toBe(newer)
+    expect(olderBitmap.close).toHaveBeenCalledOnce()
+    expect(newerBitmap.close).not.toHaveBeenCalled()
   })
 
   it('revalidates configuration changed while byte-image decoding before mount commits', async () => {
@@ -567,9 +758,11 @@ describe('Player mount and playback lifecycle', () => {
     const images = Object.assign(Object.create(null), { delayed: Uint8Array.of(1) })
     const mounting = player.mount(makeVideo({ frames: 2, images }))
     player.setConfig({ startFrame: 2 })
-    finish?.(new FakeImageBitmap(1, 1))
+    const decoded = new FakeImageBitmap(1, 1)
+    finish?.(decoded)
     await expect(mounting).rejects.toThrow(/frame/)
     expect(player.videoEntity).toBeUndefined()
+    expect(decoded.close).toHaveBeenCalledOnce()
   })
 
   it('stops an active timeline when a replacement video is mounted', async () => {
@@ -612,7 +805,7 @@ describe('Player mount and playback lifecycle', () => {
     const player = new Player(canvas as unknown as HTMLCanvasElement)
 
     await player.mount(makeVideo({ size: { width: 300, height: 150 } }))
-    const offscreen = (player as unknown as { ofsCanvas: FakeCanvas }).ofsCanvas
+    const offscreen = (player as unknown as { __svgaCanvas: FakeCanvas }).__svgaCanvas
     player.start()
 
     expect(canvas.context.clearRect).toHaveBeenCalled()
@@ -700,14 +893,14 @@ describe('Player mount and playback lifecycle', () => {
     runRaf(rafRequests[rafRequests.length - 1], 100)
     player.pause()
     player.resume()
-    const animator = (player as unknown as { animator: Animator }).animator
+    const animator = (player as unknown as { __svgaAnimator: Animator }).__svgaAnimator
 
-    expect(animator.startValue).toBe(0)
-    expect(animator.endValue).toBe(4)
-    expect(animator.duration).toBe(400)
-    expect(animator.loopStart).toBe(200)
-    expect(animator.fillRule).toBe(1)
-    expect(animator.loop).toBe(1)
+    expect(animator.__svgaStart).toBe(0)
+    expect(animator.__svgaEnd).toBe(4)
+    expect(animator.__svgaDuration).toBe(400)
+    expect(animator.__svgaLoopStart).toBe(200)
+    expect(animator.__svgaFill).toBe(1)
+    expect(animator.__svgaLoop).toBe(1)
     runRaf(rafRequests[rafRequests.length - 1], 200)
     expect(player.currentFrame).toBe(2)
   })
@@ -768,7 +961,7 @@ describe('Player mount and playback lifecycle', () => {
 
     player.start()
 
-    expect((player as unknown as { animator: Animator }).animator.loop).toBe(1)
+    expect((player as unknown as { __svgaAnimator: Animator }).__svgaAnimator.__svgaLoop).toBe(1)
   })
 
   it('stop returns to the configured start frame and the next start redraws it', async () => {
@@ -840,7 +1033,7 @@ describe('Player frame cache and destruction', () => {
       loop: 1
     })
     await player.mount(makeVideo({ size: { width: 3000, height: 3000 }, frames: 2, fps: 1 }))
-    const offscreen = (player as unknown as { ofsCanvas: FakeCanvas }).ofsCanvas
+    const offscreen = (player as unknown as { __svgaCanvas: FakeCanvas }).__svgaCanvas
 
     player.start()
     await Promise.resolve()
@@ -853,7 +1046,7 @@ describe('Player frame cache and destruction', () => {
     expect(created[0].close).toHaveBeenCalledOnce()
     expect(created[1].close).not.toHaveBeenCalled()
     canvas.context.drawImage.mockClear()
-    ;(player as unknown as { drawFrame: (frame: number) => void }).drawFrame(1)
+    ;(player as unknown as { __svgaDraw: (frame: number) => void }).__svgaDraw(1)
     expect(canvas.context.drawImage).toHaveBeenCalledWith(
       created[1], 0, 0
     )
@@ -880,7 +1073,7 @@ describe('Player frame cache and destruction', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    const cache = (player as unknown as { cacheFrames: Record<string, FakeImageBitmap> }).cacheFrames
+    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> }).__svgaFrames
     expect(Object.getPrototypeOf(cache)).toBeNull()
     expect(Object.keys(cache)).toEqual(['1'])
     expect(cache[1]).toBe(tiny)
@@ -932,12 +1125,36 @@ describe('Player frame cache and destruction', () => {
       isCacheFrames: true
     })
     await player.mount(makeVideo({ frames: 1 }))
-    const offscreen = (player as unknown as { ofsCanvas: FakeCanvas }).ofsCanvas
+    const offscreen = (player as unknown as { __svgaCanvas: FakeCanvas }).__svgaCanvas
 
     player.start()
 
-    expect(Object.keys((player as unknown as { cacheFrames: object }).cacheFrames)).toHaveLength(0)
+    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(0)
     expect(offscreen.toDataURL).not.toHaveBeenCalled()
+  })
+
+  it('reuses one OffscreenCanvas on Firefox across every frame', async () => {
+    let constructions = 0
+    class FakeOffscreenCanvas extends FakeCanvas {
+      constructor (width: number, height: number) {
+        super()
+        constructions++
+        this.width = width
+        this.height = height
+      }
+    }
+    vi.stubGlobal('window', {
+      ...window,
+      OffscreenCanvas: FakeOffscreenCanvas,
+      navigator: { userAgent: 'Firefox' }
+    })
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    await player.mount(makeVideo({ frames: 2, fps: 10 }))
+
+    player.start()
+    runRaf(rafRequests[rafRequests.length - 1], 100)
+
+    expect(constructions).toBe(1)
   })
 
   it('closes decoded images and owned cached frames on replacement', async () => {
@@ -992,7 +1209,22 @@ describe('Player frame cache and destruction', () => {
 
     expect(existing.close).toHaveBeenCalledOnce()
     expect(pending.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { cacheFrames: object }).cacheFrames)).toHaveLength(0)
+    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(0)
+  })
+
+  it('continues cached-frame cleanup when one close operation throws', () => {
+    const first = new FakeImageBitmap(1, 1)
+    const second = new FakeImageBitmap(1, 1)
+    first.close.mockImplementation(() => { throw new Error('close failed') })
+    const player = new Player({ isCacheFrames: true })
+    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> }).__svgaFrames
+    cache.first = first
+    cache.second = second
+
+    expect(() => player.setConfig({ isCacheFrames: false })).not.toThrow()
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).toHaveBeenCalledOnce()
+    expect(Object.keys(cache)).toHaveLength(0)
   })
 
   it('clears frame cache and sizes a replacement container before observing it', async () => {
@@ -1014,7 +1246,7 @@ describe('Player frame cache and destruction', () => {
     })
 
     expect(owned.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { cacheFrames: object }).cacheFrames)).toHaveLength(0)
+    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(0)
     expect([replacement.width, replacement.height]).toEqual([20, 20])
     expect(observers[0].observe).toHaveBeenCalledWith(replacement)
     expect(observers[0].observedSizes).toEqual([[20, 20]])
@@ -1094,6 +1326,6 @@ describe('Player frame cache and destruction', () => {
     await Promise.resolve()
 
     expect(lateBitmap.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { cacheFrames: object }).cacheFrames)).toHaveLength(0)
+    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(0)
   })
 })

@@ -91,9 +91,6 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
 
   const evidence = await page.evaluate(async () => {
     interface BrowserPlayer {
-      animator: {
-        worker: unknown
-      }
       currentFrame: number
       onEnd?: () => void
       onProcess?: () => void
@@ -106,6 +103,14 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
         Player: new (options: unknown) => BrowserPlayer
       }
     }
+    const NativeWorker = Worker
+    let workerConstructions = 0
+    window.Worker = new Proxy(NativeWorker, {
+      construct (target, argumentsList) {
+        workerConstructions++
+        return Reflect.construct(target, argumentsList) as Worker
+      }
+    })
     const player = new browserWindow.SVGA.Player({
       container: document.createElement('canvas'),
       isOpenNoExecutionDelay: true,
@@ -128,7 +133,7 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
       new Promise<{ ended: boolean, frame: number }>(resolve => {
         player.onEnd = () => resolve({ ended: true, frame: player.currentFrame })
         player.start()
-        schedulerWasNative = player.animator.worker instanceof Worker
+        schedulerWasNative = workerConstructions === 1
       }),
       new Promise<{ ended: boolean, frame: number }>(resolve => {
         setTimeout(() => resolve({ ended: false, frame: player.currentFrame }), 1000)

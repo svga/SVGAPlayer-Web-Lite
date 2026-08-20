@@ -55,7 +55,7 @@ const minify = () => terser({
   compress: { ecma: 2017, inline: 1, passes: 2 },
   ecma: 2017,
   format: { ecma: 2017 },
-  mangle: { eval: true }
+  mangle: { eval: true, properties: { regex: /^__svga/ } }
 })
 
 const inlineWorker = workerCode => ({

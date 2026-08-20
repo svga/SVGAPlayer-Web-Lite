@@ -4,7 +4,8 @@ import {
   PlayerConfigOptions,
   Video,
   BitmapsCache,
-  PlayerConfig
+  PlayerConfig,
+  Drawable
 } from '../types'
 import { Animator } from './animator'
 import render from './render'
@@ -14,17 +15,19 @@ type EventCallback = undefined | (() => void)
 
 type FrameCache = { [key: string]: ImageBitmap | undefined }
 type PlayerInternal = {
-  animator: Animator
-  isBeIntersection: boolean
-  intersectionObserver: IntersectionObserver | null
-  bitmapsCache: BitmapsCache
-  cacheFrames: FrameCache
+  __svgaAnimator: Animator
+  __svgaVisible: boolean
+  __svgaObserver: IntersectionObserver | null
+  __svgaImages: BitmapsCache
+  __svgaFrames: FrameCache
+  __svgaConfig: PlayerConfig
+  __svgaOwned: Array<ImageBitmap | string>
 }
 interface PlayerRuntime {
-  timeline: number
-  pending: Set<number>
-  cacheOrder: Map<number, true>
-  cacheBytes: number
+  __svgaTimeline: number
+  __svgaPending: Set<number>
+  __svgaOrder: Map<number, true>
+  __svgaBytes: number
 }
 
 const playerRuntimes = new WeakMap<Player, PlayerRuntime>()
@@ -38,12 +41,12 @@ function activeRuntime (player: Player): PlayerRuntime {
 
 function clearFrameCache (runtime: PlayerRuntime, cache: FrameCache): void {
   for (const key in cache) {
-    ;(cache[key] as ImageBitmap).close()
+    try { (cache[key] as ImageBitmap).close() } catch {}
     delete cache[key]
   }
-  runtime.pending = new Set()
-  runtime.cacheOrder.clear()
-  runtime.cacheBytes = 0
+  runtime.__svgaPending = new Set()
+  runtime.__svgaOrder.clear()
+  runtime.__svgaBytes = 0
 }
 
 function storeFrameCache (
@@ -54,23 +57,25 @@ function storeFrameCache (
 ): void {
   const bytes = bitmap.width * bitmap.height * 4
   if (bytes > cacheLimit) return bitmap.close()
-  while (runtime.cacheBytes + bytes > cacheLimit) {
-    const oldestKey = runtime.cacheOrder.keys().next().value as number
+  while (runtime.__svgaBytes + bytes > cacheLimit) {
+    const oldestKey = runtime.__svgaOrder.keys().next().value as number
     const oldest = cache[oldestKey] as ImageBitmap
-    runtime.cacheBytes -= oldest.width * oldest.height * 4
+    runtime.__svgaBytes -= oldest.width * oldest.height * 4
     oldest.close()
     delete cache[oldestKey]
-    runtime.cacheOrder.delete(oldestKey)
+    runtime.__svgaOrder.delete(oldestKey)
   }
   cache[key] = bitmap
-  runtime.cacheBytes += bytes
-  runtime.cacheOrder.set(key, true)
+  runtime.__svgaBytes += bytes
+  runtime.__svgaOrder.set(key, true)
 }
 
-function clearBitmaps (cache: BitmapsCache): void {
-  for (const key of Object.keys(cache)) {
-    const bitmap = cache[key]
-    if (typeof ImageBitmap !== 'undefined' && bitmap instanceof ImageBitmap) bitmap.close()
+function releaseImages (images: Array<ImageBitmap | string>): void {
+  for (const image of images.splice(0)) {
+    try {
+      if (typeof image === 'string') window.URL.revokeObjectURL(image)
+      else image.close()
+    } catch {}
   }
 }
 
@@ -78,32 +83,39 @@ function validateBitmap (bitmap: { width: number, height: number }, key: string)
   if (
     !Number.isFinite(bitmap.width) || !Number.isFinite(bitmap.height) ||
     bitmap.width <= 0 || bitmap.height <= 0 ||
-    bitmap.width > 4096 || bitmap.height > 4096 ||
     bitmap.width * bitmap.height > 16_777_216
   ) throw Error('image:' + key)
 }
 
-async function decodeBitmap (bytes: Uint8Array, key: string): Promise<ImageBitmap | HTMLImageElement> {
+type DecodedImage = [Drawable, ImageBitmap | string]
+
+async function decodeBitmap (bytes: Uint8Array, key: string): Promise<DecodedImage> {
   const blob = new Blob([new Uint8Array(bytes)])
   if (typeof createImageBitmap === 'function') {
     const bitmap = await createImageBitmap(blob)
     try { validateBitmap(bitmap, key) } catch (error) { bitmap.close(); throw error }
-    return bitmap
+    return [bitmap, bitmap]
   }
-  return await new Promise<HTMLImageElement>((resolve, reject) => {
+  return await new Promise<DecodedImage>((resolve, reject) => {
     const url = window.URL.createObjectURL(blob)
     const image = document.createElement('img')
+    const reset = () => { image.onload = image.onerror = null }
     image.onload = () => {
-      window.URL.revokeObjectURL(url)
-      try { validateBitmap(image, key); resolve(image) } catch (error) { reject(error) }
+      reset()
+      try { validateBitmap(image, key); resolve([image, url]) } catch (error) { window.URL.revokeObjectURL(url); reject(error) }
     }
-    image.onerror = () => { window.URL.revokeObjectURL(url); reject(Error('image:' + key)) }
+    image.onerror = () => { reset(); window.URL.revokeObjectURL(url); reject(Error('image:' + key)) }
     image.src = url
   })
 }
 
-function validateFrameConfig (config: PlayerConfig, totalFrames?: number): void {
+function validateConfig (config: PlayerConfig, totalFrames?: number): void {
   const { startFrame, endFrame, loopStartFrame } = config
+  if (!(config.container instanceof HTMLCanvasElement)) throw Error('container')
+  if (!(typeof config.loop === 'boolean' || (Number.isInteger(config.loop) && config.loop >= 0))) throw Error('loop')
+  if (config.fillMode !== PLAYER_FILL_MODE.FORWARDS && config.fillMode !== PLAYER_FILL_MODE.BACKWARDS) throw Error('fillMode')
+  if (config.playMode !== PLAYER_PLAY_MODE.FORWARDS && config.playMode !== PLAYER_PLAY_MODE.FALLBACKS) throw Error('playMode')
+  if (![config.isCacheFrames, config.isUseIntersectionObserver, config.isOpenNoExecutionDelay].every(value => typeof value === 'boolean')) throw Error('flag')
   if (![startFrame, endFrame, loopStartFrame].every(Number.isInteger) || Math.min(startFrame, endFrame, loopStartFrame) < 0) throw Error('frame')
 
   if (endFrame && startFrame > endFrame) throw Error('start>end')
@@ -116,12 +128,27 @@ function validateFrameConfig (config: PlayerConfig, totalFrames?: number): void 
       loopStartFrame > (endFrame || totalFrames)
     ))
   ) throw Error('frame')
+  const effectiveEnd = endFrame || totalFrames
+  const looping = config.loop === true || config.loop === 0 || (typeof config.loop === 'number' && config.loop > 1)
+  if (looping && effectiveEnd !== 0 && loopStartFrame === effectiveEnd) throw Error('loop segment')
+}
+
+function createOffscreen (width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
+  const Canvas = window.OffscreenCanvas
+  if (Canvas) {
+    try {
+      const canvas = new Canvas(width, height)
+      const context = canvas.getContext('2d')
+      if (context && 'save' in context) return canvas
+    } catch {}
+  }
+  return document.createElement('canvas')
 }
 
 function disconnectObserver (player: PlayerInternal): void {
-  const observer = player.intersectionObserver
+  const observer = player.__svgaObserver
   if (observer) observer.disconnect()
-  player.intersectionObserver = null
+  player.__svgaObserver = null
 }
 
 function clearCanvas (container: HTMLCanvasElement): CanvasRenderingContext2D | null {
@@ -134,17 +161,18 @@ function releasePlayer (player: Player): void {
   const runtime = playerRuntimes.get(player)
   if (!runtime) return
   playerRuntimes.delete(player)
-  ;(player as unknown as PlayerInternal).animator.stop()
-  player.config.isUseIntersectionObserver = false
-  disconnectObserver(player as unknown as PlayerInternal)
-  ;(player as unknown as PlayerInternal).isBeIntersection = true
-  clearFrameCache(runtime, (player as unknown as PlayerInternal).cacheFrames)
-  clearBitmaps((player as unknown as PlayerInternal).bitmapsCache)
-  ;(player as unknown as PlayerInternal).bitmapsCache = Object.create(null) as BitmapsCache
+  const internal = player as unknown as PlayerInternal
+  internal.__svgaAnimator.__svgaStop()
+  internal.__svgaConfig.isUseIntersectionObserver = false
+  disconnectObserver(internal)
+  internal.__svgaVisible = true
+  clearFrameCache(runtime, internal.__svgaFrames)
+  releaseImages(internal.__svgaOwned)
+  internal.__svgaImages = Object.create(null) as BitmapsCache
   player.videoEntity = undefined
   player.currentFrame = 0
   player.totalFrames = 0
-  clearCanvas(player.config.container)
+  clearCanvas(internal.__svgaConfig.container)
 }
 
 /**
@@ -167,7 +195,7 @@ export class Player {
   /**
    * 当前配置项
    */
-  public readonly config: PlayerConfig = {
+  private readonly __svgaConfig: PlayerConfig = {
     container: document.createElement('canvas'),
     loop: 0,
     fillMode: PLAYER_FILL_MODE.FORWARDS,
@@ -180,35 +208,35 @@ export class Player {
     isOpenNoExecutionDelay: false
   }
 
-  private readonly animator: Animator
-  private readonly ofsCanvas: HTMLCanvasElement | OffscreenCanvas
+  private readonly __svgaAnimator: Animator
+  private readonly __svgaCanvas: HTMLCanvasElement | OffscreenCanvas
 
-  private isBeIntersection = true
-  private intersectionObserver: IntersectionObserver | null = null
-  private bitmapsCache: BitmapsCache = Object.create(null) as BitmapsCache
-  private readonly cacheFrames: { [key: string]: HTMLImageElement | ImageBitmap} = Object.create(null) as { [key: string]: HTMLImageElement | ImageBitmap}
+  private __svgaVisible = true
+  private __svgaObserver: IntersectionObserver | null = null
+  private __svgaImages: BitmapsCache = Object.create(null) as BitmapsCache
+  private __svgaOwned: Array<ImageBitmap | string> = []
+  private readonly __svgaFrames: FrameCache = Object.create(null) as FrameCache
+
+  public get config (): Readonly<PlayerConfig> {
+    return Object.freeze({ ...this.__svgaConfig })
+  }
 
   constructor (options: HTMLCanvasElement | PlayerConfigOptions) {
-    this.animator = new Animator()
+    this.__svgaAnimator = new Animator()
     playerRuntimes.set(this, {
-      timeline: 0,
-      pending: new Set(),
-      cacheOrder: new Map(),
-      cacheBytes: 0
+      __svgaTimeline: 0,
+      __svgaPending: new Set(),
+      __svgaOrder: new Map(),
+      __svgaBytes: 0
     })
     try {
-      this.animator.onEnd = () => {
+      this.__svgaAnimator.__svgaOnEnd = () => {
         const runtime = playerRuntimes.get(this)
-        if (runtime) runtime.timeline = 0
+        if (runtime) runtime.__svgaTimeline = 0
         if (this.onEnd) this.onEnd()
       }
-      if (options instanceof HTMLCanvasElement) {
-        this.config.container = options
-      } else {
-        this.setConfig(options)
-      }
-      const OffscreenCanvas = window.OffscreenCanvas
-      this.ofsCanvas = OffscreenCanvas ? new OffscreenCanvas(this.config.container.width, this.config.container.height) : document.createElement('canvas')
+      this.setConfig(options instanceof HTMLCanvasElement ? { container: options } : options)
+      this.__svgaCanvas = createOffscreen(this.__svgaConfig.container.width, this.__svgaConfig.container.height)
     } catch (error) {
       releasePlayer(this)
       throw error
@@ -221,38 +249,42 @@ export class Player {
    */
   public setConfig (options: PlayerConfigOptions): void {
     const runtime = activeRuntime(this)
-    const mergedConfig = Object.create(this.config) as PlayerConfig & Record<string, unknown>
-    const target = this.config as unknown as Record<string, unknown>
+    const mergedConfig = { ...this.__svgaConfig } as PlayerConfig & Record<string, unknown>
+    const target = this.__svgaConfig as unknown as Record<string, unknown>
     Object.keys(options).forEach(key => {
       const value = (options as Record<string, unknown>)[key]
       if (value !== undefined && ({}).hasOwnProperty.call(target, key)) {
         mergedConfig[key] = value
       }
     })
-    validateFrameConfig(mergedConfig, this.videoEntity && this.totalFrames)
-    const containerChanged = mergedConfig.container !== this.config.container
-    if (containerChanged || (this.config.isCacheFrames && !mergedConfig.isCacheFrames)) {
-      clearFrameCache(runtime, this.cacheFrames as unknown as FrameCache)
+    validateConfig(mergedConfig, this.videoEntity ? this.totalFrames : undefined)
+    const containerChanged = mergedConfig.container !== this.__svgaConfig.container
+    const observerChanged = containerChanged || mergedConfig.isUseIntersectionObserver !== this.__svgaConfig.isUseIntersectionObserver
+    if (containerChanged || (this.__svgaConfig.isCacheFrames && !mergedConfig.isCacheFrames)) {
+      clearFrameCache(runtime, this.__svgaFrames)
     }
-    Object.keys(mergedConfig).forEach(key => { target[key] = mergedConfig[key] })
-    if (containerChanged && this.videoEntity) this.setSize()
-    this.animator.isOpenNoExecutionDelay = this.config.isOpenNoExecutionDelay
-    this.setIntersectionObserver()
+    Object.keys(this.__svgaConfig).forEach(key => { target[key] = mergedConfig[key] })
+    if (containerChanged && this.videoEntity) this.__svgaSize()
+    this.__svgaAnimator.__svgaNoDelay = this.__svgaConfig.isOpenNoExecutionDelay
+    if (observerChanged) this.__svgaObserve()
   }
 
-  private setIntersectionObserver (): void {
+  private __svgaObserve (): void {
     disconnectObserver(this as unknown as PlayerInternal)
 
-    if (this.config.isUseIntersectionObserver) {
+    const wasVisible = this.__svgaVisible
+    if (this.__svgaConfig.isUseIntersectionObserver) {
       const observer = new IntersectionObserver(entries => {
-        if (this.intersectionObserver !== observer || !entries.length) return
-        this.isBeIntersection = entries[0].intersectionRatio > 0
+        if (this.__svgaObserver !== observer || !entries.length) return
+        const wasVisible = this.__svgaVisible
+        this.__svgaVisible = entries[0].intersectionRatio > 0
+        if (!wasVisible && this.__svgaVisible && this.videoEntity) this.__svgaDraw(this.currentFrame)
       })
-      this.intersectionObserver = observer
-      observer.observe(this.config.container)
+      this.__svgaObserver = observer
+      observer.observe(this.__svgaConfig.container)
     } else {
-      this.config.isUseIntersectionObserver = false
-      this.isBeIntersection = true
+      this.__svgaVisible = true
+      if (!wasVisible && this.videoEntity) this.__svgaDraw(this.currentFrame)
     }
   }
 
@@ -263,37 +295,53 @@ export class Player {
    */
   public async mount (videoEntity: Video): Promise<void> {
     const runtime = activeRuntime(this)
-    this.animator.stop()
-    runtime.timeline = 0
-    clearFrameCache(runtime, this.cacheFrames as unknown as FrameCache)
-    clearBitmaps(this.bitmapsCache)
-    const bitmapsCache = this.bitmapsCache = Object.create(null) as BitmapsCache
+    this.__svgaAnimator.__svgaStop()
+    runtime.__svgaTimeline = 0
+    clearFrameCache(runtime, this.__svgaFrames)
+    releaseImages(this.__svgaOwned)
+    const bitmapsCache = this.__svgaImages = Object.create(null) as BitmapsCache
+    const imageReleases: Array<ImageBitmap | string> = []
+    this.__svgaOwned = imageReleases
     this.videoEntity = undefined
     this.currentFrame = 0
     this.totalFrames = 0
-    this.clearContainer()
+    this.__svgaClear()
 
     validateVideo(videoEntity)
     const totalFrames = videoEntity.frames - 1
-    validateFrameConfig(this.config, totalFrames)
+    validateConfig(this.__svgaConfig, totalFrames)
 
-    try {
-      await Promise.all(Object.keys(videoEntity.images).map(async key => {
-        const bitmap = await decodeBitmap(videoEntity.images[key], key)
-        bitmapsCache[key] = bitmap
-      }))
-    } catch (error) {
-      clearBitmaps(bitmapsCache)
-      throw error
+    const failures: unknown[] = []
+    let pixels = 0
+    await Promise.all(Object.keys(videoEntity.images).map(async key => {
+      try {
+        const resource = await decodeBitmap(videoEntity.images[key], key)
+        bitmapsCache[key] = resource[0]
+        imageReleases.push(resource[1])
+        pixels += resource[0].width * resource[0].height
+      } catch (error) {
+        failures.push(error)
+      }
+    }))
+    if (failures.length || pixels > 33_554_432) {
+      releaseImages(imageReleases)
+      if (this.__svgaImages === bitmapsCache) this.__svgaImages = Object.create(null) as BitmapsCache
+      throw failures.length ? failures[0] : Error('image pixels')
     }
-    if (this.bitmapsCache !== bitmapsCache) {
-      clearBitmaps(bitmapsCache)
+    if (this.__svgaImages !== bitmapsCache) {
+      releaseImages(imageReleases)
       return
     }
-    validateFrameConfig(this.config, totalFrames)
+    try {
+      validateConfig(this.__svgaConfig, totalFrames)
+    } catch (error) {
+      releaseImages(imageReleases)
+      this.__svgaImages = Object.create(null) as BitmapsCache
+      throw error
+    }
     this.videoEntity = videoEntity
     this.totalFrames = totalFrames
-    this.setSize()
+    this.__svgaSize()
   }
 
   /**
@@ -321,8 +369,8 @@ export class Player {
    */
   public onEnd: EventCallback
 
-  private clearContainer (): CanvasRenderingContext2D | null {
-    return clearCanvas(this.config.container)
+  private __svgaClear (): CanvasRenderingContext2D | null {
+    return clearCanvas(this.__svgaConfig.container)
   }
 
   /**
@@ -331,17 +379,17 @@ export class Player {
   public start (): void {
     const runtime = activeRuntime(this)
     if (!this.videoEntity) throw Error('video')
-    runtime.timeline = -this.animator.currentTimeMillsecond() - 1
-    const { config } = this
+    runtime.__svgaTimeline = -this.__svgaAnimator.__svgaClock() - 1
+    const config = this.__svgaConfig
     const endFrame = config.endFrame || this.totalFrames
     this.currentFrame = config.playMode === PLAYER_PLAY_MODE.FORWARDS
       ? config.startFrame
       : endFrame
-    this.drawFrame(this.currentFrame)
-    this.animator.onStart = () => {
+    this.__svgaDraw(this.currentFrame)
+    this.__svgaAnimator.__svgaOnStart = () => {
       if (this.onStart) this.onStart()
     }
-    this.startAnimation(false)
+    this.__svgaAnimate(false)
   }
 
   /**
@@ -350,22 +398,22 @@ export class Player {
   public resume (): void {
     const runtime = activeRuntime(this)
     if (!this.videoEntity) throw Error('video')
-    if (runtime.timeline < 0) {
+    if (runtime.__svgaTimeline < 0) {
       if (this.onResume) this.onResume()
       return
     }
-    const animator = this.animator
-    const clock = animator.currentTimeMillsecond
-    const origin = clock() - runtime.timeline
-    runtime.timeline = -origin - 1
-    animator.currentTimeMillsecond = () => {
-      animator.currentTimeMillsecond = clock
+    const animator = this.__svgaAnimator
+    const clock = animator.__svgaClock
+    const origin = clock() - runtime.__svgaTimeline
+    runtime.__svgaTimeline = -origin - 1
+    animator.__svgaClock = () => {
+      animator.__svgaClock = clock
       return origin
     }
-    animator.onStart = () => {
+    animator.__svgaOnStart = () => {
       if (this.onResume) this.onResume()
     }
-    this.startAnimation(true)
+    this.__svgaAnimate(true)
   }
 
   /**
@@ -373,8 +421,8 @@ export class Player {
    */
   public pause (): void {
     const runtime = activeRuntime(this)
-    if (runtime.timeline < 0) runtime.timeline += this.animator.currentTimeMillsecond() + 1
-    this.animator.stop()
+    if (runtime.__svgaTimeline < 0) runtime.__svgaTimeline += this.__svgaAnimator.__svgaClock() + 1
+    this.__svgaAnimator.__svgaStop()
     if (this.onPause) this.onPause()
   }
 
@@ -383,10 +431,10 @@ export class Player {
    */
   public stop (): void {
     const runtime = activeRuntime(this)
-    runtime.timeline = 0
-    this.animator.stop()
-    this.currentFrame = this.config.startFrame
-    this.clearContainer()
+    runtime.__svgaTimeline = 0
+    this.__svgaAnimator.__svgaStop()
+    this.currentFrame = this.__svgaConfig.startFrame
+    this.__svgaClear()
     if (this.onStop) this.onStop()
   }
 
@@ -394,7 +442,7 @@ export class Player {
    * 清理容器画布
    */
   public clear (): void {
-    this.clearContainer()
+    this.__svgaClear()
   }
 
   /**
@@ -404,64 +452,64 @@ export class Player {
     releasePlayer(this)
   }
 
-  private startAnimation (isResume: boolean): void {
-    const { config, totalFrames } = this
+  private __svgaAnimate (isResume: boolean): void {
+    const { __svgaConfig: config, totalFrames } = this
     const videoEntity = this.videoEntity as Video
-    const animator = this.animator
+    const animator = this.__svgaAnimator
     const { playMode, startFrame, endFrame, loopStartFrame, fillMode, loop } = config
     const effectiveEndFrame = endFrame || totalFrames
 
     if (playMode === PLAYER_PLAY_MODE.FORWARDS) {
-      animator.startValue = startFrame
-      animator.endValue = effectiveEndFrame
+      animator.__svgaStart = startFrame
+      animator.__svgaEnd = effectiveEndFrame
     } else {
-      animator.startValue = effectiveEndFrame
-      animator.endValue = startFrame
+      animator.__svgaStart = effectiveEndFrame
+      animator.__svgaEnd = startFrame
     }
 
     const frameDuration = 1000 / videoEntity.fps
-    animator.duration = Math.abs(animator.endValue - animator.startValue) * frameDuration
-    animator.loopStart = loopStartFrame > startFrame
+    animator.__svgaDuration = Math.abs(animator.__svgaEnd - animator.__svgaStart) * frameDuration
+    animator.__svgaLoopStart = loopStartFrame > startFrame
       ? (loopStartFrame - startFrame) * frameDuration
       : 0
-    animator.loop = loop === false ? 1 : (loop === true || loop <= 0 ? Infinity : loop)
-    animator.fillRule = fillMode === 'backwards' ? 1 : 0
+    animator.__svgaLoop = loop === false ? 1 : (loop === true || loop <= 0 ? Infinity : loop)
+    animator.__svgaFill = fillMode === 'backwards' ? 1 : 0
 
-    animator.onUpdate = (value: number) => {
+    animator.__svgaOnUpdate = (value: number) => {
       if (isResume) {
         isResume = false
         return
       }
       if (this.currentFrame === value) return
       this.currentFrame = value
-      this.drawFrame(value)
+      this.__svgaDraw(value)
       if (this.onProcess) this.onProcess()
     }
 
-    animator.start()
+    animator.__svgaRun()
   }
 
-  private setSize (): void {
+  private __svgaSize (): void {
     const size = (this.videoEntity as Video).size
-    const { container } = this.config
+    const { container } = this.__svgaConfig
     if (container.width !== size.width) container.width = size.width
     if (container.height !== size.height) container.height = size.height
   }
 
   /// ----------- 描绘一帧 -----------
-  private drawFrame (frame: number): void {
-    if (this.config.isUseIntersectionObserver && !this.isBeIntersection) return
+  private __svgaDraw (frame: number): void {
+    if (this.__svgaConfig.isUseIntersectionObserver && !this.__svgaVisible) return
 
-    const { container } = this.config
-    const context = this.clearContainer()
+    const { container } = this.__svgaConfig
+    const context = this.__svgaClear()
     if (!context) throw Error()
 
-    const cache = this.cacheFrames as unknown as FrameCache
-    const isCacheFrames = this.config.isCacheFrames
+    const cache = this.__svgaFrames
+    const isCacheFrames = this.__svgaConfig.isCacheFrames
     const runtime = isCacheFrames ? activeRuntime(this) : undefined
     const cachedFrame = isCacheFrames && cache[frame]
     if (cachedFrame) {
-      const order = (runtime as PlayerRuntime).cacheOrder
+      const order = (runtime as PlayerRuntime).__svgaOrder
       order.delete(frame)
       order.set(frame, true)
       context.drawImage(cachedFrame, 0, 0)
@@ -469,13 +517,7 @@ export class Player {
     }
 
     const videoEntity = this.videoEntity as Video
-    let ofsCanvas = this.ofsCanvas
-
-    // OffscreenCanvas 在 Firefox 浏览器无法被清理历史内容
-    const OffscreenCanvas = window.OffscreenCanvas
-    if (OffscreenCanvas && window.navigator.userAgent.includes('Firefox')) {
-      ofsCanvas = new OffscreenCanvas(container.width, container.height)
-    }
+    const ofsCanvas = this.__svgaCanvas
 
     if (ofsCanvas.width !== container.width) ofsCanvas.width = container.width
     if (ofsCanvas.height !== container.height) ofsCanvas.height = container.height
@@ -484,7 +526,7 @@ export class Player {
 
     render(
       ofsCanvas,
-      this.bitmapsCache,
+      this.__svgaImages,
       videoEntity.dynamicElements,
       videoEntity.replaceElements,
       videoEntity,
@@ -495,7 +537,7 @@ export class Player {
 
     if (isCacheFrames) {
       const active = runtime as PlayerRuntime
-      const pending = active.pending
+      const pending = active.__svgaPending
 
       if ('transferToImageBitmap' in ofsCanvas) {
         try {
@@ -506,7 +548,7 @@ export class Player {
       } else if (typeof createImageBitmap === 'function' && !pending.has(frame)) {
         pending.add(frame)
         void createImageBitmap(ofsCanvas).then(bitmap => {
-          if (active.pending !== pending) bitmap.close()
+          if (active.__svgaPending !== pending) bitmap.close()
           else storeFrameCache(active, cache, frame, bitmap)
           pending.delete(frame)
         }, () => { pending.delete(frame) })

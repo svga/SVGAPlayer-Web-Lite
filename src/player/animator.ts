@@ -7,110 +7,126 @@ let runId = 0
 function requestFrame (animator: Animator): number {
   let rafId: number
   rafId = window.requestAnimationFrame(() => {
-    ;(animator as unknown as { doFrame: (scheduler: number) => void }).doFrame(rafId)
+    ;(animator as unknown as { __svgaFrame: (scheduler: number) => void }).__svgaFrame(rafId)
   })
   return rafId
 }
 
 export class Animator {
-  private isRunning!: boolean
-  private startTime!: number
-  private currentFrication: number = 0.0
-  private worker: Scheduler = null
-  public isOpenNoExecutionDelay = false
-  public startValue: number = 0
-  public endValue: number = 0
-  public duration: number = 0
-  public loopStart: number = 0
-  public loop: number = 1
-  public fillRule: number = 0
-  public onStart: () => void = () => {}
-  public onUpdate: (currentValue: number) => void = () => {}
-  public onEnd: () => void = () => {}
+  private __svgaStartTime!: number
+  private __svgaFraction: number = 0.0
+  private __svgaScheduler: Scheduler = null
+  public __svgaNoDelay = false
+  public __svgaStart: number = 0
+  public __svgaEnd: number = 0
+  public __svgaDuration: number = 0
+  public __svgaLoopStart: number = 0
+  public __svgaLoop: number = 1
+  public __svgaFill: number = 0
+  public __svgaOnStart: () => void = () => {}
+  public __svgaOnUpdate: (currentValue: number) => void = () => {}
+  public __svgaOnEnd: () => void = () => {}
 
-  public currentTimeMillsecond: () => number = () => {
+  public __svgaClock: () => number = () => {
     return performance.now()
   }
 
-  public start (): void {
-    this.stop()
+  public __svgaRun (): void {
+    this.__svgaStop()
     const marker = -(++runId)
-    this.worker = marker
-    this.startTime = this.currentTimeMillsecond()
-    this.currentFrication = 0.0
+    this.__svgaScheduler = marker
+    this.__svgaStartTime = this.__svgaClock()
+    this.__svgaFraction = 0.0
     try {
-      this.onStart()
-      if (this.worker !== marker) return
-      this.onUpdate(this.startValue)
-      if (this.worker !== marker) return
+      this.__svgaOnStart()
+      if (this.__svgaScheduler !== marker) return
+      this.__svgaOnUpdate(this.__svgaStart)
+      if (this.__svgaScheduler !== marker) return
 
-      if (!Number.isFinite(this.duration) || this.duration <= 0 || this.startValue === this.endValue) {
-        this.stop()
-        this.onEnd()
+      if (!Number.isFinite(this.__svgaDuration) || this.__svgaDuration <= 0 || this.__svgaStart === this.__svgaEnd) {
+        this.__svgaStop()
+        this.__svgaOnEnd()
         return
       }
 
-      if (this.isOpenNoExecutionDelay) {
-        const workerUrl = window.URL.createObjectURL(new Blob([WORKER]))
-        try {
-          this.worker = new Worker(workerUrl)
-        } finally {
-          window.URL.revokeObjectURL(workerUrl)
-        }
-        const worker = this.worker as Worker
-        worker.onmessage = this.doFrame.bind(this, worker)
-        worker.postMessage(null)
-      } else {
-        this.worker = requestFrame(this)
-      }
+      if (this.__svgaNoDelay) this.__svgaTimer()
+      else this.__svgaScheduler = requestFrame(this)
     } catch (error) {
-      this.stop()
+      this.__svgaStop()
       throw error
     }
   }
 
-  public stop (): void {
-    const scheduler = this.worker
-    this.worker = null
+  public __svgaStop (): void {
+    const scheduler = this.__svgaScheduler
+    this.__svgaScheduler = null
     if (typeof scheduler === 'number') {
       if (scheduler >= 0) window.cancelAnimationFrame(scheduler)
-    } else if (scheduler !== null) scheduler.terminate()
+    } else if (scheduler !== null) {
+      try { scheduler.terminate() } catch {}
+    }
   }
 
-  public get animatedValue (): number {
-    return Math.floor(((this.endValue - this.startValue) * this.currentFrication) + this.startValue)
+  public get __svgaValue (): number {
+    return Math.floor(((this.__svgaEnd - this.__svgaStart) * this.__svgaFraction) + this.__svgaStart)
   }
 
-  private doFrame (scheduler: Worker | number): void {
-    if (this.worker !== scheduler) return
+  private __svgaFrame (scheduler: Worker | number): void {
+    if (this.__svgaScheduler !== scheduler) return
     try {
-      const ended = this.doDeltaTime(this.currentTimeMillsecond() - this.startTime)
-      if (this.worker !== scheduler) return
+      const ended = this.__svgaDelta(this.__svgaClock() - this.__svgaStartTime)
+      if (this.__svgaScheduler !== scheduler) return
       if (ended) {
-        this.stop()
-        this.onEnd()
+        this.__svgaStop()
+        this.__svgaOnEnd()
       } else if (typeof scheduler === 'number') {
-        this.worker = requestFrame(this)
+        this.__svgaScheduler = requestFrame(this)
       } else {
-        scheduler.postMessage(null)
+        this.__svgaSignal(scheduler)
       }
     } catch (error) {
-      this.stop()
+      this.__svgaStop()
       throw error
     }
   }
 
-  private doDeltaTime (deltaTime: number): boolean {
-    const loopDuration = this.duration - this.loopStart
-    const ended = loopDuration <= 0 || deltaTime >= this.loopStart + loopDuration * this.loop
-    if (ended) {
-      this.currentFrication = this.fillRule === 1 ? 0.0 : 1.0
-    } else {
-      this.currentFrication = deltaTime <= this.duration
-        ? deltaTime / this.duration
-        : ((deltaTime - this.loopStart) % loopDuration + this.loopStart) / this.duration
+  private __svgaTimer (): void {
+    let worker: Worker | undefined
+    let url: string | undefined
+    try {
+      url = window.URL.createObjectURL(new Blob([WORKER]))
+      worker = new Worker(url)
+    } catch {} finally {
+      if (url) window.URL.revokeObjectURL(url)
     }
-    this.onUpdate(this.animatedValue)
+    if (!worker) return void (this.__svgaScheduler = requestFrame(this))
+    this.__svgaScheduler = worker
+    worker.onmessage = this.__svgaFrame.bind(this, worker)
+    worker.onerror = worker.onmessageerror = this.__svgaFallback.bind(this, worker)
+    this.__svgaSignal(worker)
+  }
+
+  private __svgaSignal (worker: Worker): void {
+    try { worker.postMessage(null) } catch { this.__svgaFallback(worker) }
+  }
+
+  private __svgaFallback (worker: Worker): void {
+    if (this.__svgaScheduler !== worker) return
+    try { worker.terminate() } catch {}
+    this.__svgaScheduler = requestFrame(this)
+  }
+
+  private __svgaDelta (deltaTime: number): boolean {
+    const loopDuration = this.__svgaDuration - this.__svgaLoopStart
+    const ended = loopDuration <= 0 || deltaTime >= this.__svgaLoopStart + loopDuration * this.__svgaLoop
+    if (ended) {
+      this.__svgaFraction = this.__svgaFill === 1 ? 0.0 : 1.0
+    } else {
+      this.__svgaFraction = deltaTime <= this.__svgaDuration
+        ? deltaTime / this.__svgaDuration
+        : ((deltaTime - this.__svgaLoopStart) % loopDuration + this.__svgaLoopStart) / this.__svgaDuration
+    }
+    this.__svgaOnUpdate(this.__svgaValue)
     return ended
   }
 }

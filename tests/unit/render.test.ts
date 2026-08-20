@@ -211,6 +211,39 @@ describe('default renderer native path handling', () => {
     expect(argsFor(context, 'fill')).toEqual([])
     expect(context.depth).toBe(0)
   })
+
+  it.each(['replacement', 'dynamic', 'shape'] as const)(
+    'applies a sprite clipPath once to a %s-only sprite',
+    visual => {
+      const replacement = { kind: 'replacement' } as unknown as HTMLImageElement
+      const dynamic = { kind: 'dynamic', width: 10, height: 10 } as unknown as HTMLImageElement
+      const shapes = visual === 'shape'
+        ? [pathShape('M0 0 H5 V5 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })]
+        : []
+      const mask = 'M0 0 H10 V10 Z'
+      const context = draw(
+        [frame(shapes, { clipPath: mask })],
+        {},
+        visual === 'dynamic' ? { sprite: dynamic } : {},
+        visual === 'replacement' ? { sprite: replacement } : {}
+      )
+
+      expect(argsFor(context, 'clip')).toEqual([[pathForSource(mask)]])
+      if (visual === 'replacement') expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([replacement])
+      if (visual === 'dynamic') expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([dynamic])
+      if (visual === 'shape') expect(argsFor(context, 'fill')).toHaveLength(1)
+      expect(context.depth).toBe(0)
+    }
+  )
+
+  it('does not construct or apply a clip for an empty clipPath', () => {
+    const dynamic = { kind: 'dynamic', width: 10, height: 10 } as unknown as HTMLImageElement
+    const context = draw([frame([])], {}, { sprite: dynamic })
+
+    expect(argsFor(context, 'clip')).toEqual([])
+    expect(RecordingPath2D.instances).toHaveLength(0)
+    expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([dynamic])
+  })
 })
 
 describe('default renderer lifecycle and preserved drawing behavior', () => {
