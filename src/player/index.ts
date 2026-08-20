@@ -12,6 +12,7 @@ import render from './render'
 import { validateVideo } from '../validate-video'
 
 type EventCallback = undefined | (() => void)
+type ImageRelease = ImageBitmap | (() => void)
 
 type FrameCache = { [key: string]: ImageBitmap | undefined }
 type PlayerInternal = {
@@ -21,7 +22,7 @@ type PlayerInternal = {
   __svgaImages: BitmapsCache
   __svgaFrames: FrameCache
   __svgaConfig: PlayerConfig
-  __svgaOwned: Array<ImageBitmap | string>
+  __svgaOwned: ImageRelease[]
 }
 interface PlayerRuntime {
   __svgaTimeline: number
@@ -39,9 +40,13 @@ function activeRuntime (player: Player): PlayerRuntime {
   return runtime
 }
 
+function closeBitmap (bitmap: ImageBitmap): void {
+  try { bitmap.close() } catch {}
+}
+
 function clearFrameCache (runtime: PlayerRuntime, cache: FrameCache): void {
   for (const key in cache) {
-    try { (cache[key] as ImageBitmap).close() } catch {}
+    closeBitmap(cache[key] as ImageBitmap)
     delete cache[key]
   }
   runtime.__svgaPending = new Set()
@@ -56,25 +61,34 @@ function storeFrameCache (
   bitmap: ImageBitmap
 ): void {
   const bytes = bitmap.width * bitmap.height * 4
-  if (bytes > cacheLimit) return bitmap.close()
+  if (bytes > cacheLimit) {
+    closeBitmap(bitmap)
+    return
+  }
   while (runtime.__svgaBytes + bytes > cacheLimit) {
     const oldestKey = runtime.__svgaOrder.keys().next().value as number
     const oldest = cache[oldestKey] as ImageBitmap
     runtime.__svgaBytes -= oldest.width * oldest.height * 4
-    oldest.close()
     delete cache[oldestKey]
     runtime.__svgaOrder.delete(oldestKey)
+    closeBitmap(oldest)
   }
-  cache[key] = bitmap
-  runtime.__svgaBytes += bytes
-  runtime.__svgaOrder.set(key, true)
+  try {
+    cache[key] = bitmap
+    runtime.__svgaOrder.set(key, true)
+    runtime.__svgaBytes += bytes
+  } catch {
+    delete cache[key]
+    runtime.__svgaOrder.delete(key)
+    closeBitmap(bitmap)
+  }
 }
 
-function releaseImages (images: Array<ImageBitmap | string>): void {
+function releaseImages (images: ImageRelease[]): void {
   for (const image of images.splice(0)) {
     try {
-      if (typeof image === 'string') window.URL.revokeObjectURL(image)
-      else image.close()
+      if (typeof image === 'function') image()
+      else closeBitmap(image)
     } catch {}
   }
 }
@@ -87,24 +101,58 @@ function validateBitmap (bitmap: { width: number, height: number }, key: string)
   ) throw Error('image:' + key)
 }
 
-type DecodedImage = [Drawable, ImageBitmap | string]
-
-async function decodeBitmap (bytes: Uint8Array, key: string): Promise<DecodedImage> {
+async function decodeBitmap (
+  bytes: Uint8Array,
+  key: string,
+  releases: ImageRelease[],
+  isActive: () => boolean
+): Promise<Drawable | undefined> {
   const blob = new Blob([new Uint8Array(bytes)])
   if (typeof createImageBitmap === 'function') {
     const bitmap = await createImageBitmap(blob)
-    try { validateBitmap(bitmap, key) } catch (error) { bitmap.close(); throw error }
-    return [bitmap, bitmap]
-  }
-  return await new Promise<DecodedImage>((resolve, reject) => {
-    const url = window.URL.createObjectURL(blob)
-    const image = document.createElement('img')
-    const reset = () => { image.onload = image.onerror = null }
-    image.onload = () => {
-      reset()
-      try { validateBitmap(image, key); resolve([image, url]) } catch (error) { window.URL.revokeObjectURL(url); reject(error) }
+    if (!isActive()) {
+      closeBitmap(bitmap)
+      return
     }
-    image.onerror = () => { reset(); window.URL.revokeObjectURL(url); reject(Error('image:' + key)) }
+    try { validateBitmap(bitmap, key) } catch (error) {
+      closeBitmap(bitmap)
+      throw error
+    }
+    releases.push(bitmap)
+    return bitmap
+  }
+  return await new Promise<Drawable | undefined>((resolve, reject) => {
+    const image = document.createElement('img')
+    let owned = true
+    let settle = () => { resolve(undefined) }
+    let url: string
+    const cleanup = () => {
+      if (!owned) return
+      owned = false
+      image.onload = image.onerror = null
+      image.removeAttribute('src')
+      try { window.URL.revokeObjectURL(url) } catch {}
+      settle()
+    }
+    url = window.URL.createObjectURL(blob)
+    releases.push(cleanup)
+    image.onload = () => {
+      if (!isActive()) return cleanup()
+      try { validateBitmap(image, key) } catch (error) {
+        settle = () => {}
+        cleanup()
+        reject(error)
+        return
+      }
+      image.onload = image.onerror = null
+      settle = () => {}
+      resolve(image)
+    }
+    image.onerror = () => {
+      settle = () => {}
+      cleanup()
+      reject(Error('image:' + key))
+    }
     image.src = url
   })
 }
@@ -214,7 +262,7 @@ export class Player {
   private __svgaVisible = true
   private __svgaObserver: IntersectionObserver | null = null
   private __svgaImages: BitmapsCache = Object.create(null) as BitmapsCache
-  private __svgaOwned: Array<ImageBitmap | string> = []
+  private __svgaOwned: ImageRelease[] = []
   private readonly __svgaFrames: FrameCache = Object.create(null) as FrameCache
 
   public get config (): Readonly<PlayerConfig> {
@@ -300,7 +348,7 @@ export class Player {
     clearFrameCache(runtime, this.__svgaFrames)
     releaseImages(this.__svgaOwned)
     const bitmapsCache = this.__svgaImages = Object.create(null) as BitmapsCache
-    const imageReleases: Array<ImageBitmap | string> = []
+    const imageReleases: ImageRelease[] = []
     this.__svgaOwned = imageReleases
     this.videoEntity = undefined
     this.currentFrame = 0
@@ -311,28 +359,39 @@ export class Player {
     const totalFrames = videoEntity.frames - 1
     validateConfig(this.__svgaConfig, totalFrames)
 
-    const failures: unknown[] = []
     let pixels = 0
-    await Promise.all(Object.keys(videoEntity.images).map(async key => {
-      try {
-        const resource = await decodeBitmap(videoEntity.images[key], key)
-        bitmapsCache[key] = resource[0]
-        imageReleases.push(resource[1])
-        pixels += resource[0].width * resource[0].height
-      } catch (error) {
-        failures.push(error)
+    const keys = Object.keys(videoEntity.images)
+    for (let index = 0; index < keys.length; index++) {
+      if (pixels >= 33_554_432) {
+        releaseImages(imageReleases)
+        if (this.__svgaImages === bitmapsCache) this.__svgaImages = Object.create(null) as BitmapsCache
+        throw Error('image pixels')
       }
-    }))
-    if (failures.length || pixels > 33_554_432) {
-      releaseImages(imageReleases)
-      if (this.__svgaImages === bitmapsCache) this.__svgaImages = Object.create(null) as BitmapsCache
-      throw failures.length ? failures[0] : Error('image pixels')
+      const key = keys[index]
+      try {
+        const resource = await decodeBitmap(
+          videoEntity.images[key], key, imageReleases,
+          () => this.__svgaImages === bitmapsCache
+        )
+        if (!resource || this.__svgaImages !== bitmapsCache) {
+          releaseImages(imageReleases)
+          return
+        }
+        bitmapsCache[key] = resource
+        pixels += resource.width * resource.height
+        if (pixels > 33_554_432) throw Error('image pixels')
+      } catch (error) {
+        releaseImages(imageReleases)
+        if (this.__svgaImages === bitmapsCache) this.__svgaImages = Object.create(null) as BitmapsCache
+        throw error
+      }
     }
     if (this.__svgaImages !== bitmapsCache) {
       releaseImages(imageReleases)
       return
     }
     try {
+      validateVideo(videoEntity)
       validateConfig(this.__svgaConfig, totalFrames)
     } catch (error) {
       releaseImages(imageReleases)
@@ -548,9 +607,13 @@ export class Player {
       } else if (typeof createImageBitmap === 'function' && !pending.has(frame)) {
         pending.add(frame)
         void createImageBitmap(ofsCanvas).then(bitmap => {
-          if (active.__svgaPending !== pending) bitmap.close()
-          else storeFrameCache(active, cache, frame, bitmap)
-          pending.delete(frame)
+          try {
+            if (active.__svgaPending !== pending) {
+              closeBitmap(bitmap)
+            } else storeFrameCache(active, cache, frame, bitmap)
+          } finally {
+            pending.delete(frame)
+          }
         }, () => { pending.delete(frame) })
       }
     }

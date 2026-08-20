@@ -7,6 +7,66 @@ const readFixture = async (name: string): Promise<string> => {
   return (await readFile(resolve(`__test__/svga/${name}.svga`))).toString('base64')
 }
 
+test('built UMD validates complete clipPath grammar in the native browser', async ({ page }) => {
+  await page.goto('about:blank')
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
+
+  const evidence = await page.evaluate(async () => {
+    interface BrowserPlayer {
+      mount: (video: unknown) => Promise<void>
+      start: () => void
+      destroy: () => void
+    }
+    const browserWindow = window as unknown as Window & {
+      SVGA: { Player: new (canvas: HTMLCanvasElement) => BrowserPlayer }
+    }
+    const source = document.createElement('canvas')
+    source.width = source.height = 4
+    const sourceContext = source.getContext('2d')
+    if (!sourceContext) throw new Error('source context unavailable')
+    sourceContext.fillStyle = '#ff0000'
+    sourceContext.fillRect(0, 0, 4, 4)
+
+    const renderAlpha = async (clipPath: string): Promise<number> => {
+      const canvas = document.createElement('canvas')
+      const player = new browserWindow.SVGA.Player(canvas)
+      await player.mount({
+        version: '2.0',
+        size: { width: 4, height: 4 },
+        fps: 20,
+        frames: 1,
+        images: Object.create(null),
+        replaceElements: Object.assign(Object.create(null), { sprite: source }),
+        dynamicElements: Object.create(null),
+        sprites: [{
+          imageKey: 'sprite',
+          frames: [{
+            alpha: 1,
+            transform: null,
+            layout: { x: 0, y: 0, width: 4, height: 4 },
+            clipPath,
+            shapes: []
+          }]
+        }]
+      })
+      player.start()
+      const alpha = canvas.getContext('2d')?.getImageData(0, 0, 1, 1).data[3] ?? 0
+      player.destroy()
+      return alpha
+    }
+
+    return {
+      validNewline: await renderAlpha('M0 0\nH4 V4 H0 Z'),
+      trailingGarbage: await renderAlpha('M0 0 H4 V4 H0 Z invalid'),
+      trailingCommand: await renderAlpha('M0 0 L')
+    }
+  })
+
+  expect(evidence.validNewline).toBe(255)
+  expect(evidence.trailingGarbage).toBe(0)
+  expect(evidence.trailingCommand).toBe(0)
+})
+
 test('built UMD parses with real Worker and direct modes, then renders non-empty Canvas pixels', async ({ page }) => {
   const [workerFixture, directFixture] = await Promise.all([
     readFixture('11'),

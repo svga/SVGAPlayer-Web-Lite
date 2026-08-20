@@ -47,6 +47,9 @@ class FakeImage {
   public width = 1
   public height = 1
   public currentSrc = ''
+  public readonly removeAttribute = vi.fn((name: string) => {
+    if (name === 'src') this.currentSrc = ''
+  })
 
   public set src (value: string) {
     this.currentSrc = value
@@ -617,14 +620,15 @@ describe('Player mount and playback lifecycle', () => {
     await expect(player.mount(makeVideo({ images }))).resolves.toBeUndefined()
   })
 
-  it('rejects and closes every decoded image when their combined pixels exceed the total budget', async () => {
+  it('stops before a third decode once two images consume the total pixel budget', async () => {
     const first = new FakeImageBitmap(4096, 4096)
     const second = new FakeImageBitmap(4096, 4096)
     const extra = new FakeImageBitmap(1, 1)
-    vi.stubGlobal('createImageBitmap', vi.fn()
+    const createImageBitmap = vi.fn()
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce(second)
-      .mockResolvedValueOnce(extra))
+      .mockResolvedValueOnce(extra)
+    vi.stubGlobal('createImageBitmap', createImageBitmap)
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
     const images = Object.assign(Object.create(null), {
       first: Uint8Array.of(1), second: Uint8Array.of(2), extra: Uint8Array.of(3)
@@ -633,7 +637,24 @@ describe('Player mount and playback lifecycle', () => {
     await expect(player.mount(makeVideo({ images }))).rejects.toThrow(/pixels/)
     expect(first.close).toHaveBeenCalledOnce()
     expect(second.close).toHaveBeenCalledOnce()
-    expect(extra.close).toHaveBeenCalledOnce()
+    expect(extra.close).not.toHaveBeenCalled()
+    expect(createImageBitmap).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts the exact total image budget when no images remain', async () => {
+    const first = new FakeImageBitmap(4096, 4096)
+    const second = new FakeImageBitmap(4096, 4096)
+    const createImageBitmap = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    vi.stubGlobal('createImageBitmap', createImageBitmap)
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const exactImages = Object.assign(Object.create(null), {
+      first: Uint8Array.of(1), second: Uint8Array.of(2)
+    })
+
+    await expect(player.mount(makeVideo({ images: exactImages }))).resolves.toBeUndefined()
+    expect(createImageBitmap).toHaveBeenCalledTimes(2)
   })
 
   it('continues owned-image cleanup when one close operation throws', async () => {
@@ -653,7 +674,7 @@ describe('Player mount and playback lifecycle', () => {
     await expect(player.mount(makeVideo({ images }))).rejects.toThrow('image pixels')
     expect(first.close).toHaveBeenCalledOnce()
     expect(second.close).toHaveBeenCalledOnce()
-    expect(extra.close).toHaveBeenCalledOnce()
+    expect(extra.close).not.toHaveBeenCalled()
   })
 
   it('waits for partial decode completion and closes a late bitmap after another image fails', async () => {
@@ -715,6 +736,40 @@ describe('Player mount and playback lifecycle', () => {
     expect(revokeObjectURL).toHaveBeenCalledOnce()
   })
 
+  it.each(['remount', 'destroy'] as const)(
+    'settles a never-loading fallback image and revokes its URL exactly once on %s',
+    async action => {
+      vi.stubGlobal('createImageBitmap', undefined)
+      const revokeObjectURL = vi.fn()
+      vi.stubGlobal('window', {
+        ...window,
+        URL: { createObjectURL: vi.fn(() => 'blob:pending'), revokeObjectURL }
+      })
+      const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+      const images = Object.assign(Object.create(null), { pending: Uint8Array.of(1) })
+      let settled = false
+      const pendingMount = player.mount(makeVideo({ images })).finally(() => { settled = true })
+      await vi.waitFor(() => expect(pendingImages).toHaveLength(1))
+      const image = pendingImages[0]
+
+      if (action === 'remount') await player.mount(makeVideo())
+      else player.destroy()
+      await expect(Promise.race([
+        pendingMount,
+        new Promise((_, reject) => setTimeout(() => reject(Error('mount did not settle')), 50))
+      ])).resolves.toBeUndefined()
+
+      expect(settled).toBe(true)
+      expect(revokeObjectURL).toHaveBeenCalledOnce()
+      expect(image.onload).toBeNull()
+      expect(image.onerror).toBeNull()
+      expect(image.removeAttribute).toHaveBeenCalledOnce()
+
+      player.destroy()
+      expect(revokeObjectURL).toHaveBeenCalledOnce()
+    }
+  )
+
   it('never releases caller-owned replacement or dynamic elements', async () => {
     const replacement = { close: vi.fn(), width: 1, height: 1 }
     const dynamic = { close: vi.fn(), width: 1, height: 1 }
@@ -761,6 +816,25 @@ describe('Player mount and playback lifecycle', () => {
     const decoded = new FakeImageBitmap(1, 1)
     finish?.(decoded)
     await expect(mounting).rejects.toThrow(/frame/)
+    expect(player.videoEntity).toBeUndefined()
+    expect(decoded.close).toHaveBeenCalledOnce()
+  })
+
+  it('revalidates mutable video structure after delayed image decoding before mount commits', async () => {
+    let finish: ((bitmap: FakeImageBitmap) => void) | undefined
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<FakeImageBitmap>(resolve => { finish = resolve })))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const video = makeVideo({ images: Object.assign(Object.create(null), { delayed: Uint8Array.of(1) }) })
+    const mounting = player.mount(video)
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    video.size.width = 0
+    video.frames = 2
+    video.sprites = [{ imageKey: 'mutated', frames: [] }]
+    const decoded = new FakeImageBitmap(1, 1)
+
+    finish?.(decoded)
+
+    await expect(mounting).rejects.toThrow(/video/)
     expect(player.videoEntity).toBeUndefined()
     expect(decoded.close).toHaveBeenCalledOnce()
   })
@@ -1079,6 +1153,89 @@ describe('Player frame cache and destruction', () => {
     expect(cache[1]).toBe(tiny)
     expect(large.close).toHaveBeenCalledOnce()
     expect(tiny.close).not.toHaveBeenCalled()
+  })
+
+  it('evicts and accounts for an LRU entry before best-effort close', async () => {
+    const first = new FakeImageBitmap(3000, 3000)
+    const second = new FakeImageBitmap(3000, 3000)
+    first.close.mockImplementation(() => { throw new Error('close failed') })
+    vi.stubGlobal('createImageBitmap', vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second))
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      isCacheFrames: true,
+      loop: 1
+    })
+    await player.mount(makeVideo({ size: { width: 3000, height: 3000 }, frames: 2, fps: 1 }))
+
+    player.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    runRaf(rafRequests[rafRequests.length - 1], 1000)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> }).__svgaFrames
+    expect(Object.keys(cache)).toEqual(['1'])
+    expect(cache[1]).toBe(second)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).not.toHaveBeenCalled()
+  })
+
+  it('closes a new async bitmap when the frame cache cannot store it and clears pending state', async () => {
+    const first = new FakeImageBitmap(10, 10)
+    const second = new FakeImageBitmap(10, 10)
+    const createImageBitmap = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    vi.stubGlobal('createImageBitmap', createImageBitmap)
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      isCacheFrames: true
+    })
+    await player.mount(makeVideo({ size: { width: 10, height: 10 }, frames: 1 }))
+    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> }).__svgaFrames
+    Object.preventExtensions(cache)
+
+    player.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    player.start()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(createImageBitmap).toHaveBeenCalledTimes(2)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).toHaveBeenCalledOnce()
+    expect(Object.keys(cache)).toEqual([])
+  })
+
+  it('clears pending state in finally when rejecting an oversized bitmap whose close throws', async () => {
+    const first = new FakeImageBitmap(4097, 4097)
+    const second = new FakeImageBitmap(4097, 4097)
+    first.close.mockImplementation(() => { throw new Error('close failed') })
+    second.close.mockImplementation(() => { throw new Error('close failed') })
+    const createImageBitmap = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+    vi.stubGlobal('createImageBitmap', createImageBitmap)
+    const player = new Player({
+      container: new FakeCanvas() as unknown as HTMLCanvasElement,
+      isCacheFrames: true
+    })
+    await player.mount(makeVideo({ size: { width: 10, height: 10 }, frames: 1 }))
+
+    player.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    player.start()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(createImageBitmap).toHaveBeenCalledTimes(2)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).toHaveBeenCalledOnce()
   })
 
   it('prefers transferToImageBitmap when the offscreen canvas supports it', async () => {

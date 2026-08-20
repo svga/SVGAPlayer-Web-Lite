@@ -148,3 +148,66 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
   expect(evidence.frames).toContain(1)
   expect(evidence.schedulerWasNative).toBe(true)
 })
+
+test('built UMD falls back after a real timer Worker error without a page error', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await page.goto('about:blank')
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
+
+  const evidence = await page.evaluate(async () => {
+    interface BrowserPlayer {
+      currentFrame: number
+      onEnd?: () => void
+      mount: (video: unknown) => Promise<void>
+      start: () => void
+      destroy: () => void
+    }
+    const browserWindow = window as unknown as Window & {
+      SVGA: { Player: new (options: unknown) => BrowserPlayer }
+    }
+    const NativeWorker = Worker
+    const failingUrl = URL.createObjectURL(new Blob([
+      'onmessage=function(){throw Error("timer worker failure")}'
+    ]))
+    let workerConstructions = 0
+    window.Worker = new Proxy(NativeWorker, {
+      construct () {
+        workerConstructions++
+        return new NativeWorker(failingUrl)
+      }
+    })
+    const player = new browserWindow.SVGA.Player({
+      container: document.createElement('canvas'),
+      isOpenNoExecutionDelay: true,
+      loop: false
+    })
+    await player.mount({
+      version: '2.0',
+      size: { width: 2, height: 2 },
+      fps: 30,
+      frames: 3,
+      images: Object.create(null),
+      replaceElements: Object.create(null),
+      dynamicElements: Object.create(null),
+      sprites: []
+    })
+    const result = await Promise.race([
+      new Promise<{ ended: boolean, frame: number }>(resolve => {
+        player.onEnd = () => resolve({ ended: true, frame: player.currentFrame })
+        player.start()
+      }),
+      new Promise<{ ended: boolean, frame: number }>(resolve => {
+        setTimeout(() => resolve({ ended: false, frame: player.currentFrame }), 1000)
+      })
+    ])
+    player.destroy()
+    URL.revokeObjectURL(failingUrl)
+    return { ...result, workerConstructions }
+  })
+
+  expect(evidence.ended).toBe(true)
+  expect(evidence.frame).toBe(2)
+  expect(evidence.workerConstructions).toBe(1)
+  expect(pageErrors).toEqual([])
+})

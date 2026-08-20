@@ -270,32 +270,53 @@ describe('Animator lifecycle', () => {
     expect(raf.callbacks).toHaveLength(1)
   })
 
-  it.each(['onerror', 'onmessageerror'] as const)(
-    'terminates and falls back to one RAF chain after Worker %s',
-    eventName => {
-      const raf = installRaf()
-      const worker: {
-        onmessage: (() => void) | null
-        onerror: (() => void) | null
-        onmessageerror: (() => void) | null
-        terminate: ReturnType<typeof vi.fn>
-        postMessage: ReturnType<typeof vi.fn>
-      } = { onmessage: null, onerror: null, onmessageerror: null, terminate: vi.fn(), postMessage: vi.fn() }
-      vi.stubGlobal('Worker', function () { return worker })
-      const animator = new Animator()
-      animator.__svgaNoDelay = true
-      animator.__svgaEnd = 10
-      animator.__svgaDuration = 100
-      animator.__svgaRun()
+  it('prevents the Worker error default and falls back to one RAF chain', () => {
+    const raf = installRaf()
+    const worker: {
+      onmessage: (() => void) | null
+      onerror: ((event: ErrorEvent) => void) | null
+      onmessageerror: (() => void) | null
+      terminate: ReturnType<typeof vi.fn>
+      postMessage: ReturnType<typeof vi.fn>
+    } = { onmessage: null, onerror: null, onmessageerror: null, terminate: vi.fn(), postMessage: vi.fn() }
+    vi.stubGlobal('Worker', function () { return worker })
+    const animator = new Animator()
+    animator.__svgaNoDelay = true
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+    animator.__svgaRun()
+    const preventDefault = vi.fn()
 
-      worker?.[eventName]?.()
-      worker?.[eventName]?.()
+    worker.onerror?.({ preventDefault } as unknown as ErrorEvent)
+    worker.onerror?.({ preventDefault } as unknown as ErrorEvent)
 
-      expect(worker?.terminate).toHaveBeenCalledOnce()
-      expect(raf.callbacks).toHaveLength(1)
-      expect(raf.requested).toHaveLength(1)
+    expect(worker?.terminate).toHaveBeenCalledOnce()
+    expect(preventDefault).toHaveBeenCalledTimes(2)
+    expect(raf.callbacks).toHaveLength(1)
+    expect(raf.requested).toHaveLength(1)
+  })
+
+  it('falls back directly on Worker messageerror', () => {
+    const raf = installRaf()
+    const worker = {
+      onmessage: null as (() => void) | null,
+      onerror: null as ((event: ErrorEvent) => void) | null,
+      onmessageerror: null as (() => void) | null,
+      terminate: vi.fn(),
+      postMessage: vi.fn()
     }
-  )
+    vi.stubGlobal('Worker', function () { return worker })
+    const animator = new Animator()
+    animator.__svgaNoDelay = true
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+    animator.__svgaRun()
+
+    worker.onmessageerror?.()
+
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(raf.callbacks).toHaveLength(1)
+  })
 
   it('continues the same timeline on one RAF when a runtime Worker post fails', () => {
     const raf = installRaf()

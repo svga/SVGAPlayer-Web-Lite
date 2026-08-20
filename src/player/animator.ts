@@ -102,7 +102,11 @@ export class Animator {
     if (!worker) return void (this.__svgaScheduler = requestFrame(this))
     this.__svgaScheduler = worker
     worker.onmessage = this.__svgaFrame.bind(this, worker)
-    worker.onerror = worker.onmessageerror = this.__svgaFallback.bind(this, worker)
+    worker.onerror = event => {
+      event.preventDefault()
+      this.__svgaFallback(worker as Worker)
+    }
+    worker.onmessageerror = () => { this.__svgaFallback(worker as Worker) }
     this.__svgaSignal(worker)
   }
 

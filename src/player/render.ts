@@ -155,7 +155,12 @@ function clipPath (
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   d: string
 ): boolean {
-  const path = svgPath(d)
+  const normalized = d.replace(/\s+/g, ' ')
+  if (
+    typeof CSS === 'undefined' || typeof CSS.supports !== 'function' ||
+    !CSS.supports('offset-path', 'path(' + JSON.stringify(normalized) + ')')
+  ) return false
+  const path = svgPath(normalized)
   if (!path) return false
   context.clip(path)
   return true

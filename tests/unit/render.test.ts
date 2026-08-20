@@ -148,6 +148,9 @@ function pathForSource (source: string): RecordingPath2D {
 beforeEach(() => {
   RecordingPath2D.instances.length = 0
   vi.stubGlobal('Path2D', RecordingPath2D)
+  vi.stubGlobal('CSS', {
+    supports: vi.fn((_property: string, value: string) => !value.includes('invalid') && !value.endsWith(' L")'))
+  })
 })
 
 afterEach(() => {
@@ -209,6 +212,34 @@ describe('default renderer native path handling', () => {
 
     expect(argsFor(context, 'drawImage')).toEqual([])
     expect(argsFor(context, 'fill')).toEqual([])
+    expect(context.depth).toBe(0)
+  })
+
+  it('normalizes newline whitespace and validates a clipPath with native CSS path grammar', () => {
+    const mask = 'M0 0\n\tH10  V10 H0 Z'
+    const context = draw([frame([], { clipPath: mask })], { sprite: {} as HTMLImageElement })
+
+    expect(CSS.supports).toHaveBeenCalledWith('offset-path', 'path("M0 0 H10 V10 H0 Z")')
+    expect(argsFor(context, 'clip')).toEqual([[pathForSource('M0 0 H10 V10 H0 Z')]])
+  })
+
+  it.each(['M0 0 H10 V10 H0 Z invalid', 'M0 0 L'])(
+    'fails closed before Path2D for a clipPath with trailing input: %s',
+    mask => {
+      const context = draw([frame([], { clipPath: mask })], { sprite: {} as HTMLImageElement })
+
+      expect(argsFor(context, 'drawImage')).toEqual([])
+      expect(RecordingPath2D.instances.find(path => path.source === mask)).toBeUndefined()
+      expect(context.depth).toBe(0)
+    }
+  )
+
+  it('fails closed for a nonempty clipPath when CSS.supports is unavailable', () => {
+    vi.stubGlobal('CSS', undefined)
+    const context = draw([frame([], { clipPath: 'M0 0 H10 V10 H0 Z' })], { sprite: {} as HTMLImageElement })
+
+    expect(argsFor(context, 'drawImage')).toEqual([])
+    expect(RecordingPath2D.instances).toHaveLength(0)
     expect(context.depth).toBe(0)
   })
 
