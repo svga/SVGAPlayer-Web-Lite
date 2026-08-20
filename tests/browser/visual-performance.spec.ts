@@ -160,6 +160,117 @@ test('runs one isolated local runtime and returns runtime-only startup metrics',
   })
 })
 
+test('copies one input buffer for sequential baseline and local runners', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const outcome = await page.evaluate(async () => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const initialBytes = buffer.byteLength
+    const api = (window as unknown as {
+      SVGAVisual: {
+        createIsolatedRunner: (runtime: 'local' | 'baseline', options: { onEvent: (event: { event: string, result?: unknown }) => void }) => {
+          ready: Promise<unknown>
+          run: (input: { buffer: ArrayBuffer, fixture: { name: string, bytes: number, expectation: string }, options: { maxPlaybackMs: number } }) => Promise<{ event: string, result?: unknown }>
+          dispose: () => void
+        }
+      }
+    }).SVGAVisual
+    const run = async (runtime: 'local' | 'baseline') => {
+      const runner = api.createIsolatedRunner(runtime, { onEvent: () => {} })
+      await runner.ready
+      const event = await runner.run({
+        buffer,
+        fixture: { name: 'soundwave.svga', bytes: initialBytes, expectation: 'playable' },
+        options: { maxPlaybackMs: 60 }
+      })
+      runner.dispose()
+      return { bytes: buffer.byteLength, event }
+    }
+    return { initialBytes, baseline: await run('baseline'), local: await run('local'), finalBytes: buffer.byteLength }
+  })
+
+  expect(outcome.baseline.bytes).toBe(outcome.initialBytes)
+  expect(outcome.local.bytes).toBe(outcome.initialBytes)
+  expect(outcome.finalBytes).toBe(outcome.initialBytes)
+  expect(outcome.baseline.event.event).toBe('result')
+  expect(outcome.local.event.event).toBe('result')
+})
+
+test('settles isolated start failures and paint-time cancellation without leaving an iframe', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const outcome = await page.evaluate(async () => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const fixture = { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' }
+    const api = (window as any).SVGAVisual
+
+    const failing = api.createIsolatedRunner('local', { onEvent: () => {} })
+    await failing.ready
+    const OriginalPlayer = failing.frame.contentWindow.SVGA.Player
+    failing.frame.contentWindow.SVGA.Player = class extends OriginalPlayer {
+      start () { throw Error('intentional start failure') }
+    }
+    const startFailure = await failing.run({ buffer, fixture, options: { maxPlaybackMs: 100 } })
+    failing.dispose()
+
+    let reachStart: (() => void) | undefined
+    const started = new Promise<void>(resolve => { reachStart = resolve })
+    const blockedPaint = api.createIsolatedRunner('local', {
+      onEvent: (event: { event: string, stage?: string }) => {
+        if (event.event === 'stage' && event.stage === 'start') reachStart?.()
+      }
+    })
+    await blockedPaint.ready
+    blockedPaint.frame.contentWindow.requestAnimationFrame = () => 1
+    blockedPaint.run({ buffer, fixture, options: { maxPlaybackMs: 10_000, timeoutMs: 10_000 } })
+    await started
+    const cancelled = await blockedPaint.cancel()
+    return { startFailure, cancelled, connected: blockedPaint.frame.isConnected }
+  })
+
+  expect(outcome.startFailure).toMatchObject({ event: 'error', error: { stage: 'start' } })
+  expect((outcome.startFailure as { error: { message: string } }).error.message).toContain('intentional start failure')
+  expect(outcome.cancelled).toMatchObject({ event: 'cancelled', stage: 'start' })
+  expect(outcome.connected).toBe(false)
+})
+
+test('cancels a pending isolated parser exactly once and releases its realm', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const outcome = await page.evaluate(async runtime => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const events: Array<{ event: string, stage?: string }> = []
+    const runner = (window as any).SVGAVisual.createIsolatedRunner(runtime, {
+      onEvent: (event: { event: string, stage?: string }) => events.push(event)
+    })
+    await runner.ready
+    runner.run({
+      buffer,
+      fixture: { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' },
+      options: { maxPlaybackMs: 10_000, timeoutMs: 10_000 }
+    })
+    const cancellation = await runner.cancel()
+    return { cancellation, events, connected: runner.frame.isConnected }
+  }, isolatedRuntime)
+
+  expect(outcome.cancellation).toMatchObject({ event: 'cancelled', stage: 'parse' })
+  expect(outcome.events.filter(event => event.event === 'cancelled')).toHaveLength(1)
+  expect(outcome.connected).toBe(false)
+})
+
+test('rejects a runner readiness promise when disposed before startup', async ({ browserDiagnostics, page }) => {
+  browserDiagnostics.expectRequestCancellation('/runner.html')
+  await page.goto(visualTestUrl)
+  const message = await page.evaluate(async () => {
+    const runner = (window as any).SVGAVisual.createIsolatedRunner('local', { onEvent: () => {} })
+    const ready = runner.ready.then(
+      () => 'unexpected-ready',
+      (error: Error) => error.message
+    )
+    runner.dispose()
+    return await ready
+  })
+
+  expect(message).toContain('就绪前被释放')
+})
+
 test('cancels an in-progress full fixture sweep and releases the controls', async ({ browserDiagnostics, page }) => {
   browserDiagnostics.expectRequestCancellation('/fixtures/')
   await page.goto(visualTestUrl)
@@ -183,9 +294,13 @@ test('serves an isolated no-cache page and rejects fixture path traversal', asyn
   expect(pageResponse.headers()['cross-origin-embedder-policy']).toBe('require-corp')
   expect(pageResponse.headers()['content-security-policy']).not.toContain("'unsafe-eval'")
 
-  const runnerResponse = await request.get(`${visualTestUrl}runner.html?runtime=local&runId=test`)
-  expect(runnerResponse.status()).toBe(200)
-  expect(runnerResponse.headers()['content-security-policy']).toContain("script-src 'self' 'unsafe-eval'")
+  const localRunnerResponse = await request.get(`${visualTestUrl}runner.html?runtime=local&runId=test`)
+  expect(localRunnerResponse.status()).toBe(200)
+  expect(localRunnerResponse.headers()['content-security-policy']).not.toContain("'unsafe-eval'")
+
+  const baselineRunnerResponse = await request.get(`${visualTestUrl}runner.html?runtime=baseline&runId=test`)
+  expect(baselineRunnerResponse.status()).toBe(200)
+  expect(baselineRunnerResponse.headers()['content-security-policy']).toContain("script-src 'self' 'unsafe-eval'")
 
   const traversal = await request.get(`${visualTestUrl}fixtures/%2e%2e%2fpackage.json`)
   expect(traversal.status()).toBe(404)

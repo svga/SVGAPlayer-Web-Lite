@@ -1,5 +1,5 @@
 const lowerBetterMetrics = new Set([
-  'runtimeLoadMs', 'runtimeReadyMs', 'parseMs', 'mountMs', 'startMs', 'firstPaintMs', 'readyMs',
+  'runtimeLoadMs', 'runtimeReadyMs', 'playerReadyMs', 'parseMs', 'mountMs', 'startMs', 'firstPaintMs', 'readyMs',
   'skippedFrames', 'skippedRate', 'lateFrames', 'lateRate', 'intervalAverageMs', 'intervalP50Ms',
   'intervalP95Ms', 'intervalP99Ms', 'intervalMaxMs', 'jitterMs', 'longTaskCount',
   'longTaskTotalMs', 'longTaskMaxMs', 'blockingMs'
@@ -50,6 +50,7 @@ export function comparisonBand (baseline, local) {
 }
 
 export function metricDirection (name) {
+  if (name.startsWith('heap')) return 'approximate'
   if (name === 'actualFps') return 'target-distance'
   return lowerBetterMetrics.has(name) ? 'lower' : 'higher'
 }
@@ -71,6 +72,22 @@ export function compareMetric (name, baselineInput, localInput, options = {}) {
     return {
       name, direction, baseline, local, baselineValue: baselineMedian, localValue: localMedian,
       absoluteDelta: null, percentDelta: null, bandPercent: comparisonBand(baseline, local), outcome: 'limited'
+    }
+  }
+  if (direction === 'approximate') {
+    const absoluteDelta = localMedian - baselineMedian
+    return {
+      name,
+      direction,
+      baseline,
+      local,
+      baselineValue: baselineMedian,
+      localValue: localMedian,
+      absoluteDelta,
+      percentDelta: baselineMedian === 0 ? null : absoluteDelta / Math.abs(baselineMedian),
+      bandPercent: comparisonBand(baseline, local),
+      outcome: 'limited',
+      approximate: true
     }
   }
   const baselineValue = direction === 'target-distance' ? Math.abs(baselineMedian - targetFps) : baselineMedian
@@ -99,6 +116,21 @@ function sameValue (left, right) {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
 }
 
+const profileCoreFields = [
+  'fileBytes', 'width', 'height', 'pixels', 'fps', 'frames', 'durationMs', 'images',
+  'imageBytes', 'sprites', 'spriteFrames', 'shapes', 'rgbaBytes'
+]
+
+function sameProfile (baseline, local) {
+  return profileCoreFields.every(field => baseline?.[field] === local?.[field])
+}
+
+function sameVisual (baseline, local) {
+  return baseline.rgbaHash === local.rgbaHash &&
+    baseline.width === local.width && baseline.height === local.height &&
+    baseline.nonEmptyPixels === local.nonEmptyPixels
+}
+
 function successful (result) {
   return result?.status === 'completed' || result?.status === 'sampled'
 }
@@ -116,7 +148,10 @@ export function compareCorrectness ({ baseline, local }) {
   if (baselineSuccess && !localSuccess) return { state: 'local-regression', performanceComparable: false }
   if (!baselineSuccess || !localSuccess) return { state: 'capability-change', performanceComparable: false }
   if (!sameValue(baseline.capabilities, local.capabilities)) return { state: 'capability-change', performanceComparable: false }
-  if (!sameValue(baseline.metadata, local.metadata)) return { state: 'metadata-change', performanceComparable: false }
-  if (!sameValue(baseline.visual, local.visual)) return { state: 'visual-change', performanceComparable: false }
+  if (!sameProfile(baseline.profile, local.profile)) return { state: 'metadata-change', performanceComparable: false }
+  if (!baseline.visual || !local.visual || baseline.visual.frame !== local.visual.frame) {
+    return { state: 'limited', performanceComparable: false }
+  }
+  if (!sameVisual(baseline.visual, local.visual)) return { state: 'visual-change', performanceComparable: false }
   return { state: 'match', performanceComparable: true }
 }

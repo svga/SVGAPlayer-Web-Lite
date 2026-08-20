@@ -3,7 +3,6 @@ import {
   createLongTaskMonitor,
   createRuntimeMonitor,
   environmentProfile,
-  nextPaint,
   profileVideo,
   readHeapBytes
 } from './metrics.js'
@@ -87,10 +86,40 @@ function collectRuntime (longTasks, runtimeMonitor) {
   }
 }
 
+function cancelledError () {
+  return DOMException('Cancelled', 'AbortError')
+}
+
+function waitForPaint (token) {
+  return new Promise(resolve => {
+    let first = 0
+    let second = 0
+    let settled = false
+    const finish = painted => {
+      if (settled) return
+      settled = true
+      window.cancelAnimationFrame(first)
+      window.cancelAnimationFrame(second)
+      if (token.paintCancel === cancel) token.paintCancel = null
+      resolve(painted)
+    }
+    const cancel = () => finish(false)
+    token.paintCancel = cancel
+    first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => finish(true))
+    })
+  })
+}
+
 async function playMounted (token, player, video, maxPlaybackMs) {
   const collector = new PlaybackCollector(video.fps)
   const longTasks = createLongTaskMonitor()
   const runtimeMonitor = createRuntimeMonitor()
+  let monitorResult
+  const finishMonitors = () => {
+    if (!monitorResult) monitorResult = collectRuntime(longTasks, runtimeMonitor)
+    return monitorResult
+  }
   let timeoutId = 0
   let completed = false
   let resolvePlayback
@@ -102,34 +131,51 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     resolvePlayback(reason)
   }
   token.finish = finish
-  player.onProcess = () => {
-    collector.record(player.currentFrame, performance.now())
-    const tick = collector.ticks[collector.ticks.length - 1]
-    if (tick) send('ticks', { ticks: [tick] })
-  }
-  player.onEnd = () => finish('completed')
   const started = performance.now()
-  player.start()
-  collector.record(player.currentFrame, performance.now())
-  const startMs = performance.now() - started
-  const paintStarted = performance.now()
-  await nextPaint()
-  const firstPaintMs = performance.now() - paintStarted
-  const visual = fingerprint(player.currentFrame)
-  if (Number.isFinite(maxPlaybackMs)) {
-    timeoutId = window.setTimeout(() => {
-      player.pause()
-      finish('sampled')
-    }, maxPlaybackMs)
+  try {
+    if (token.cancelled) throw cancelledError()
+    player.onProcess = () => {
+      if (token.cancelled) return
+      collector.record(player.currentFrame, performance.now())
+      const tick = collector.ticks[collector.ticks.length - 1]
+      if (tick) send('ticks', { ticks: [tick] })
+    }
+    player.onEnd = () => finish('completed')
+    player.start()
+    if (token.cancelled) throw cancelledError()
+    collector.record(player.currentFrame, performance.now())
+    const startMs = performance.now() - started
+    const visual = fingerprint(player.currentFrame)
+    const paintStarted = performance.now()
+    const painted = await waitForPaint(token)
+    if (token.cancelled || !painted) throw cancelledError()
+    const firstPaintMs = performance.now() - paintStarted
+    if (Number.isFinite(maxPlaybackMs)) {
+      timeoutId = window.setTimeout(() => {
+        if (token.cancelled || completed) return
+        player.pause()
+        finish('sampled')
+      }, maxPlaybackMs)
+    }
+    const reason = await playback
+    if (token.cancelled || reason === 'cancelled') throw cancelledError()
+    const runtimeResult = finishMonitors()
+    const playbackResult = collector.summarize(Math.max(0, performance.now() - started), runtimeResult.rafFrames)
+    return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual, playback: playbackResult, runtime: runtimeResult }
+  } finally {
+    window.clearTimeout(timeoutId)
+    token.paintCancel?.()
+    token.paintCancel = null
+    if (token.finish === finish) token.finish = null
+    finishMonitors()
   }
-  const reason = await playback
-  const ended = performance.now()
-  const runtimeResult = collectRuntime(longTasks, runtimeMonitor)
-  const playbackResult = collector.summarize(Math.max(0, ended - started), runtimeResult.rafFrames)
-  return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual, playback: playbackResult, runtime: runtimeResult }
 }
 
 function cleanup (token) {
+  if (token.cleaned) return
+  token.cleaned = true
+  token.paintCancel?.()
+  token.paintCancel = null
   if (token.blobUrl) {
     try { URL.revokeObjectURL(token.blobUrl) } catch {}
     token.blobUrl = null
@@ -141,16 +187,27 @@ function cleanup (token) {
   token.finish = null
 }
 
+function sendCancelled (token) {
+  if (token.terminal) return
+  token.terminal = true
+  send('cancelled', { stage: token.stage })
+}
+
 function abortActive () {
   if (!active) return
-  active.cancelled = true
-  active.finish?.('cancelled')
-  cleanup(active)
+  const token = active
+  token.cancelled = true
+  token.finish?.('cancelled')
+  sendCancelled(token)
+  cleanup(token)
 }
 
 async function run (message) {
   if (active) abortActive()
-  const token = { cancelled: false, parser: null, player: null, blobUrl: null, finish: null }
+  const token = {
+    cancelled: false, cleaned: false, terminal: false, stage: 'parse', parser: null,
+    player: null, blobUrl: null, finish: null, paintCancel: null
+  }
   active = token
   hiddenDuringRun = document.hidden
   const fixture = message.fixture || {}
@@ -160,10 +217,9 @@ async function run (message) {
     : Infinity
   const { environment, warnings } = warningForCapabilities()
   const heapBeforeBytes = readHeapBytes()
-  let stage = 'parse'
   try {
     if (!(message.buffer instanceof ArrayBuffer)) throw Error('run.buffer 必须是 ArrayBuffer')
-    send('stage', { stage })
+    send('stage', { stage: token.stage })
     token.parser = new window.SVGA.Parser()
     token.blobUrl = URL.createObjectURL(new Blob([message.buffer], { type: 'application/octet-stream' }))
     const parseStarted = performance.now()
@@ -173,11 +229,11 @@ async function run (message) {
     token.parser = null
     URL.revokeObjectURL(token.blobUrl)
     token.blobUrl = null
-    if (token.cancelled) throw DOMException('Cancelled', 'AbortError')
+    if (token.cancelled) throw cancelledError()
     if (isExpectedV1(fixture)) throw Error('SVGA 1.x 素材未被拒绝')
 
-    stage = 'mount'
-    send('stage', { stage })
+    token.stage = 'mount'
+    send('stage', { stage: token.stage })
     const profile = profileVideo(video, fixture.bytes || message.buffer.byteLength)
     token.player = new window.SVGA.Player({
       container: canvas,
@@ -189,10 +245,10 @@ async function run (message) {
     await token.player.mount(video)
     const mountMs = performance.now() - mountStarted
     const heapMountBytes = readHeapBytes()
-    if (token.cancelled) throw DOMException('Cancelled', 'AbortError')
+    if (token.cancelled) throw cancelledError()
 
-    stage = 'start'
-    send('stage', { stage })
+    token.stage = 'start'
+    send('stage', { stage: token.stage })
     const cold = await playMounted(token, token.player, video, maxPlaybackMs)
     const playerReadyMs = round(parseMs + mountMs + cold.startMs + cold.firstPaintMs)
     const startup = {
@@ -226,8 +282,8 @@ async function run (message) {
       sampleSufficient: cold.playback.updateCount >= 2
     }
     if (options.includeWarm === true && !token.cancelled) {
-      stage = 'warm'
-      send('stage', { stage })
+      token.stage = 'warm'
+      send('stage', { stage: token.stage })
       const warm = await playMounted(token, token.player, video, maxPlaybackMs)
       result.warm = {
         status: warm.reason,
@@ -240,22 +296,25 @@ async function run (message) {
       if (warm.playback.updateCount < 2) result.warnings.push('热播放样本不足，播放质量指标仅供参考。')
     }
     if (token.cancelled) {
-      send('cancelled', { stage })
+      sendCancelled(token)
     } else {
+      token.terminal = true
       send('result', { result })
     }
   } catch (error) {
     const cancelled = token.cancelled || error?.name === 'AbortError'
-    if (cancelled) send('cancelled', { stage })
-    else if (isExpectedV1(fixture) && stage === 'parse' && String(error?.message || error).includes('only support version@2')) {
+    if (cancelled) sendCancelled(token)
+    else if (isExpectedV1(fixture) && token.stage === 'parse' && String(error?.message || error).includes('only support version@2')) {
+      token.terminal = true
       send('result', {
         result: {
           status: 'expected-rejection', fixture, capabilities: environment, warnings,
-          error: { stage, message: error.message }
+          error: { stage: token.stage, message: error.message }
         }
       })
     } else {
-      send('error', { error: { stage, message: error instanceof Error ? error.message : String(error) } })
+      token.terminal = true
+      send('error', { error: { stage: token.stage, message: error instanceof Error ? error.message : String(error) } })
     }
   } finally {
     cleanup(token)

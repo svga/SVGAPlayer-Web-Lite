@@ -29,6 +29,7 @@ describe('visual comparison statistics', () => {
     expect(result.bandPercent).toBe(0.05)
     expect(result.direction).toBe('lower')
     expect(result.outcome).toBe('regression')
+    expect(compareMetric('playerReadyMs', aggregateRounds([100]), aggregateRounds([120])).direction).toBe('lower')
   })
 
   it('preserves a zero baseline as an absolute-only difference', () => {
@@ -50,21 +51,39 @@ describe('visual comparison statistics', () => {
     expect(result.localValue).toBe(5)
     expect(result.outcome).toBe('regression')
   })
+
+  it('keeps heap readings as approximate trends instead of performance verdicts', () => {
+    const result = compareMetric('heapDeltaBytes', aggregateRounds([100]), aggregateRounds([10]))
+    expect(result).toMatchObject({ direction: 'approximate', outcome: 'limited', approximate: true })
+  })
 })
 
 describe('visual comparison correctness states', () => {
-  const successful = { status: 'completed', metadata: { frames: 10 }, visual: { hash: 'aa', frame: 0 } }
+  const successful = {
+    status: 'completed',
+    profile: { width: 100, height: 100, fps: 20, frames: 10, images: 1 },
+    visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 }
+  }
 
   it.each([
     ['match', successful, successful, true],
     ['expected-rejection', { status: 'expected-rejection' }, { status: 'expected-rejection' }, false],
     ['local-regression', successful, { status: 'failed' }, false],
     ['capability-change', successful, { ...successful, capabilities: { imageBitmap: false } }, false],
-    ['metadata-change', successful, { ...successful, metadata: { frames: 11 } }, false],
-    ['visual-change', successful, { ...successful, visual: { hash: 'bb', frame: 0 } }, false],
+    ['metadata-change', successful, { ...successful, profile: { ...successful.profile, frames: 11 } }, false],
+    ['visual-change', successful, { ...successful, visual: { ...successful.visual, rgbaHash: 'bb' } }, false],
+    ['limited', successful, { ...successful, visual: undefined }, false],
+    ['limited', successful, { ...successful, visual: { ...successful.visual, frame: 1 } }, false],
     ['limited', { ...successful, limited: true }, successful, false],
     ['both-failed', { status: 'failed' }, { status: 'failed' }, false]
   ])('classifies %s', (state, baseline, local, performanceComparable) => {
     expect(compareCorrectness({ baseline, local })).toEqual({ state, performanceComparable })
+  })
+
+  it.each([
+    ['rgbaHash', 'bb'], ['nonEmptyPixels', 21], ['width', 101], ['height', 101]
+  ])('marks same-frame visual %s changes as visual-change', (field, value) => {
+    const local = { ...successful, visual: { ...successful.visual, [field]: value } }
+    expect(compareCorrectness({ baseline: successful, local })).toEqual({ state: 'visual-change', performanceComparable: false })
   })
 })
