@@ -63,7 +63,7 @@ player.onStart = () => console.log('onStart')
 player.onResume = () => console.log('onResume')
 player.onPause = () => console.log('onPause')
 player.onStop = () => console.log('onStop')
-player.onProcess = () => console.log('onProcess', player.currentFrame / player.totalFrames)
+player.onProcess = progress => console.log('onProcess', progress)
 player.onEnd = () => console.log('onEnd')
 
 // 开始播放动画
@@ -86,6 +86,46 @@ player.start()
 // player.destroy()
 ```
 
+### 进度与逐帧控制
+
+`player.progress` 是只读的 `0–1` 进度值。未挂载时为 `0`；挂载后与
+`onProcess(progress)` 的参数保持一致。单帧动画的进度为 `1`。
+
+`mount()` 只准备素材，不会隐式绘制首帧。需要在播放前展示首帧时，可显式定位：
+
+```js
+await player.mount(svga)
+player.stepToFrame(0)
+```
+
+`stepToFrame(frame)` 会停止当前时间线并立即绘制目标帧，目标帧必须是当前配置播放
+区间内的整数。定位后调用 `resume()` 可从该位置继续；也可以传入 `true` 立即播放：
+
+```js
+player.stepToFrame(12)       // 停在第 12 帧
+player.resume()              // 从第 12 帧继续
+player.stepToFrame(24, true) // 定位到第 24 帧并立即继续
+```
+
+播放器不绑定鼠标或触摸事件。拖动条、点击和手势应由业务界面处理，再将计算出的帧号
+传给 `stepToFrame()`。
+
+### 保持素材宽高比
+
+Player 会把 Canvas 的内部尺寸设置为素材原始尺寸。响应式布局只缩放显示宽度，并让
+高度按素材比例自动计算；不要同时强制一个不匹配的 CSS 宽度和高度：
+
+```js
+const canvas = document.getElementById('canvas')
+canvas.style.display = 'block'
+canvas.style.width = '100%'
+canvas.style.height = 'auto'
+canvas.style.aspectRatio = `${svga.size.width} / ${svga.size.height}`
+
+const player = new Player(canvas)
+await player.mount(svga)
+```
+
 ### ParserConfigOptions
 
 ```ts
@@ -102,7 +142,12 @@ new Parser({
 
 Parser 返回的 `Video.images` 是可缓存的 `Uint8Array` 字节。Player 在挂载时
 按顺序解码图片，并只释放自己创建的位图或临时对象 URL；调用方提供的替换
-元素和动态元素不会被 Player 释放。
+元素和动态元素不会被 Player 释放。解析器会忽略素材中的音频资源，因此带音频的
+SVGA 仍可显示动画，但始终静音播放。
+
+同一个 Parser 支持多个并发 `load()`，也可以顺序复用。同一个 Player 可以通过
+再次 `mount()` 切换素材；重新挂载会停止旧时间线并释放旧素材和帧缓存。页面仍会继续
+使用实例时不要提前 `destroy()`，确认不再复用后再销毁 Parser 和 Player。
 
 解析器拒绝非 2xx 响应、超过 8 MiB 的压缩输入和超过 16 MiB 的解压输出。
 解析后还会限制画布边长 4096、画布总像素 16,777,216、帧率 120、帧数
@@ -150,11 +195,30 @@ new Player({
   // 开启后使用 `WebWorker` 确保动画按时执行（避免个别情况下浏览器延迟或停止执行动画任务）
   // https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#Policies_in_place_to_aid_background_page_performance
   isOpenNoExecutionDelay?: boolean
+
+  // 是否禁用 OffscreenCanvas 作为渲染中间画布，默认值 false
+  // 开启后固定使用普通 HTML Canvas，图片解码仍可能使用 ImageBitmap
+  isDisableOffscreenCanvas?: boolean
 })
 ```
 
 `player.config` 返回只读快照。配置变更必须通过 `player.setConfig(...)`，无效
 的循环、帧范围、容器或布尔配置会立即被拒绝。
+
+默认渲染路径会优先使用可用的 OffscreenCanvas。若特定环境需要人工回退，可在创建时
+禁用，或在运行中切换；切换会释放帧缓存并重建渲染中间画布：
+
+```js
+const player = new Player({
+  container: document.getElementById('canvas'),
+  isDisableOffscreenCanvas: true
+})
+
+player.setConfig({ isDisableOffscreenCanvas: false })
+```
+
+该开关是兼容性排查手段，不代表已确认某个 iOS 版本问题的根因。项目的 Chromium、
+Firefox、WebKit 自动化也不等同于 iPhone 或 iPad 真机认证。
 
 ### 替换元素 / 插入动态元素
 
@@ -290,7 +354,7 @@ npm run dev
 - `npm test`：运行一次完整单元测试。
 - `npm run coverage`：运行一次单元测试并单独报告语句、分支、函数和行覆盖率。
 - `npm run test:browser`：先构建，再在 Chromium、Firefox、WebKit 中运行真实浏览器流程。
-- `npm run test:package`：先构建，再生成真实 npm 压缩包，检查确定性构建、精确文件清单、ES2017 语法以及 CommonJS、ESM、UMD、TypeScript 消费方式。
+- `npm run test:package`：先构建，再生成并安装真实 npm 压缩包，检查确定性构建、精确文件清单、ES2017 语法、CommonJS、ESM、UMD、TypeScript、Rollup，以及 Vite 4.4.5 production build 消费方式。
 - `npm run verify`：依次运行代码规范、类型、覆盖率、三种浏览器和真实包消费检查；不会在覆盖率之外重复运行单元测试。
 
 ### 可视化性能测试

@@ -41,7 +41,7 @@ Playwright 配置只包含 Chromium、Firefox、WebKit 三个项目。
 
 ### Player：现代状态与渲染
 
-`src/player/index.ts` 使用 `WeakMap` 保存运行时状态，基于 `Animator` 驱动时间帧，并维护上限 64 MiB 的 LRU 帧缓存。Player 顺序解码 `Uint8Array` 图片，只释放自己创建的资源。优先使用 `OffscreenCanvas`；不可用或创建失败时使用 HTMLCanvas。公开 `config` 是冻结快照，所有变更必须经过 `setConfig` 校验。
+`src/player/index.ts` 使用 `WeakMap` 保存运行时状态，基于 `Animator` 驱动时间帧，并维护上限 64 MiB 的 LRU 帧缓存。Player 顺序解码 `Uint8Array` 图片，只释放自己创建的资源。优先使用 `OffscreenCanvas`；不可用、创建失败或设置 `isDisableOffscreenCanvas` 时使用 HTMLCanvas。公开 `config` 是冻结快照，所有变更必须经过 `setConfig` 校验。`progress` 与 `onProcess(progress)` 提供统一进度，`stepToFrame(frame, andPlay)` 复用暂停/继续时间线实现显式逐帧定位；`mount()` 不隐式绘制首帧。
 
 `src/player/render.ts` 使用原生 `Path2D` 绘制路径、椭圆和圆角矩形，并将结果绘制到离屏画布后再提交到可见 Canvas。
 
@@ -52,13 +52,13 @@ Playwright 配置只包含 Chromium、Firefox、WebKit 三个项目。
 ## 依赖与边界
 
 - `fflate` 用于解压；`protobufjs` 使用 8.7.2 minimal runtime，生成器与 schema 溯源见 `src/parser/PROTOBUF_PROVENANCE.md`。
-- 支持 OffscreenCanvas 的环境优先走离屏渲染；不支持时使用 HTMLCanvas 降级。
+- 支持 OffscreenCanvas 的环境优先走离屏渲染；不支持或显式禁用时使用 HTMLCanvas 降级。该开关属于人工兼容回退，不是 iOS 真机修复声明。
 - 禁用 Worker 的主线程路径包含明确的动态代码执行边界，不应为了绕过宿主安全策略而扩大使用范围。
 - 不要把本地测试结果表述为真机、发布、部署、平台采用或 SEO 结果。
 - 禁止执行发布或部署操作，包括推送 Git 远程仓库、发布 npm 包以及部署到生产环境。
 
 ## 变更与验证
 
-修改源码后至少运行与变更相关的 lint、类型检查、Vitest、覆盖率、Playwright 或包检查；完成前运行 `npm run verify`。只修改构建产物没有意义，`dist/` 应由构建脚本重新生成。
+修改源码后至少运行与变更相关的 lint、类型检查、Vitest、覆盖率、Playwright 或包检查；完成前运行 `npm run verify`。包检查会安装实际压缩包，并验证 Rollup 与 Vite 4.4.5 production build。只修改构建产物没有意义，`dist/` 应由构建脚本重新生成。
 
 `tests/fixtures/svga/` 中的 17 个 `.svga` 文件全部来自实际业务，属于不可删除或用合成数据替换的回归素材。`tests/unit/production-fixtures.test.ts` 固定校验完整清单与原始字节，并逐个验证解析行为；其中 `show.svga` 是保留的 SVGA 1.x 素材，用于验证当前播放器会明确拒绝不支持的版本。
