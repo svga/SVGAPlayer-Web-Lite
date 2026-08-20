@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
+import { parse } from 'acorn'
 
 const executeFile = promisify(execFile)
 const numericIdentifier = '(?:0|[1-9]\\d*)'
@@ -35,7 +36,7 @@ async function defaultRun (command, arguments_, options = {}) {
   return stdout
 }
 
-function packageIntegrity (bytes) {
+function scriptIntegrity (bytes) {
   return `sha512-${createHash('sha512').update(bytes).digest('base64')}`
 }
 
@@ -58,6 +59,19 @@ async function inspectRuntime (directory, metadata) {
   } catch {
     return null
   }
+  const source = bytes.toString('utf8')
+  try {
+    parse(source, { ecmaVersion: 'latest', sourceType: 'script' })
+  } catch {
+    return null
+  }
+  const hasUmdExports = /\btypeof\s+exports\b/.test(source) && /\btypeof\s+module\b/.test(source)
+  const hasSvgaNamespace = /\.SVGA\s*=/.test(source)
+  const hasPlayerAndParserExports = /\.Parser\s*=/.test(source) && /\.Player\s*=/.test(source)
+  if (!hasUmdExports || !hasSvgaNamespace || !hasPlayerAndParserExports) return null
+
+  const calculatedScriptIntegrity = scriptIntegrity(bytes)
+  if (metadata.expectedScriptIntegrity && metadata.expectedScriptIntegrity !== calculatedScriptIntegrity) return null
 
   const runtime = {
     version: manifest.version,
@@ -65,7 +79,8 @@ async function inspectRuntime (directory, metadata) {
     url: metadata.url,
     bytes: bytes.length,
     gzipBytes: gzipSync(bytes).length,
-    integrity: metadata.integrity || packageIntegrity(bytes),
+    integrity: metadata.integrity || null,
+    scriptIntegrity: calculatedScriptIntegrity,
     cacheState: metadata.cacheState,
     ...(metadata.onlineConfirmed === undefined ? {} : { onlineConfirmed: metadata.onlineConfirmed }),
     ...(metadata.warning ? { warning: metadata.warning } : {}),
@@ -79,8 +94,8 @@ async function localVersion (projectDir) {
   return manifest?.name === 'svga' && typeof manifest.version === 'string' ? manifest.version : null
 }
 
-async function metadataForDirectory ({ directory, expectedVersion, source, url, cacheState, integrity, onlineConfirmed, projectDir }) {
-  const runtime = await inspectRuntime(directory, { expectedVersion, source, url, cacheState, integrity, onlineConfirmed })
+async function metadataForDirectory ({ directory, expectedVersion, expectedScriptIntegrity, source, url, cacheState, integrity, onlineConfirmed, projectDir }) {
+  const runtime = await inspectRuntime(directory, { expectedVersion, expectedScriptIntegrity, source, url, cacheState, integrity, onlineConfirmed })
   if (!runtime) return null
   const currentVersion = await localVersion(projectDir)
   if (url === '/runtime/baseline.js' && currentVersion === runtime.version) runtime.warning = 'Baseline version is the same as local runtime.'
@@ -105,21 +120,50 @@ async function resolveFromNpm (spec, dependencies) {
 
 async function cacheLatest (cacheDir) {
   const latest = await readJson(join(cacheDir, 'latest.json'))
-  if (!latest || !strictSemver.test(latest.version) || typeof latest.integrity !== 'string') return null
+  if (!latest || !strictSemver.test(latest.version) || typeof latest.integrity !== 'string' || typeof latest.scriptIntegrity !== 'string') return null
   return latest
 }
 
+async function writeJsonAtomically (path, value) {
+  const parent = dirname(path)
+  await mkdir(parent, { recursive: true })
+  const temporaryDirectory = await mkdtemp(join(parent, `.${basename(path)}-`))
+  const temporary = join(temporaryDirectory, basename(path))
+  try {
+    await writeFile(temporary, `${JSON.stringify(value)}\n`)
+    await rename(temporary, path)
+  } finally {
+    await rm(temporaryDirectory, { force: true, recursive: true })
+  }
+}
+
 async function writeLatest (cacheDir, latest) {
-  await mkdir(cacheDir, { recursive: true })
-  const path = join(cacheDir, 'latest.json')
-  const temporary = `${path}.${process.pid}.tmp`
-  await writeFile(temporary, `${JSON.stringify({ ...latest, resolvedAt: new Date().toISOString() })}\n`)
-  await rename(temporary, path)
+  await writeJsonAtomically(join(cacheDir, 'latest.json'), { ...latest, resolvedAt: new Date().toISOString() })
+}
+
+async function writeCacheMetadata (directory, metadata) {
+  await writeJsonAtomically(join(directory, 'metadata.json'), metadata)
+}
+
+async function cachedRuntime ({ cacheDir, version, cacheState, onlineConfirmed, expectedIntegrity, expectedScriptIntegrity, projectDir }) {
+  const directory = join(cacheDir, 'versions', version)
+  const cached = await readJson(join(directory, 'metadata.json'))
+  if (!cached || cached.version !== version || typeof cached.integrity !== 'string' || typeof cached.scriptIntegrity !== 'string') return null
+  if (expectedIntegrity && cached.integrity !== expectedIntegrity) return null
+  if (expectedScriptIntegrity && cached.scriptIntegrity !== expectedScriptIntegrity) return null
+  return await metadataForDirectory({
+    directory, expectedVersion: version, expectedScriptIntegrity: cached.scriptIntegrity, source: 'npm',
+    url: '/runtime/baseline.js', cacheState, integrity: cached.integrity, onlineConfirmed, projectDir
+  })
 }
 
 function packedFilename (output) {
   const parsed = JSON.parse(String(output))
-  const entry = Array.isArray(parsed) ? parsed[0] : parsed
+  const entry = Array.isArray(parsed)
+    ? parsed[0]
+    : typeof parsed?.filename === 'string'
+      ? parsed
+      : Object.values(parsed || {}).find(value => value && typeof value === 'object' && typeof value.filename === 'string')
   if (!entry || typeof entry.filename !== 'string' || basename(entry.filename) !== entry.filename) {
     throw new Error('npm pack did not return a package filename')
   }
@@ -142,7 +186,21 @@ async function downloadRuntime (version, integrity, dependencies) {
       cacheState: 'downloaded', integrity, onlineConfirmed: true, projectDir
     })
     if (!validated) throw new Error('Downloaded package is not svga with a matching dist/index.min.js')
+    await writeCacheMetadata(unpacked, {
+      version,
+      integrity,
+      scriptIntegrity: validated.scriptIntegrity
+    })
     await mkdir(versionsDir, { recursive: true })
+    const existing = await cachedRuntime({
+      cacheDir, version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
+    })
+    if (existing) {
+      if (existing.integrity !== integrity) {
+        throw new Error(`Refusing to replace validated cache for ${version} with a conflicting package integrity`)
+      }
+      return existing
+    }
     await rm(target, { force: true, recursive: true })
     await rename(unpacked, target)
     validated.runtimePath = join(target, 'dist/index.min.js')
@@ -170,28 +228,31 @@ export async function prepareBaselineRuntime (request, suppliedDependencies = {}
   if (baseline === 'latest') {
     try {
       const latest = await resolveFromNpm('latest', dependencies)
-      const cached = await metadataForDirectory({
-        directory: join(cacheDir, 'versions', latest.version), expectedVersion: latest.version, source: 'npm',
-        url: '/runtime/baseline.js', cacheState: 'confirmed-cache', integrity: latest.integrity,
-        onlineConfirmed: true, projectDir
+      const cached = await cachedRuntime({
+        cacheDir, version: latest.version, cacheState: 'confirmed-cache', onlineConfirmed: true, projectDir
       })
+      if (cached && cached.integrity !== latest.integrity) {
+        throw new Error(`Refusing to replace validated cache for ${latest.version} with a conflicting package integrity`)
+      }
       const runtime = cached || await downloadRuntime(latest.version, latest.integrity, dependencies)
-      await writeLatest(cacheDir, latest)
+      await writeLatest(cacheDir, {
+        version: runtime.version,
+        integrity: runtime.integrity,
+        scriptIntegrity: runtime.scriptIntegrity
+      })
       return runtime
     } catch {
       const latest = await cacheLatest(cacheDir)
       if (!latest) return null
-      return await metadataForDirectory({
-        directory: join(cacheDir, 'versions', latest.version), expectedVersion: latest.version, source: 'npm',
-        url: '/runtime/baseline.js', cacheState: 'stale-cache', integrity: latest.integrity,
-        onlineConfirmed: false, projectDir
+      return await cachedRuntime({
+        cacheDir, version: latest.version, cacheState: 'stale-cache', onlineConfirmed: false,
+        expectedIntegrity: latest.integrity, expectedScriptIntegrity: latest.scriptIntegrity, projectDir
       })
     }
   }
 
-  const cached = await metadataForDirectory({
-    directory: join(cacheDir, 'versions', baseline), expectedVersion: baseline, source: 'npm',
-    url: '/runtime/baseline.js', cacheState: 'cache', projectDir
+  const cached = await cachedRuntime({
+    cacheDir, version: baseline, cacheState: 'cache', projectDir
   })
   if (cached) return cached
 
@@ -199,8 +260,9 @@ export async function prepareBaselineRuntime (request, suppliedDependencies = {}
     const resolved = await resolveFromNpm(baseline, dependencies)
     if (resolved.version !== baseline) throw new Error('npm resolved a version different from the requested baseline')
     return await downloadRuntime(resolved.version, resolved.integrity, dependencies)
-  } catch {
-    return null
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Unable to prepare exact baseline ${baseline}: ${reason}`)
   }
 }
 

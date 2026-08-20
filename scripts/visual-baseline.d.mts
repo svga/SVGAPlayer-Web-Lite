@@ -14,7 +14,8 @@ export interface RuntimeMetadata {
   url: '/runtime/local.js' | '/runtime/baseline.js'
   bytes: number
   gzipBytes: number
-  integrity: string
+  integrity: string | null
+  scriptIntegrity: string
   cacheState: 'local' | 'cache' | 'confirmed-cache' | 'downloaded' | 'stale-cache'
   onlineConfirmed?: boolean
   warning?: string
