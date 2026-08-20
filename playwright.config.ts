@@ -3,6 +3,11 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   forbidOnly: true,
   outputDir: 'test-results',
+  webServer: {
+    command: 'node scripts/serve-visual-test.mjs',
+    reuseExistingServer: !process.env.CI,
+    url: 'http://127.0.0.1:4173'
+  },
   projects: [
     {
       name: 'chromium',
@@ -20,6 +25,7 @@ export default defineConfig({
   reporter: 'line',
   testDir: 'tests/browser',
   use: {
+    baseURL: 'http://127.0.0.1:4173',
     headless: true
   },
   workers: 1

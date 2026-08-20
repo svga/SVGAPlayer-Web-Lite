@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>SVGA 动画检验台</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/dist/index.min.js" defer></script>
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">SVGAPlayer-Web-Lite · Local diagnostics</p>
+        <h1>动画检验台</h1>
+        <p class="lede">用真实业务素材观察播放器从文件读取到逐帧播放的完整表现。</p>
+      </div>
+      <div class="environment-badge" id="environment-badge">正在识别浏览器能力…</div>
+    </header>
+
+    <main class="page-shell">
+      <div class="workbench">
+        <section class="panel stage-panel" aria-labelledby="stage-heading">
+          <div class="panel-heading stage-heading">
+            <div>
+              <p class="section-kicker">当前素材</p>
+              <h2 id="stage-heading" data-testid="selected-name">尚未选择</h2>
+            </div>
+            <span id="selected-size" class="technical-label">—</span>
+          </div>
+
+          <div class="canvas-bay">
+            <canvas data-testid="player-canvas" aria-label="SVGA 动画预览"></canvas>
+            <div id="canvas-message" class="canvas-message">选择素材并运行测试</div>
+          </div>
+
+          <div class="timeline-block" aria-label="帧节奏轨道">
+            <div class="timeline-labels">
+              <span>帧节奏轨道</span>
+              <span class="legend"><i class="tick-ok"></i>准时 <i class="tick-late"></i>慢帧 <i class="tick-skip"></i>跳帧</span>
+            </div>
+            <div id="frame-track" class="frame-track" aria-live="off"></div>
+          </div>
+
+          <div class="control-row" aria-label="播放控制">
+            <button type="button" class="button button-primary" data-testid="run-selected">运行完整测试</button>
+            <button type="button" class="button" data-testid="pause" disabled>暂停</button>
+            <button type="button" class="button" data-testid="resume" disabled>继续</button>
+            <button type="button" class="button" data-testid="replay" disabled>再次播放</button>
+            <button type="button" class="button button-danger" data-testid="stop" disabled>停止</button>
+          </div>
+
+          <fieldset class="config-row">
+            <legend>播放器配置</legend>
+            <label><input type="checkbox" id="cache-frames"> 帧缓存</label>
+            <label><input type="checkbox" id="timer-worker"> 计时 Worker</label>
+            <span>解析始终使用默认 Worker</span>
+          </fieldset>
+        </section>
+
+        <aside class="panel fixture-panel" aria-labelledby="fixture-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">素材库</p>
+              <h2 id="fixture-heading">真实测试素材</h2>
+            </div>
+            <span id="fixture-count" class="count-badge" aria-live="polite">读取中</span>
+          </div>
+          <div id="fixture-list" class="fixture-list" aria-label="SVGA 测试文件"></div>
+        </aside>
+
+        <aside class="panel summary-panel" aria-labelledby="summary-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">本次运行</p>
+              <h2 id="summary-heading">诊断摘要</h2>
+            </div>
+            <span class="status-pill" data-testid="run-status" data-state="idle">等待运行</span>
+          </div>
+          <div id="summary-cards" class="summary-cards"></div>
+          <div id="warnings" class="warnings" aria-live="polite"></div>
+        </aside>
+      </div>
+
+      <section class="panel detail-panel" aria-labelledby="detail-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">测量明细</p>
+            <h2 id="detail-heading">完整性能指标</h2>
+          </div>
+          <span id="measurement-mode" class="technical-label">冷启动</span>
+        </div>
+        <div class="metric-sections">
+          <section class="metric-group" aria-labelledby="profile-heading">
+            <h3 id="profile-heading">素材复杂度</h3>
+            <dl id="profile-metrics"></dl>
+          </section>
+          <section class="metric-group" aria-labelledby="startup-heading">
+            <h3 id="startup-heading">启动阶段</h3>
+            <dl id="startup-metrics"></dl>
+          </section>
+          <section class="metric-group" aria-labelledby="playback-heading">
+            <h3 id="playback-heading">播放质量</h3>
+            <dl id="playback-metrics"></dl>
+          </section>
+          <section class="metric-group" aria-labelledby="runtime-heading">
+            <h3 id="runtime-heading">主线程与内存</h3>
+            <dl id="runtime-metrics"></dl>
+            <button type="button" class="text-button" data-testid="memory-snapshot">采集高级内存快照</button>
+            <p id="memory-note" class="metric-note"></p>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel batch-panel" aria-labelledby="batch-heading">
+        <div class="panel-heading batch-heading">
+          <div>
+            <p class="section-kicker">全量巡检</p>
+            <h2 id="batch-heading">17 个真实文件顺序测试</h2>
+            <p>每个可播放文件采集启动指标及最多 2 秒播放样本。</p>
+          </div>
+          <div class="batch-actions">
+            <span data-testid="batch-status" data-state="idle">尚未运行</span>
+            <button type="button" class="button button-primary" data-testid="run-all">运行全量巡检</button>
+            <button type="button" class="button button-danger" data-testid="cancel-all" disabled>取消</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>文件</th><th>结果</th><th>解析</th><th>挂载</th><th>实际 FPS</th><th>跳帧</th><th>说明</th></tr>
+            </thead>
+            <tbody id="batch-results"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel method-panel" aria-labelledby="method-heading">
+        <div>
+          <p class="section-kicker">口径说明</p>
+          <h2 id="method-heading">这些数字代表什么</h2>
+        </div>
+        <div class="method-grid">
+          <p><strong>解析耗时</strong>包含 Blob 读取、解压、Protobuf 解码和 Worker 回传，不拆成无法可靠观测的内部阶段。</p>
+          <p><strong>帧间隔</strong>衡量端到端播放节奏，不等同于渲染函数自身的纯执行时间。</p>
+          <p><strong>内存</strong>只适合同一浏览器和设备的前后对比；不支持的接口明确显示不可用。</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -34,6 +34,7 @@
     "test:browser": "npm run build && playwright test",
     "test:package": "node scripts/verify-package.mjs",
     "build": "node scripts/build.mjs",
+    "visual": "npm run build && node scripts/serve-visual-test.mjs",
     "verify": "npm run lint && npm run type:check && npm run coverage && npm run test:browser && npm run test:package",
     "prepack": "npm run build"
   },
