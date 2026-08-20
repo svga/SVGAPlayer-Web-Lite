@@ -97,11 +97,8 @@ function frame (shapes: VideoFrameShape[], overrides: Partial<VideoFrame> = {}):
   return {
     alpha: 1,
     transform: null,
-    nx: 0,
-    ny: 0,
     layout: { x: 0, y: 0, width: 100, height: 100 },
     clipPath: '',
-    maskPath: null,
     shapes,
     ...overrides
   }
@@ -113,9 +110,9 @@ function video (frames: VideoFrame[]): Video {
     size: { width: 100, height: 100 },
     fps: 20,
     frames: frames.length,
-    images: {},
-    replaceElements: {},
-    dynamicElements: {},
+    images: Object.create(null),
+    replaceElements: Object.create(null),
+    dynamicElements: Object.create(null),
     sprites: [{ imageKey: 'sprite', frames }]
   }
 }
@@ -201,17 +198,11 @@ describe('default renderer native path handling', () => {
     expect(context.depth).toBe(0)
   })
 
-  it.each([
-    ['empty path', '', identity],
-    ['invalid path', 'invalid', identity],
-    ['singular transform', 'M0 0 H10 V10 Z', { a: 0, b: 0, c: 0, d: 0, tx: 0, ty: 0 }],
-    ['non-finite transform', 'M0 0 H10 V10 Z', { a: 1, b: 0, c: 0, d: 1, tx: Number.NaN, ty: 0 }]
-  ] as const)('fails closed for a mask with an %s', (_name, d, transform) => {
+  it('fails closed for an invalid clipPath', () => {
     const bitmap = { kind: 'bitmap' } as unknown as HTMLImageElement
     const dynamic = { kind: 'dynamic', width: 10, height: 10 } as unknown as HTMLImageElement
-    const maskPath = { d, transform, styles: emptyStyles }
     const context = draw(
-      [frame([pathShape('M0 0 H10 V10 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })], { maskPath })],
+      [frame([pathShape('M0 0 H10 V10 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })], { clipPath: 'invalid' })],
       { sprite: bitmap },
       { sprite: dynamic }
     )
@@ -267,15 +258,15 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
       }
     ]
     const maskTransform: Transform = { a: 2, b: 0, c: 0, d: 2, tx: 5, ty: 6 }
-    const maskPath = { d: 'M0 0 L10 0 L10 10 Z', transform: maskTransform, styles: emptyStyles }
+    const maskPath = 'M0 0 L10 0 L10 10 Z'
     const context = draw(
-      [frame(shapes, { maskPath })],
+      [frame(shapes, { clipPath: maskPath, transform: maskTransform })],
       { sprite: bitmap },
       { sprite: dynamic },
       { sprite: replacement }
     )
 
-    expect(argsFor(context, 'clip')).toEqual([[pathForSource(maskPath.d)]])
+    expect(argsFor(context, 'clip')).toEqual([[pathForSource(maskPath)]])
     expect(argsFor(context, 'transform')).toContainEqual([2, 0, 0, 2, 5, 6])
     expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([replacement, dynamic])
     const ellipsePath = RecordingPath2D.instances.find(path => path.operations.some(operation => operation.name === 'ellipse'))

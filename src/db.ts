@@ -1,136 +1,159 @@
-import { Video } from './types'
+import type { Video } from './types'
+import { validateVideo } from './validate-video'
 
-type DBState = [string, number, string, Promise<IDBDatabase>?, IDBDatabase?]
+export interface DBOptions {
+  name: string
+  version: number
+  storeName: string
+}
+
+interface DBState extends DBOptions {
+  connection?: Promise<IDBDatabase>
+  database?: IDBDatabase
+}
 
 const states = new WeakMap<DB, DBState>()
+const dbError = (): Error => Error('IndexedDB operation failed')
 
-const dbError = Error()
+function close (state: DBState, database: IDBDatabase): void {
+  database.close()
+  if (state.database === database) state.database = undefined
+  state.connection = undefined
+}
 
 function connect (state: DBState): Promise<IDBDatabase> {
-  if (state[3] !== undefined) return state[3]
-
-  state[3] = new Promise<IDBDatabase>((resolve, reject) => {
-    if (!window.indexedDB) {
-      reject(dbError)
+  if (state.connection !== undefined) return state.connection
+  state.connection = new Promise((resolve, reject) => {
+    if (window.indexedDB === undefined) {
+      state.connection = undefined
+      reject(dbError())
       return
     }
-    const request = window.indexedDB.open(state[0], state[1])
+    const request = window.indexedDB.open(state.name, state.version)
     let settled = false
     const fail = (): void => {
       if (settled) return
       settled = true
-      state[3] = undefined
-      reject(dbError)
+      state.connection = undefined
+      reject(request.error || dbError())
     }
     request.onerror = fail
     request.onblocked = fail
     request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(state[2])) db.createObjectStore(state[2])
+      if (!request.result.objectStoreNames.contains(state.storeName)) request.result.createObjectStore(state.storeName)
     }
     request.onsuccess = () => {
-      const db = request.result
-      if (settled) {
-        db.close()
-        return
-      }
+      const database = request.result
+      if (settled) return database.close()
       settled = true
-      state[4] = db
-      db.onversionchange = () => release(state, db)
-      resolve(db)
+      state.database = database
+      database.onversionchange = () => close(state, database)
+      resolve(database)
     }
   })
-  return state[3]
+  return state.connection
 }
 
-function release (state: DBState, db: IDBDatabase): void {
-  db.close()
-  if (state[4] === db) {
-    state[4] = undefined
-    state[3] = undefined
-  }
-}
-
-function transact<T> (
+async function transact<T> (
   owner: DB,
   mode: IDBTransactionMode,
-  action: (store: IDBObjectStore) => IDBRequest,
-  read?: (value: unknown) => T
+  action: (store: IDBObjectStore) => IDBRequest<T>
 ): Promise<T> {
   const state = states.get(owner)
-  if (state === undefined) return Promise.reject(dbError)
-  return connect(state).then(db => new Promise<T>((resolve, reject) => {
-    let value = undefined as T
-    let issue: unknown
-    let tx: IDBTransaction | undefined
+  if (state === undefined) throw dbError()
+  const database = await connect(state)
+  return await new Promise<T>((resolve, reject) => {
+    let result: T
+    let failure: unknown
+    let transaction: IDBTransaction | undefined
     let settled = false
     const finish = (): void => {
       if (settled) return
       settled = true
-      release(state, db)
-      if (issue !== undefined) reject(issue)
-      else resolve(value)
+      close(state, database)
+      if (failure !== undefined) reject(failure)
+      else resolve(result)
     }
     try {
-      tx = db.transaction([state[2]], mode)
-      tx.oncomplete = finish
-      tx.onerror = () => { issue = (tx as IDBTransaction).error || dbError }
-      tx.onabort = () => {
-        issue = issue || dbError
-        finish()
-      }
-      const request = action(tx.objectStore(state[2]))
-      if (read !== undefined) {
-        request.onsuccess = () => {
-          try {
-            value = read(request.result)
-          } catch (error) {
-            issue = error
-          }
-        }
-      }
+      transaction = database.transaction(state.storeName, mode)
+      transaction.oncomplete = finish
+      transaction.onerror = () => { failure = transaction?.error || dbError() }
+      transaction.onabort = () => { failure = failure || transaction?.error || dbError(); finish() }
+      const request = action(transaction.objectStore(state.storeName))
+      request.onsuccess = () => { result = request.result }
     } catch (error) {
-      issue = error
-      if (tx !== undefined) {
-        try {
-          tx.abort()
-          return
-        } catch {}
-      }
-      finish()
+      failure = error
+      try { transaction?.abort() } catch { finish() }
     }
-  }))
+  })
+}
+
+function nullMap<T> (): Record<string, T> {
+  return Object.create(null) as Record<string, T>
+}
+
+function copyImages (value: unknown): Video['images'] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw dbError()
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== null && prototype !== Object.prototype) throw dbError()
+  const images = nullMap<Uint8Array>()
+  for (const key of Object.keys(value)) images[key] = (value as Record<string, Uint8Array>)[key]
+  return images
+}
+
+function stableRecord (video: Video): Video {
+  validateVideo(video)
+  const record: Video = {
+    version: video.version,
+    size: video.size,
+    fps: video.fps,
+    frames: video.frames,
+    images: copyImages(video.images),
+    replaceElements: nullMap(),
+    dynamicElements: nullMap(),
+    sprites: video.sprites
+  }
+  return validateVideo(record)
+}
+
+function restoreRecord (value: unknown): Video {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw dbError()
+  const source = value as Video
+  const record: Video = {
+    version: source.version,
+    size: source.size,
+    fps: source.fps,
+    frames: source.frames,
+    images: copyImages(source.images),
+    replaceElements: nullMap(),
+    dynamicElements: nullMap(),
+    sprites: source.sprites
+  }
+  return validateVideo(record)
 }
 
 export class DB {
-  private readonly storeName: string
-  private readonly dbPromise: Promise<IDBDatabase>
-
-  constructor ({ name, version, storeName }: {
-    name: string
-    version: number
-    storeName: string
-  } = { name: 'SVGA.DB', version: 1.0, storeName: 'files' }) {
-    this.storeName = storeName
-    const state: DBState = [name, version, storeName]
-    this.dbPromise = connect(state)
-    states.set(this, state)
+  constructor (options: DBOptions = { name: 'SVGA.DB', version: 1, storeName: 'files' }) {
+    states.set(this, { ...options })
   }
 
-  find (id: IDBValidKey): Promise<Video | undefined> {
-    return transact<Video | undefined>(
-      this,
-      'readonly',
-      store => store.get(id),
-      value => typeof value === 'string' ? JSON.parse(value) : undefined
-    )
+  async find (id: IDBValidKey): Promise<Video | undefined> {
+    const value = await transact(this, 'readonly', store => store.get(id))
+    if (value === undefined) return undefined
+    try {
+      return restoreRecord(value)
+    } catch {
+      try { await this.delete(id) } catch {}
+      return undefined
+    }
   }
 
-  insert (id: IDBValidKey, data: Video): Promise<void> {
-    return transact<void>(this, 'readwrite', store => store.put(JSON.stringify(data), id))
+  async insert (id: IDBValidKey, data: Video): Promise<void> {
+    const record = stableRecord(data)
+    await transact(this, 'readwrite', store => store.put(record, id))
   }
 
-  delete (id: IDBValidKey): Promise<void> {
-    return transact<void>(this, 'readwrite', store => store.delete(id))
+  async delete (id: IDBValidKey): Promise<void> {
+    await transact(this, 'readwrite', store => store.delete(id))
   }
 }

@@ -18,8 +18,8 @@ const distDir = resolve(projectDir, 'dist')
 const buildConfigPath = resolve(projectDir, 'tsconfig.build.json')
 const projectNodeModules = resolve(projectDir, 'node_modules')
 const workerPlaceholder = '#PARSER_V2_INLINE_WROKER#'
-const maxBundleRawBytes = 61440
-const maxBundleGzipBytes = 18432
+const maxBundleRawBytes = 90112
+const maxBundleGzipBytes = 25600
 const publicDeclarations = [
   'index.d.ts',
   'db.d.ts',

@@ -2,46 +2,12 @@ import { deflateSync } from 'node:zlib'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { Video } from '../../src/types'
-
-interface WorkerResponse {
-  requestId: number
-  video?: Video
-  error?: { name: string, message: string }
-}
-
-type InternalMockWorker = NonNullable<Window['SVGAParserMockWorker']> & {
-  onresponse: (data: WorkerResponse) => void
-}
-
-type FetchOutcome = {
-  status?: number
-  statusText?: string
-  response?: ArrayBuffer
-  error?: Error
-}
-
-const fetchOutcomes: FetchOutcome[] = []
-const fakeFetch = vi.fn(async () => {
-  const outcome = fetchOutcomes.shift()
-  if (outcome === undefined) throw new Error('missing fetch outcome')
-  if (outcome.error !== undefined) throw outcome.error
-  const status = outcome.status ?? 200
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: outcome.statusText ?? '',
-    arrayBuffer: async () => outcome.response as ArrayBuffer
-  }
-})
+import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from '../../src/parser/protocol'
 
 const concat = (...parts: Uint8Array[]): Uint8Array => {
   const result = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
   let offset = 0
-  for (const part of parts) {
-    result.set(part, offset)
-    offset += part.length
-  }
+  for (const part of parts) { result.set(part, offset); offset += part.length }
   return result
 }
 
@@ -57,356 +23,165 @@ const varint = (value: number): Uint8Array => {
 
 const field = (id: number, wireType: number, value: Uint8Array): Uint8Array =>
   concat(varint((id << 3) | wireType), wireType === 2 ? varint(value.length) : new Uint8Array(), value)
-
-const textField = (id: number, value: string): Uint8Array =>
-  field(id, 2, new TextEncoder().encode(value))
-
+const textField = (id: number, value: string): Uint8Array => field(id, 2, new TextEncoder().encode(value))
 const floatField = (id: number, value: number): Uint8Array => {
   const bytes = new Uint8Array(4)
   new DataView(bytes.buffer).setFloat32(0, value, true)
   return field(id, 5, bytes)
 }
-
 const frameMessage = (): Uint8Array => floatField(1, 1)
+const spriteMessage = (): Uint8Array => concat(textField(1, 'image'), field(2, 2, frameMessage()))
+const paramsMessage = (): Uint8Array => concat(floatField(1, 100), floatField(2, 100), field(3, 0, varint(20)), field(4, 0, varint(1)))
 
-const spriteMessage = (): Uint8Array => concat(
-  textField(1, 'image'),
-  field(2, 2, frameMessage())
-)
-
-const paramsMessage = (params: Record<string, number>): Uint8Array => concat(
-  floatField(1, params.viewBoxWidth),
-  floatField(2, params.viewBoxHeight),
-  field(3, 0, varint(params.fps)),
-  field(4, 0, varint(params.frames))
-)
-
-const compressedMovie = (overrides: Record<string, unknown> = {}): ArrayBuffer => {
-  const object = {
-    version: '2.0',
-    params: { viewBoxWidth: 100, viewBoxHeight: 100, fps: 20, frames: 1 },
-    images: {},
-    sprites: [{ imageKey: 'image', frames: [{ alpha: 1, shapes: [] }] }],
-    ...overrides
-  }
-  const params = object.params as Record<string, number>
-  const images = object.images as Record<string, Uint8Array>
-  const encoded = concat(
-    textField(1, object.version),
-    field(2, 2, paramsMessage(params)),
-    ...Object.keys(images).map(key => field(3, 2, concat(
-      textField(1, key),
-      field(2, 2, images[key])
-    ))),
+function movieBytes (images: Record<string, Uint8Array> = Object.create(null), targetLength?: number): Uint8Array {
+  const base = concat(
+    textField(1, '2.0'),
+    field(2, 2, paramsMessage()),
+    ...Object.keys(images).map(key => field(3, 2, concat(textField(1, key), field(2, 2, images[key])))),
     field(4, 2, spriteMessage())
   )
-  const compressed = deflateSync(encoded)
-  return compressed.buffer.slice(compressed.byteOffset, compressed.byteOffset + compressed.byteLength)
+  if (targetLength === undefined) return base
+  const tag = varint((99 << 3) | 2)
+  let padding = targetLength - base.length - tag.length - 4
+  while (varint(padding).length !== targetLength - base.length - tag.length - padding) padding--
+  return concat(base, tag, varint(padding), new Uint8Array(padding))
 }
 
-const runWorker = async (
-  response: ArrayBuffer,
-  options: { disableBitmap?: boolean, status?: number, error?: Error } = {}
-): Promise<{ responses: WorkerResponse[], mock: Window['SVGAParserMockWorker'] }> => {
-  fetchOutcomes.push({
-    response,
-    status: options.status ?? 200,
-    statusText: options.status === 500 ? 'Server Error' : '',
-    error: options.error
-  })
-  if (window.SVGAParserMockWorker === undefined) await import('../../src/parser/index')
-  const mock = window.SVGAParserMockWorker
-  if (mock === undefined) throw new Error('mock worker missing')
-  const responses: WorkerResponse[] = []
-  ;(mock as InternalMockWorker).onresponse = data => { responses.push(data) }
-  mock.onmessage({
-    data: {
-      requestId: 7,
-      url: 'https://example.test/file.svga',
-      options: { isDisableImageBitmapShim: options.disableBitmap ?? true }
-    } as never
-  })
-  await vi.waitFor(() => { expect(responses).toHaveLength(1) })
-  return { responses, mock }
+const compressedMovie = (images?: Record<string, Uint8Array>, targetLength?: number): Uint8Array =>
+  new Uint8Array(deflateSync(movieBytes(images, targetLength)))
+
+interface FetchResult {
+  status?: number
+  bytes: Uint8Array
+  chunks?: number[]
+  contentLength?: string
 }
 
-describe('parser worker module', () => {
-  beforeEach(() => {
-    fetchOutcomes.length = 0
-    fakeFetch.mockClear()
-    vi.resetModules()
-    vi.stubGlobal('fetch', fakeFetch)
-    vi.stubGlobal('self', {
-      document: {},
-      createImageBitmap: undefined
-    })
-    vi.stubGlobal('window', { SVGAParserMockWorker: undefined })
-    vi.stubGlobal('btoa', (value: string) => Buffer.from(value, 'binary').toString('base64'))
-  })
+let fetchResult: FetchResult
+let workerScope: ParserWorkerScope & { postMessage: ReturnType<typeof vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>> }
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('returns a structured-clone-safe response envelope', async () => {
-    const { responses } = await runWorker(compressedMovie())
-
-    expect(responses[0]).toMatchObject({
-      requestId: 7,
-      video: { version: '2.0', size: { width: 100, height: 100 } }
-    })
-    expect(responses[0].error).toBeUndefined()
-  })
-
-  it('keeps the declared direct-worker request and response protocol', async () => {
-    fetchOutcomes.push({ response: compressedMovie(), status: 200 })
-    await import('../../src/parser/index')
-    const mock = window.SVGAParserMockWorker
-    if (mock === undefined) throw new Error('mock worker missing')
-    const responses: Array<Video | Error> = []
-    mock.onmessageCallback = data => { responses.push(data) }
-
-    await mock.onmessage({
-      data: {
-        url: 'https://example.test/legacy-worker.svga',
-        options: { isDisableImageBitmapShim: true }
+function responseBody (bytes: Uint8Array, sizes: number[]): { getReader: () => { read: () => Promise<{ done: boolean, value?: Uint8Array }> } } {
+  let offset = 0
+  let index = 0
+  return {
+    getReader: () => ({
+      read: async () => {
+        if (offset === bytes.length) return { done: true }
+        const end = Math.min(bytes.length, offset + (sizes[index++] ?? bytes.length))
+        const value = bytes.slice(offset, end)
+        offset = end
+        return { done: false, value }
       }
     })
+  }
+}
 
-    expect(responses).toHaveLength(1)
-    expect(responses[0]).not.toHaveProperty('requestId')
-    expect(responses[0]).toMatchObject({ version: '2.0', size: { width: 100, height: 100 } })
-  })
+async function runWorker (request: ParserWorkerRequest = { requestId: 7, url: 'https://example.test/file.svga' }): Promise<ParserWorkerResponse> {
+  await import('../../src/parser/index')
+  await workerScope.onmessage?.({ data: request } as MessageEvent<ParserWorkerRequest>)
+  await vi.waitFor(() => expect(workerScope.postMessage).toHaveBeenCalled())
+  return workerScope.postMessage.mock.calls[0][0] as ParserWorkerResponse
+}
 
-  it('downloads through fetch without requiring XMLHttpRequest', async () => {
-    const response = compressedMovie()
-    const fetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      arrayBuffer: async () => response
+describe('parser worker', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    fetchResult = { bytes: compressedMovie() }
+    workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
+    vi.stubGlobal('self', workerScope)
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, _options: { signal: AbortSignal }) => {
+      const status = fetchResult.status ?? 200
+      return {
+        status,
+        statusText: String(status),
+        headers: { get: () => fetchResult.contentLength ?? null },
+        body: fetchResult.chunks ? responseBody(fetchResult.bytes, fetchResult.chunks) : undefined,
+        arrayBuffer: async () => fetchResult.bytes.buffer.slice(fetchResult.bytes.byteOffset, fetchResult.bytes.byteOffset + fetchResult.bytes.byteLength)
+      }
     }))
-    vi.stubGlobal('XMLHttpRequest', undefined)
-    vi.stubGlobal('fetch', fetch)
-    await import('../../src/parser/index')
-    const mock = window.SVGAParserMockWorker
-    if (mock === undefined) throw new Error('mock worker missing')
-    const responses: WorkerResponse[] = []
-    ;(mock as InternalMockWorker).onresponse = data => { responses.push(data) }
-
-    await mock.onmessage({
-      data: {
-        requestId: 8,
-        url: 'https://example.test/modern.svga',
-        options: { isDisableImageBitmapShim: true }
-      } as never
-    })
-
-    expect(fetch).toHaveBeenCalledWith(
-      'https://example.test/modern.svga',
-      { signal: expect.any(AbortSignal) }
-    )
-    expect(responses[0]).toMatchObject({
-      requestId: 8,
-      video: { version: '2.0', size: { width: 100, height: 100 } }
-    })
   })
 
-  it('rejects v1 headers, bad compression, and malformed protobuf as serialized errors', async () => {
-    const v1 = Uint8Array.from([80, 75, 3, 4]).buffer
-    const badCompression = Uint8Array.from([0, 1, 2, 3]).buffer
-    const malformed = deflateSync(Uint8Array.from([255]))
-    const malformedBuffer = malformed.buffer.slice(
-      malformed.byteOffset,
-      malformed.byteOffset + malformed.byteLength
-    )
+  afterEach(() => vi.unstubAllGlobals())
 
-    for (const input of [v1, badCompression, malformedBuffer]) {
-      const { responses } = await runWorker(input)
-      expect(responses[0]).toMatchObject({ requestId: 7, error: { message: expect.any(String) } })
-      expect(responses[0].error).not.toBeInstanceOf(Error)
-    }
-  })
-
-  it.each([
-    ['HTTP failure', { status: 500 }],
-    ['network failure', { error: new Error('network failure') }],
-    ['abort', { error: Object.assign(new Error('aborted'), { name: 'AbortError' }) }]
-  ] as const)('settles a %s exactly once', async (_name, outcome) => {
-    const { responses } = await runWorker(compressedMovie(), outcome)
-
-    expect(responses).toHaveLength(1)
-    expect(responses[0].error?.message).toEqual(expect.any(String))
-  })
-
-  it('uses a null-prototype image dictionary and preserves dangerous own keys', async () => {
+  it('returns byte images in a null-prototype map and never uses DOM/base64 image conversion', async () => {
     const images = Object.create(null) as Record<string, Uint8Array>
     Object.defineProperty(images, '__proto__', { enumerable: true, value: Uint8Array.from([1]) })
     Object.defineProperty(images, 'constructor', { enumerable: true, value: Uint8Array.from([2]) })
     images.audio0 = Uint8Array.from([3])
-    const { responses } = await runWorker(compressedMovie({ images }))
-    const parsedImages = responses[0].video?.images
+    fetchResult.bytes = compressedMovie(images)
+    vi.stubGlobal('createImageBitmap', vi.fn(() => { throw Error('must not run') }))
+    vi.stubGlobal('btoa', vi.fn(() => { throw Error('must not run') }))
 
-    expect(Object.getPrototypeOf(parsedImages)).toBeNull()
-    expect(Object.prototype.hasOwnProperty.call(parsedImages, '__proto__')).toBe(true)
-    expect(Object.prototype.hasOwnProperty.call(parsedImages, 'constructor')).toBe(true)
-    expect(Object.prototype.hasOwnProperty.call(parsedImages, 'audio0')).toBe(false)
+    const response = await runWorker()
+    const parsed = response.video?.images
+    expect(Object.getPrototypeOf(parsed)).toBeNull()
+    expect(parsed?.__proto__).toEqual(Uint8Array.from([1]))
+    expect(parsed?.constructor).toEqual(Uint8Array.from([2]))
+    expect(parsed).not.toHaveProperty('audio0')
+    expect(createImageBitmap).not.toHaveBeenCalled()
+    expect(btoa).not.toHaveBeenCalled()
   })
 
-  it('closes prior ImageBitmaps when a later conversion fails', async () => {
-    const close = vi.fn()
-    const createImageBitmap = vi.fn()
-      .mockResolvedValueOnce({ close })
-      .mockRejectedValueOnce(new Error('image decode failed'))
-    ;(self as unknown as { createImageBitmap: typeof createImageBitmap }).createImageBitmap = createImageBitmap
-    const { responses } = await runWorker(compressedMovie({
-      images: { first: Uint8Array.from([1]), second: Uint8Array.from([2]) }
-    }), { disableBitmap: false })
-
-    expect(responses[0].error?.message).toContain('image decode failed')
-    expect(close).toHaveBeenCalledOnce()
+  it('transfers every unique image ArrayBuffer in real Worker responses', async () => {
+    fetchResult.bytes = compressedMovie({ first: Uint8Array.from([1]), second: Uint8Array.from([2]) })
+    const response = await runWorker()
+    const transfers = workerScope.postMessage.mock.calls[0][1] as ArrayBuffer[]
+    const buffers = new Set(Object.values(response.video?.images ?? {}).map(image => image.buffer))
+    expect(new Set(transfers)).toEqual(buffers)
+    expect(transfers).toHaveLength(buffers.size)
   })
 
-  it('transfers every successfully decoded ImageBitmap from a real Worker response', async () => {
-    const first = { close: vi.fn() }
-    const second = { close: vi.fn() }
-    const postMessage = vi.fn()
-    const workerScope: {
-      document: undefined
-      createImageBitmap: ReturnType<typeof vi.fn>
-      postMessage: ReturnType<typeof vi.fn>
-      onmessage?: (event: { data: unknown }) => Promise<void>
-    } = {
-      document: undefined,
-      createImageBitmap: vi.fn()
-        .mockResolvedValueOnce(first)
-        .mockResolvedValueOnce(second),
-      postMessage
-    }
+  it('accepts chunked responses and ignores dishonest Content-Length', async () => {
+    fetchResult.chunks = [1, 2, 3, 4]
+    fetchResult.contentLength = String(100 * 1024 * 1024)
+    const response = await runWorker()
+    expect(response.video?.size).toEqual({ width: 100, height: 100 })
+  })
+
+  it('accepts exactly 8 MiB compressed and rejects one byte over', async () => {
+    const valid = compressedMovie()
+    fetchResult.bytes = concat(valid, new Uint8Array(8 * 1024 * 1024 - valid.length))
+    expect((await runWorker()).video).toBeDefined()
+
+    vi.resetModules()
+    workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
     vi.stubGlobal('self', workerScope)
-    fetchOutcomes.push({
-      response: compressedMovie({
-        images: { first: Uint8Array.from([1]), second: Uint8Array.from([2]) }
-      }),
-      status: 200
-    })
-    await import('../../src/parser/index')
-
-    await workerScope.onmessage?.({
-      data: {
-        requestId: 9,
-        url: 'https://example.test/file.svga',
-        options: { isDisableImageBitmapShim: false }
-      }
-    })
-
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: 9, video: expect.any(Object) }),
-      [first, second]
-    )
-    expect(first.close).not.toHaveBeenCalled()
-    expect(second.close).not.toHaveBeenCalled()
+    fetchResult.bytes = concat(fetchResult.bytes, Uint8Array.of(0))
+    expect((await runWorker()).error?.message).toContain('8 MiB')
   })
 
-  it('keeps successful ImageBitmaps caller-owned in direct mock mode', async () => {
-    const bitmap = { close: vi.fn() }
-    ;(self as unknown as { createImageBitmap: () => Promise<typeof bitmap> }).createImageBitmap =
-      vi.fn(async () => bitmap)
-    fetchOutcomes.push({
-      response: compressedMovie({ images: { first: Uint8Array.from([1]) } }),
-      status: 200
-    })
-    await import('../../src/parser/index')
-    const mock = window.SVGAParserMockWorker
-    if (mock === undefined) throw new Error('mock worker missing')
-    const postMessage = vi.spyOn(mock, 'postMessage')
-    const responses: WorkerResponse[] = []
-    ;(mock as InternalMockWorker).onresponse = data => { responses.push(data) }
+  it('accepts exactly 16 MiB decompressed and rejects one byte over', async () => {
+    fetchResult.bytes = compressedMovie(undefined, 16 * 1024 * 1024)
+    expect((await runWorker()).video).toBeDefined()
 
-    await mock.onmessage({
-      data: {
-        requestId: 10,
-        url: 'https://example.test/file.svga',
-        options: { isDisableImageBitmapShim: false }
-      } as never
-    })
-
-    expect(responses[0].video?.images.first).toBe(bitmap)
-    expect((postMessage.mock.calls[0] as unknown[])[1]).toBeUndefined()
-    expect(bitmap.close).not.toHaveBeenCalled()
+    vi.resetModules()
+    workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
+    vi.stubGlobal('self', workerScope)
+    fetchResult.bytes = compressedMovie(undefined, 16 * 1024 * 1024 + 1)
+    expect((await runWorker()).error?.message).toContain('16 MiB')
   })
 
-  it('closes an ImageBitmap that finishes decoding after a direct-worker cancellation', async () => {
-    const bitmap = { close: vi.fn() }
-    let finishBitmap: ((value: typeof bitmap) => void) | undefined
-    const createImageBitmap = vi.fn(() => new Promise<typeof bitmap>(resolve => { finishBitmap = resolve }))
-    ;(self as unknown as { createImageBitmap: typeof createImageBitmap }).createImageBitmap = createImageBitmap
-    fetchOutcomes.push({
-      response: compressedMovie({ images: { first: Uint8Array.from([1]) } }),
-      status: 200
-    })
-    await import('../../src/parser/index')
-    const mock = window.SVGAParserMockWorker
-    if (mock === undefined) throw new Error('mock worker missing')
-    const parsing = mock.onmessage({
-      data: {
-        requestId: 11,
-        url: 'https://example.test/file.svga',
-        options: { isDisableImageBitmapShim: false }
-      } as never
-    })
-    await vi.waitFor(() => { expect(createImageBitmap).toHaveBeenCalledOnce() })
-
-    mock.onmessage({ data: { requestId: 11, cancel: true } as never })
-    finishBitmap?.(bitmap)
-    await parsing
-
-    expect(bitmap.close).toHaveBeenCalledOnce()
+  it.each([199, 300, 304, 400, 500])('rejects non-2xx HTTP status %s', async status => {
+    fetchResult.status = status
+    expect((await runWorker()).error?.message).toContain(String(status))
   })
 
-  it('cancels and closes resources from an in-flight declared legacy worker request', async () => {
-    const bitmap = { close: vi.fn() }
-    let finishBitmap: ((value: typeof bitmap) => void) | undefined
-    const createImageBitmap = vi.fn(() => new Promise<typeof bitmap>(resolve => { finishBitmap = resolve }))
-    ;(self as unknown as { createImageBitmap: typeof createImageBitmap }).createImageBitmap = createImageBitmap
-    fetchOutcomes.push({
-      response: compressedMovie({ images: { first: Uint8Array.from([1]) } }),
-      status: 200
-    })
-    await import('../../src/parser/index')
-    const mock = window.SVGAParserMockWorker
-    if (mock === undefined) throw new Error('mock worker missing')
-    const parsing = mock.onmessage({
-      data: {
-        url: 'https://example.test/legacy-worker.svga',
-        options: { isDisableImageBitmapShim: false }
-      }
-    })
-    await vi.waitFor(() => { expect(createImageBitmap).toHaveBeenCalledOnce() })
-
-    mock.onmessage({ data: { cancel: true } as never })
-    finishBitmap?.(bitmap)
-    await parsing
-
-    expect(bitmap.close).toHaveBeenCalledOnce()
+  it('rejects the v1 ZIP header at the worker call site', async () => {
+    fetchResult.bytes = Uint8Array.from([80, 75, 3, 4])
+    expect((await runWorker()).error?.message).toContain('version@2')
   })
 
-  it.each([
-    { viewBoxWidth: 0, viewBoxHeight: 100, fps: 20, frames: 1 },
-    { viewBoxWidth: 100, viewBoxHeight: Number.NaN, fps: 20, frames: 1 },
-    { viewBoxWidth: 100, viewBoxHeight: 100, fps: -1, frames: 1 },
-    { viewBoxWidth: 100, viewBoxHeight: 100, fps: 20, frames: 0 }
-  ])('rejects invalid movie params: $viewBoxWidth/$viewBoxHeight/$fps/$frames', async params => {
-    const { responses } = await runWorker(compressedMovie({ params }))
-
-    expect(responses[0].error?.message).toContain('Invalid SVGA movie')
-  })
-
-  it('rejects sprites shorter than the declared frame count', async () => {
-    const { responses } = await runWorker(compressedMovie({
-      params: { viewBoxWidth: 100, viewBoxHeight: 100, fps: 20, frames: 2 }
+  it('aborts direct in-flight work on the single cancel-all protocol message', async () => {
+    let signal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: { signal: AbortSignal }) => {
+      signal = options.signal
+      return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
     }))
-
-    expect(responses[0].error?.message).toContain('Invalid SVGA movie')
+    await import('../../src/parser/index')
+    const parsing = workerScope.onmessage?.({ data: { requestId: 11, url: 'https://example.test/file.svga' } } as MessageEvent<ParserWorkerRequest>)
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    await workerScope.onmessage?.({ data: { cancel: true } } as MessageEvent<ParserWorkerRequest>)
+    expect(signal?.aborted).toBe(true)
+    await parsing
   })
 })

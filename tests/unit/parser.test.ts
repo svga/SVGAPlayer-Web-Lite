@@ -1,52 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Parser } from '../../src/parser'
-import { Video } from '../../src/types'
+import type { Video } from '../../src/types'
 
-interface RequestEnvelope {
-  requestId: number
-  url: string
-}
-
-interface ResponseEnvelope {
-  requestId: number
-  video?: Video
-  error?: { name: string, message: string }
-}
+type Request =
+  | { requestId: number, url: string }
+  | { requestId: number, cancel: true }
+  | { cancel: true }
+type Response = { requestId: number, video?: Video, error?: { name: string, message: string } }
 
 class FakeWorker {
   static instances: FakeWorker[] = []
-  onmessage: ((event: MessageEvent<ResponseEnvelope>) => void) | null = null
+  onmessage: ((event: MessageEvent<Response>) => void) | null = null
   onerror: ((event: ErrorEvent) => void) | null = null
   onmessageerror: ((event: MessageEvent) => void) | null = null
-  readonly requests: RequestEnvelope[] = []
+  readonly requests: Request[] = []
   terminated = 0
 
-  constructor (public readonly blobUrl: string) {
-    FakeWorker.instances.push(this)
-  }
-
-  postMessage (request: RequestEnvelope): void {
-    this.requests.push(request)
-  }
-
-  terminate (): void {
-    this.terminated++
-  }
-
-  respond (response: ResponseEnvelope): void {
-    this.onmessage?.({ data: response } as MessageEvent<ResponseEnvelope>)
-  }
+  constructor (public readonly blobUrl: string) { FakeWorker.instances.push(this) }
+  postMessage (request: Request): void { this.requests.push(request) }
+  terminate (): void { this.terminated++ }
+  respond (response: Response): void { this.onmessage?.({ data: response } as MessageEvent<Response>) }
 }
 
+const nullMap = <T> (): Record<string, T> => Object.create(null) as Record<string, T>
 const video = (version: string): Video => ({
   version,
   size: { width: 1, height: 1 },
   fps: 1,
   frames: 1,
-  images: {},
-  replaceElements: {},
-  dynamicElements: {},
+  images: nullMap(),
+  replaceElements: nullMap(),
+  dynamicElements: nullMap(),
   sprites: []
 })
 
@@ -58,236 +43,141 @@ describe('Parser request lifecycle', () => {
     revokeObjectURL.mockReset()
     vi.stubGlobal('Worker', FakeWorker)
     vi.stubGlobal('window', {
-      URL: {
-        createObjectURL: vi.fn(() => 'blob:parser'),
-        revokeObjectURL
-      },
-      SVGAParserMockWorker: undefined
+      URL: { createObjectURL: vi.fn(() => 'blob:parser'), revokeObjectURL }
     })
-    vi.stubGlobal('document', {
-      baseURI: 'https://example.test/base/',
-      createElement: () => {
-        let href = ''
-        return {
-          get href () { return href },
-          set href (value: string) { href = new URL(value, 'https://example.test/base/').href }
-        }
-      }
-    })
+    vi.stubGlobal('document', { baseURI: 'https://example.test/base/' })
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
-  it('matches two out-of-order responses with one installed handler', async () => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const handler = worker.onmessage
-    const first = parser.load('/first.svga')
-    const second = parser.load('/second.svga')
-
-    expect(worker.onmessage).toBe(handler)
-    expect(worker.requests.map(item => item.url)).toEqual([
-      'https://example.test/first.svga',
-      'https://example.test/second.svga'
-    ])
-    worker.respond({ requestId: worker.requests[1].requestId, video: video('second') })
-    worker.respond({ requestId: worker.requests[0].requestId, video: video('first') })
-
-    await expect(first).resolves.toMatchObject({ version: 'first' })
-    await expect(second).resolves.toMatchObject({ version: 'second' })
-  })
-
-  it('resolves relative URLs with the native URL constructor', async () => {
-    const createElement = vi.fn(() => {
-      let href = ''
-      return {
-        get href () { return href },
-        set href (value: string) { href = new URL(value, 'https://example.test/base/').href }
-      }
-    })
-    vi.stubGlobal('document', {
-      baseURI: 'https://example.test/base/page.html',
-      createElement
-    })
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const result = parser.load('../modern.svga')
-
-    expect(worker.requests[0].url).toBe('https://example.test/modern.svga')
-    expect(createElement).not.toHaveBeenCalled()
-    worker.respond({ requestId: worker.requests[0].requestId, video: video('modern') })
-    await expect(result).resolves.toMatchObject({ version: 'modern' })
-  })
-
-  it('matches 1000 responses delivered in reverse order', async () => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const pending = Array.from({ length: 1000 }, (_, index) => parser.load(`/item-${index}.svga`))
-
-    for (let index = 999; index >= 0; index--) {
-      worker.respond({ requestId: worker.requests[index].requestId, video: video(String(index)) })
-    }
-
-    await expect(Promise.all(pending)).resolves.toEqual(
-      Array.from({ length: 1000 }, (_, index) => expect.objectContaining({ version: String(index) }))
-    )
-  })
-
-  it('destroys idempotently, rejects pending and future loads, and revokes its Blob URL', async () => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const first = parser.load('/first.svga')
-    const second = parser.load('/second.svga')
-
-    parser.destroy()
-    parser.destroy()
-
-    await expect(first).rejects.toThrow('destroyed')
-    await expect(second).rejects.toThrow('destroyed')
-    await expect(parser.load('/later.svga')).rejects.toThrow('destroyed')
-    expect(worker.terminated).toBe(1)
-    expect(revokeObjectURL).toHaveBeenCalledTimes(1)
-  })
-
-  it('revokes the Blob URL and preserves the error when Worker construction fails', () => {
-    const expected = new Error('Worker construction failed')
-    vi.stubGlobal('Worker', class {
-      constructor () { throw expected }
-    })
-
-    expect(() => new Parser()).toThrow(expected)
-    expect(window.URL.createObjectURL).toHaveBeenCalledOnce()
+  it('revokes the Blob URL immediately after successful Worker construction', () => {
+    new Parser()
+    expect(FakeWorker.instances[0].blobUrl).toBe('blob:parser')
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:parser')
   })
 
-  it.each(['onerror', 'onmessageerror'] as const)('%s rejects every pending request', async eventName => {
+  it('revokes the Blob URL and preserves a construction failure', () => {
+    const failure = Error('construction failed')
+    vi.stubGlobal('Worker', class { constructor () { throw failure } })
+    expect(() => new Parser()).toThrow(failure)
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('posts at most four loads, queues FIFO, and matches out-of-order responses', async () => {
     const parser = new Parser()
     const worker = FakeWorker.instances[0]
-    const first = parser.load('/first.svga')
-    const second = parser.load('/second.svga')
+    const pending = Array.from({ length: 6 }, (_, index) => parser.load(`/item-${index}.svga`))
 
-    if (eventName === 'onerror') {
-      worker.onerror?.({ message: 'worker crashed' } as ErrorEvent)
-    } else {
-      worker.onmessageerror?.({ data: null } as MessageEvent)
+    expect(worker.requests.map(request => 'url' in request && request.url)).toEqual([
+      'https://example.test/item-0.svga',
+      'https://example.test/item-1.svga',
+      'https://example.test/item-2.svga',
+      'https://example.test/item-3.svga'
+    ])
+    const posted = worker.requests as Array<{ requestId: number, url: string }>
+    worker.respond({ requestId: posted[2].requestId, video: video('2') })
+    expect((worker.requests[4] as { url: string }).url).toBe('https://example.test/item-4.svga')
+    worker.respond({ requestId: posted[0].requestId, video: video('0') })
+    expect((worker.requests[5] as { url: string }).url).toBe('https://example.test/item-5.svga')
+
+    const active = worker.requests.filter(request => 'url' in request) as Array<{ requestId: number, url: string }>
+    for (const request of [...active].reverse()) {
+      const index = Number(/item-(\d+)/.exec(request.url)?.[1])
+      if (index !== 0 && index !== 2) worker.respond({ requestId: request.requestId, video: video(String(index)) })
     }
+    await expect(Promise.all(pending)).resolves.toEqual(
+      Array.from({ length: 6 }, (_, index) => expect.objectContaining({ version: String(index) }))
+    )
+  })
 
-    await expect(first).rejects.toBeInstanceOf(Error)
-    await expect(second).rejects.toBeInstanceOf(Error)
-    await expect(parser.load('/after-worker-failure.svga')).rejects.toBeInstanceOf(Error)
+  it('starts the 30-second timeout only when a queued request is posted', async () => {
+    vi.useFakeTimers()
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const pending = Array.from({ length: 5 }, (_, index) => parser.load(`/item-${index}.svga`))
+    const observed = pending.map(promise => promise.catch(error => error as Error))
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(worker.requests.filter(request => 'url' in request)).toHaveLength(5)
+    const fifth = worker.requests.filter(request => 'url' in request)[4] as { requestId: number, url: string }
+    expect(await Promise.all(observed.slice(0, 4))).toEqual(Array(4).fill(expect.objectContaining({ message: expect.stringContaining('timeout') })))
+
+    await vi.advanceTimersByTimeAsync(29_999)
+    worker.respond({ requestId: fifth.requestId, video: video('last') })
+    await expect(pending[4]).resolves.toMatchObject({ version: 'last' })
+  })
+
+  it('allows only resolved http, https, data, and blob URLs without deduplication', async () => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const allowed = [
+      parser.load('/relative.svga'),
+      parser.load('http://example.test/a.svga'),
+      parser.load('data:application/octet-stream;base64,AA=='),
+      parser.load('blob:https://example.test/id')
+    ]
+    const rejected = [
+      parser.load('file:///tmp/a.svga'),
+      parser.load('javascript:alert(1)'),
+      parser.load('ftp://example.test/a.svga')
+    ]
+    await Promise.all(rejected.map(result => expect(result).rejects.toThrow('protocol')))
+    expect(worker.requests.filter(request => 'url' in request)).toHaveLength(4)
+    const first = worker.requests[0] as { requestId: number, url: string }
+    worker.respond({ requestId: first.requestId, video: video('first') })
+    const duplicateOne = parser.load('/same.svga')
+    worker.respond({ requestId: (worker.requests[1] as { requestId: number }).requestId, video: video('http') })
+    const duplicateTwo = parser.load('/same.svga')
+
+    const loads = worker.requests.filter(request => 'url' in request) as Array<{ requestId: number, url: string }>
+    expect(loads.filter(request => request.url.endsWith('/same.svga'))).toHaveLength(2)
+    for (const request of loads) worker.respond({ requestId: request.requestId, video: video(request.url) })
+    await Promise.all([...allowed, duplicateOne, duplicateTwo])
+  })
+
+  it('destroys once, terminates once, and rejects queued, in-flight, and future loads', async () => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const pending = Array.from({ length: 6 }, (_, index) => parser.load(`/item-${index}.svga`))
+    const observed = pending.map(promise => expect(promise).rejects.toThrow('destroyed'))
+    parser.destroy()
+    parser.destroy()
+    await Promise.all(observed)
+    await expect(parser.load('/later.svga')).rejects.toThrow('destroyed')
     expect(worker.terminated).toBe(1)
-    expect(revokeObjectURL).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps disabled-Worker parser instances isolated', async () => {
-    const mocks: Array<{
-      onmessageCallback: (data: ResponseEnvelope) => void
-      onresponse: (data: ResponseEnvelope) => void
-      onmessage: (event: { data: RequestEnvelope }) => void
-      postMessage: (data: ResponseEnvelope) => void
-      requests: RequestEnvelope[]
+  it('runs direct mode in a local self scope and cancels it exactly once on destroy', async () => {
+    const ports: Array<{
+      onmessage?: (event: { data: Request }) => void
+      postMessage: (response: Response) => void
+      requests: Request[]
     }> = []
-    window.eval = () => {
-      const mock = {
-        onmessageCallback: (_data: ResponseEnvelope) => {},
-        onresponse: (_data: ResponseEnvelope) => {},
-        requests: [] as RequestEnvelope[],
-        postMessage (data: ResponseEnvelope) { this.onresponse(data) },
-        onmessage (event: { data: RequestEnvelope }) { this.requests.push(event.data) }
+    const FunctionMock = vi.fn(function () {
+      return (port: typeof ports[number]) => {
+        port.requests = []
+        port.onmessage = event => { port.requests.push(event.data) }
+        ports.push(port)
       }
-      mocks.push(mock)
-      window.SVGAParserMockWorker = mock as never
-    }
-    const firstParser = new Parser({ isDisableWebWorker: true })
-    const secondParser = new Parser({ isDisableWebWorker: true })
-    const first = firstParser.load('/first.svga')
-    const second = secondParser.load('/second.svga')
-
-    mocks[1].onresponse({ requestId: mocks[1].requests[0].requestId, video: video('second') })
-    mocks[0].onresponse({ requestId: mocks[0].requests[0].requestId, video: video('first') })
-
-    await expect(first).resolves.toMatchObject({ version: 'first' })
-    await expect(second).resolves.toMatchObject({ version: 'second' })
-  })
-
-  it('detaches destroyed direct parser callbacks and only clears its own global mock', () => {
-    const mocks: Array<{
-      onmessageCallback: (data: ResponseEnvelope) => void
-      onresponse: (data: ResponseEnvelope) => void
-      onmessage: (event: { data: RequestEnvelope }) => void
-      postMessage: (data: ResponseEnvelope) => void
-    }> = []
-    window.eval = () => {
-      const mock = {
-        onmessageCallback: (_data: ResponseEnvelope) => {},
-        onresponse: (_data: ResponseEnvelope) => {},
-        postMessage (data: ResponseEnvelope) { this.onresponse(data) },
-        onmessage (_event: { data: RequestEnvelope }) {}
-      }
-      mocks.push(mock)
-      window.SVGAParserMockWorker = mock as never
-    }
-    const first = new Parser({ isDisableWebWorker: true })
-    const firstCallback = mocks[0].onmessageCallback
-    const firstResponse = mocks[0].onresponse
-    const second = new Parser({ isDisableWebWorker: true })
-    const secondCallback = mocks[1].onmessageCallback
-    const secondResponse = mocks[1].onresponse
-
-    first.destroy()
-
-    expect(mocks[0].onmessageCallback).not.toBe(firstCallback)
-    expect(mocks[0].onresponse).not.toBe(firstResponse)
-    expect(window.SVGAParserMockWorker).toBe(mocks[1])
-
-    second.destroy()
-
-    expect(mocks[1].onmessageCallback).not.toBe(secondCallback)
-    expect(mocks[1].onresponse).not.toBe(secondResponse)
-    expect(window.SVGAParserMockWorker).toBeUndefined()
-  })
-
-  it('recreates serialized worker failures as Error instances', async () => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const result = parser.load('/broken.svga')
-    worker.respond({
-      requestId: worker.requests[0].requestId,
-      error: { name: 'SyntaxError', message: 'bad payload' }
     })
+    vi.stubGlobal('Function', FunctionMock)
 
-    await expect(result).rejects.toMatchObject({ name: 'SyntaxError', message: 'bad payload' })
-    await expect(result).rejects.toBeInstanceOf(Error)
-  })
+    const parser = new Parser({ isDisableWebWorker: true })
+    const result = parser.load('/direct.svga')
+    const request = ports[0].requests[0] as { requestId: number, url: string }
+    ports[0].postMessage({ requestId: request.requestId, video: video('direct') })
+    await expect(result).resolves.toMatchObject({ version: 'direct' })
+    const pending = parser.load('/pending.svga')
+    const observed = expect(pending).rejects.toThrow('destroyed')
+    parser.destroy()
+    parser.destroy()
+    await observed
 
-  it('restores null-prototype dictionaries after a real structured clone', async () => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const result = parser.load('/dangerous-keys.svga')
-    const source = video('cloned')
-    source.images = Object.create(null)
-    Object.defineProperty(source.images, '__proto__', { enumerable: true, value: 'proto-image' })
-    Object.defineProperty(source.images, 'constructor', { enumerable: true, value: 'constructor-image' })
-    source.replaceElements = Object.create(null)
-    source.dynamicElements = Object.create(null)
-
-    const clonedResponse = structuredClone({
-      requestId: worker.requests[0].requestId,
-      video: source
-    })
-    const clonedReplaceElements = clonedResponse.video.replaceElements
-    const clonedDynamicElements = clonedResponse.video.dynamicElements
-    worker.respond(clonedResponse)
-    const parsed = await result
-
-    expect(Object.getPrototypeOf(parsed.images)).toBeNull()
-    expect(parsed.replaceElements).toBe(clonedReplaceElements)
-    expect(parsed.dynamicElements).toBe(clonedDynamicElements)
-    expect(Object.getPrototypeOf(parsed.replaceElements)).toBe(Object.prototype)
-    expect(Object.getPrototypeOf(parsed.dynamicElements)).toBe(Object.prototype)
-    expect(Object.prototype.hasOwnProperty.call(parsed.images, '__proto__')).toBe(true)
-    expect(Object.prototype.hasOwnProperty.call(parsed.images, 'constructor')).toBe(true)
+    expect(FunctionMock).toHaveBeenCalledWith('self', expect.any(String))
+    expect(ports[0].requests.filter(item => 'cancel' in item && !('requestId' in item))).toHaveLength(1)
   })
 })

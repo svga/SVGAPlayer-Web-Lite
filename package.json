@@ -27,7 +27,7 @@
   "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
   "scripts": {
     "dev": "vitest --watch",
-    "lint": "oxlint --deny-warnings src tests scripts playwright.config.ts vitest.config.mts",
+    "lint": "oxlint --deny-warnings --ignore-pattern src/parser/svga.generated.ts src tests scripts playwright.config.ts vitest.config.mts",
     "type:check": "tsc --noEmit",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
@@ -57,7 +57,7 @@
     "fake-indexeddb": "^6.2.5",
     "fflate": "^0.8.3",
     "oxlint": "^1.79.0",
-    "protobufjs": "git+https://github.com/lijialiang/protobuf.js.git#b84b9b2d55ce07a0c9f28519054ce6b15ab092ca",
+    "protobufjs": "^8.7.2",
     "rollup": "^4.62.4",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

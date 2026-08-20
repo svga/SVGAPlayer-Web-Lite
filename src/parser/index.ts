@@ -1,184 +1,118 @@
-import {
-  MockWebWorker,
-  Movie,
-  RawImages
-} from '../types'
-import { unzlibSync } from 'fflate'
-import { Root } from 'protobufjs'
-import SVGA_PROTO from './svga-proto'
-import { VideoEntity } from './video-entity'
-import { Utils } from '../utils'
+import { Unzlib } from 'fflate'
 
-function uint8ArrayToString (u8a: Uint8Array): string {
-  const chunks: string[] = []
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < u8a.length; offset += chunkSize) {
-    const chunk = u8a.subarray(offset, Math.min(offset + chunkSize, u8a.length))
-    chunks.push(String.fromCharCode.apply(null, chunk as unknown as number[]))
-  }
-  return chunks.join('')
-}
+import type { Movie, RawImages, Video } from '../types'
+import { validateVideo } from '../validate-video'
+import { com } from './svga.generated'
+import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from './protocol'
+import { createVideo } from './video-entity'
 
-const proto = Root.fromJSON(SVGA_PROTO)
-const message = proto.lookupType('com.opensource.svga.MovieEntity')
+const maxCompressedBytes = 8 * 1024 * 1024
+const maxDecompressedBytes = 16 * 1024 * 1024
 
-interface DirectWorker extends MockWebWorker {
-  onresponse: (data: ParserWorkerResponse) => void
-}
-
-let worker: DirectWorker | Worker
-
-interface ParserWorkerRequest {
-  requestId?: number
-  url?: string
-  options?: {
-    isDisableImageBitmapShim: boolean
-  }
-  cancel?: boolean
-}
-
-interface ParserWorkerResponse {
-  requestId: number
-  video?: VideoEntity
-  error?: {
-    name: string
-    message: string
-  }
-}
-
-const controllers = new Map<number, AbortController>()
-const activeControllers = new Set<AbortController>()
-
-async function download (url: string, signal: AbortSignal): Promise<ArrayBuffer> {
+async function download (url: string, signal: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(url, { signal })
-  if (!response.ok && response.status !== 304) {
-    throw Error('Fetch, ' + (response.statusText || response.status))
-  }
-  return await response.arrayBuffer()
-}
+  if (response.status < 200 || response.status >= 300) throw Error(`Fetch, ${response.statusText || response.status}`)
 
-const isFinitePositive = (value: number): boolean => Number.isFinite(value) && value > 0
-
-const validateMovie = (movie: Movie): void => {
-  const params = movie.params
-  if (
-    params === undefined ||
-    !isFinitePositive(params.viewBoxWidth) ||
-    !isFinitePositive(params.viewBoxHeight) ||
-    !isFinitePositive(params.fps) ||
-    !isFinitePositive(params.frames) ||
-    !Number.isInteger(params.frames) ||
-    !Array.isArray(movie.sprites) ||
-    movie.sprites.some(sprite => !Array.isArray(sprite.frames) || sprite.frames.length < params.frames)
-  ) {
-    throw Error('Invalid SVGA movie')
-  }
-}
-
-const ownImageEntries = (images: Movie['images']): Array<[string, Uint8Array]> => {
-  const entries = Object.keys(images).map<[string, Uint8Array]>(key => [key, images[key]])
-  const prototype = Object.getPrototypeOf(images)
-  if (prototype instanceof Uint8Array) entries.unshift(['__proto__', prototype])
-  return entries
-}
-
-const decodeImages = async (
-  entries: Array<[string, Uint8Array]>,
-  isDisableImageBitmapShim: boolean,
-  images: RawImages,
-  createdBitmaps: ImageBitmap[],
-  signal: AbortSignal
-): Promise<RawImages> => {
-  for (const [key, image] of entries) {
-    if (key.indexOf('audio') === 0) continue
-    if (!isDisableImageBitmapShim && self.createImageBitmap !== undefined) {
-      const bitmap = await self.createImageBitmap(new Blob([new Uint8Array(image)]))
-      createdBitmaps.push(bitmap)
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      images[key] = bitmap
-    } else {
-      images[key] = btoa(uint8ArrayToString(image))
+  const chunks: Uint8Array[] = []
+  let length = 0
+  const reader = response.body?.getReader()
+  if (reader !== undefined) {
+    for (;;) {
+      const result = await reader.read()
+      if (result.done) break
+      const chunk = result.value
+      length += chunk.byteLength
+      if (length > maxCompressedBytes) throw Error('Compressed SVGA exceeds 8 MiB')
+      chunks.push(chunk)
     }
+  } else {
+    const chunk = new Uint8Array(await response.arrayBuffer())
+    length = chunk.byteLength
+    if (length > maxCompressedBytes) throw Error('Compressed SVGA exceeds 8 MiB')
+    chunks.push(chunk)
+  }
+
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  return bytes
+}
+
+function inflate (source: Uint8Array): Uint8Array {
+  const chunks: Uint8Array[] = []
+  let length = 0
+  const stream = new Unzlib((chunk) => {
+    length += chunk.byteLength
+    if (length > maxDecompressedBytes) throw Error('Decompressed SVGA exceeds 16 MiB')
+    chunks.push(chunk.slice())
+  })
+  const chunkSize = 64 * 1024
+  if (source.length === 0) stream.push(source, true)
+  for (let offset = 0; offset < source.length; offset += chunkSize) {
+    const end = Math.min(source.length, offset + chunkSize)
+    stream.push(source.subarray(offset, end), end === source.length)
+  }
+  const output = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength }
+  return output
+}
+
+function imageEntries (images: Movie['images']): Array<[string, Uint8Array]> {
+  return Object.keys(images).map(key => [key, images[key]])
+}
+
+function imageMap (movie: Movie): RawImages {
+  const images = Object.create(null) as RawImages
+  for (const [key, value] of imageEntries(movie.images)) {
+    if (!key.startsWith('audio')) images[key] = value
   }
   return images
 }
 
-async function onmessage (event: { data: ParserWorkerRequest }): Promise<void> {
-  const { requestId } = event.data
-  if (event.data.cancel) {
-    if (requestId === undefined) {
-      for (const controller of activeControllers) controller.abort()
-    } else {
-      controllers.get(requestId)?.abort()
-    }
-    return
+function transferList (video: Video): ArrayBuffer[] {
+  const buffers = new Set<ArrayBuffer>()
+  for (const image of Object.values(video.images)) {
+    if (image.buffer instanceof ArrayBuffer) buffers.add(image.buffer)
   }
-  const createdBitmaps: ImageBitmap[] = []
-  const { url, options } = event.data
-  const controller = new AbortController()
-  activeControllers.add(controller)
-  if (requestId !== undefined) controllers.set(requestId, controller)
-  try {
-    if (url === undefined || options === undefined) throw Error('Invalid parser request')
-    const buffer = await download(url, controller.signal)
-    if (Utils.getVersion(buffer) !== 2) throw Error('this parser only support version@2 of SVGA.')
-    const inflateData = unzlibSync(new Uint8Array(buffer))
-    const movie = message.decode(inflateData) as unknown as Movie
-    validateMovie(movie)
-    const images: RawImages = Object.create(null)
-    await decodeImages(
-      ownImageEntries(movie.images),
-      options.isDisableImageBitmapShim,
-      images,
-      createdBitmaps,
-      controller.signal
-    )
-    const video = new VideoEntity(movie, images)
-    if (self.document && requestId === undefined) {
-      worker.postMessage(video)
-    } else {
-      const response: ParserWorkerResponse = { requestId: requestId as number, video }
-      ;(worker.postMessage as (data: VideoEntity, transfer?: ImageBitmap[]) => void)(
-        response as unknown as VideoEntity,
-        self.document ? undefined : createdBitmaps
-      )
+  return [...buffers]
+}
+
+function installParserWorker (scope: ParserWorkerScope): void {
+  const controllers = new Map<number, AbortController>()
+
+  scope.onmessage = async (event: MessageEvent<ParserWorkerRequest>): Promise<void> => {
+    const request = event.data
+    if ('cancel' in request) {
+      if ('requestId' in request) controllers.get(request.requestId)?.abort()
+      else for (const controller of controllers.values()) controller.abort()
+      return
     }
-  } catch (error) {
-    for (const bitmap of createdBitmaps) bitmap.close()
-    const source = error instanceof Error ? error : Error(String(error))
-    const message = '[SVGA Parser Error] ' + source.message
-    if (self.document && requestId === undefined) {
-      const legacyError = Error(message)
-      legacyError.name = source.name
-      worker.postMessage(legacyError)
-    } else {
-      const response: ParserWorkerResponse = {
-        requestId: requestId as number,
-        error: { name: source.name, message }
+
+    const controller = new AbortController()
+    controllers.set(request.requestId, controller)
+    let response: ParserWorkerResponse
+    try {
+      const compressed = await download(request.url, controller.signal)
+      if (compressed[0] === 80 && compressed[1] === 75 && compressed[2] === 3 && compressed[3] === 4) {
+        throw Error('this parser only support version@2 of SVGA.')
       }
-      worker.postMessage(response as unknown as VideoEntity)
+      const decoded = (com as any).opensource.svga.MovieEntity.decode(inflate(compressed)) as Movie
+      const video = validateVideo(createVideo(decoded, imageMap(decoded)))
+      response = { requestId: request.requestId, video }
+      scope.postMessage(response, transferList(video))
+      return
+    } catch (error) {
+      const source = error instanceof Error ? error : Error(String(error))
+      response = {
+        requestId: request.requestId,
+        error: { name: source.name, message: `[SVGA Parser Error] ${source.message}` }
+      }
+      scope.postMessage(response)
+    } finally {
+      controllers.delete(request.requestId)
     }
-  } finally {
-    activeControllers.delete(controller)
-    if (requestId !== undefined) controllers.delete(requestId)
   }
 }
 
-if (self.document) {
-  const mockWorker: DirectWorker = {
-    onmessageCallback: () => {},
-    onresponse: () => {},
-    postMessage (data) {
-      if (data && typeof data === 'object' && 'requestId' in data) {
-        this.onresponse(data as unknown as ParserWorkerResponse)
-      } else {
-        this.onmessageCallback(data)
-      }
-    },
-    onmessage: onmessage as unknown as MockWebWorker['onmessage']
-  }
-  worker = window.SVGAParserMockWorker = mockWorker
-} else {
-  worker = self as unknown as Worker
-  worker.onmessage = onmessage as unknown as Worker['onmessage']
-}
+installParserWorker(self as unknown as ParserWorkerScope)

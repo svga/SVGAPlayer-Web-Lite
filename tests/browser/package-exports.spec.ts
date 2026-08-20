@@ -22,90 +22,42 @@ test('browser bundles expose the public package exports', async ({ page }) => {
   expect(esmExports).toEqual(expectedExports)
 })
 
-test('built UMD direct Parser instances keep inline parser state isolated', async ({ page }) => {
-  const umdPath = resolve('dist/index.min.js')
+test('built UMD direct Parser instances keep local state without public worker globals', async ({ page }) => {
   const [firstFile, secondFile] = await Promise.all([
-    readFile(resolve('__test__/svga/shape-path-undefined.svga')),
-    readFile(resolve('__test__/svga/11.svga'))
+    readFile(resolve('__test__/svga/11.svga')),
+    readFile(resolve('__test__/svga/soundwave.svga'))
   ])
   await page.goto('about:blank')
-  await page.addScriptTag({ path: umdPath })
+  await page.addScriptTag({ path: resolve('dist/index.min.js') })
 
   const evidence = await page.evaluate(async ({ firstData, secondData }) => {
     interface BrowserParser {
-      worker: {
-        onmessageCallback: (data: unknown) => void
-        onmessage: (event: { data: { url: string, options: { isDisableImageBitmapShim: boolean } } }) => Promise<void>
-      }
       load: (url: string) => Promise<{ size: { width: number, height: number } }>
       destroy: () => void
     }
     const browserWindow = window as unknown as Window & {
-      SVGA: {
-        Parser: new (options: { isDisableWebWorker: boolean, isDisableImageBitmapShim: boolean }) => BrowserParser
-      }
-      SVGAParserMockWorker: BrowserParser['worker']
+      SVGA: { Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser }
     }
-    const first = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
-    const firstWorker = first.worker
-    const firstCallback = firstWorker.onmessageCallback
-    const second = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
-    const secondWorker = second.worker
-    const secondCallback = secondWorker.onmessageCallback
+    const first = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
+    const second = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
     const [firstVideo, secondVideo] = await Promise.all([
       first.load(`data:application/octet-stream;base64,${firstData}`),
       second.load(`data:application/octet-stream;base64,${secondData}`)
     ])
-    const legacyVideo = await new Promise<{ size: { width: number, height: number }, requestId?: number }>((resolve, reject) => {
-      firstWorker.onmessageCallback = data => {
-        if (data instanceof Error) reject(data)
-        else resolve(data as { size: { width: number, height: number }, requestId?: number })
-      }
-      void firstWorker.onmessage({
-        data: {
-          url: `data:application/octet-stream;base64,${firstData}`,
-          options: { isDisableImageBitmapShim: true }
-        }
-      })
-    })
     first.destroy()
-    const firstCallbackDetached = firstWorker.onmessageCallback !== firstCallback
-    const globalStillPointsToLatest = browserWindow.SVGAParserMockWorker === secondWorker
     second.destroy()
-
     return {
-      callbacksDiffer: firstCallback !== secondCallback,
-      firstCallbackDetached,
       firstSize: firstVideo.size,
-      legacyHasRequestId: Object.prototype.hasOwnProperty.call(legacyVideo, 'requestId'),
-      legacySize: legacyVideo.size,
-      globalCleared: browserWindow.SVGAParserMockWorker === undefined,
-      globalStillPointsToLatest,
-      secondCallbackDetached: secondWorker.onmessageCallback !== secondCallback,
       secondSize: secondVideo.size,
-      workersDiffer: firstWorker !== secondWorker
+      firstHasWorker: Object.prototype.hasOwnProperty.call(first, 'worker'),
+      hasLegacyGlobal: Object.prototype.hasOwnProperty.call(window, 'SVGAParserMockWorker')
     }
-  }, {
-    firstData: firstFile.toString('base64'),
-    secondData: secondFile.toString('base64')
-  })
+  }, { firstData: firstFile.toString('base64'), secondData: secondFile.toString('base64') })
 
-  expect(evidence.workersDiffer).toBe(true)
-  expect(evidence.callbacksDiffer).toBe(true)
-  expect(evidence.firstCallbackDetached).toBe(true)
-  expect(evidence.globalStillPointsToLatest).toBe(true)
-  expect(evidence.secondCallbackDetached).toBe(true)
-  expect(evidence.globalCleared).toBe(true)
-  expect(evidence.firstSize).toEqual({ width: 750, height: 1334 })
-  expect(evidence.legacyHasRequestId).toBe(false)
-  expect(evidence.legacySize).toEqual({ width: 750, height: 1334 })
-  expect(evidence.secondSize).toEqual({ width: 96, height: 96 })
+  expect(evidence.firstHasWorker).toBe(false)
+  expect(evidence.hasLegacyGlobal).toBe(false)
+  expect(evidence.firstSize).toEqual({ width: 96, height: 96 })
+  expect(evidence.secondSize).toEqual({ width: 400, height: 400 })
 })
 
 test('built UMD direct Parser works when globalThis is unavailable', async ({ page }) => {

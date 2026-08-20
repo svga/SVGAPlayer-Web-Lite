@@ -514,60 +514,60 @@ describe('Player mount and playback lifecycle', () => {
     })
   })
 
-  it('waits for every base64 image when ImageBitmap and string inputs are mixed', async () => {
+  it('decodes Uint8Array images in Player and waits for every bitmap', async () => {
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
-    const callerBitmap = new FakeImageBitmap(1, 1)
-    const video = makeVideo({
-      images: { ready: callerBitmap as unknown as ImageBitmap, delayed: 'encoded' }
-    })
+    let finish: ((bitmap: FakeImageBitmap) => void) | undefined
+    const createImageBitmap = vi.fn(() => new Promise<FakeImageBitmap>(resolve => { finish = resolve }))
+    vi.stubGlobal('createImageBitmap', createImageBitmap)
+    const video = makeVideo({ images: Object.assign(Object.create(null), { delayed: Uint8Array.from([1, 2]) }) })
     let settled = false
 
     const mounting = player.mount(video).then(() => { settled = true })
-    await new Promise(resolve => setTimeout(resolve, 0))
-
+    await vi.waitFor(() => expect(createImageBitmap).toHaveBeenCalledOnce())
     expect(settled).toBe(false)
-    expect(pendingImages).toHaveLength(1)
-    pendingImages[0].onload?.()
+    finish?.(new FakeImageBitmap(10, 10))
     await mounting
     expect(player.videoEntity).toBe(video)
   })
 
-  it('rejects a broken base64 image instead of hanging', async () => {
+  it('rejects broken image bytes instead of hanging', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => { throw Error('decode failed') }))
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
-    const mounting = player.mount(makeVideo({ images: { broken: 'encoded' } }))
-
-    pendingImages[0].onerror?.()
-
-    await expect(mounting).rejects.toThrow(/image:broken/)
+    const images = Object.assign(Object.create(null), { broken: Uint8Array.from([1]) })
+    await expect(player.mount(makeVideo({ images }))).rejects.toThrow('decode failed')
     expect(player.videoEntity).toBeUndefined()
   })
 
-  it('prevents an older concurrent mount from overwriting a newer one', async () => {
+  it.each([[4097, 1], [4096, 4097], [0, 1]])('rejects decoded image dimensions %sx%s', async (width, height) => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => new FakeImageBitmap(width, height)))
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
-    const older = makeVideo({ images: { old: 'old' }, size: { width: 100, height: 100 } })
-    const newer = makeVideo({ images: { new: 'new' }, size: { width: 200, height: 200 } })
-
-    const olderMount = player.mount(older)
-    const oldImage = pendingImages[0]
-    const newerMount = player.mount(newer)
-    const newImage = pendingImages[1]
-    newImage.onload?.()
-    await newerMount
-    oldImage.onload?.()
-    await olderMount
-
-    expect(player.videoEntity).toBe(newer)
-    expect(player.config.container.width).toBe(200)
-    expect(player.config.container.height).toBe(200)
+    const images = Object.assign(Object.create(null), { image: Uint8Array.from([1]) })
+    await expect(player.mount(makeVideo({ images }))).rejects.toThrow('image:image')
   })
 
-  it('revalidates configuration changed while image loading before mount commits', async () => {
+  it('prevents an older concurrent byte-image mount from overwriting a newer one', async () => {
+    const pending: Array<(bitmap: FakeImageBitmap) => void> = []
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<FakeImageBitmap>(resolve => pending.push(resolve))))
     const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
-    const mounting = player.mount(makeVideo({ frames: 2, images: { delayed: 'encoded' } }))
+    const older = makeVideo({ images: Object.assign(Object.create(null), { old: Uint8Array.of(1) }), size: { width: 100, height: 100 } })
+    const newer = makeVideo({ images: Object.assign(Object.create(null), { new: Uint8Array.of(2) }), size: { width: 200, height: 200 } })
+    const olderMount = player.mount(older)
+    const newerMount = player.mount(newer)
+    pending[1](new FakeImageBitmap(1, 1))
+    await newerMount
+    pending[0](new FakeImageBitmap(1, 1))
+    await olderMount
+    expect(player.videoEntity).toBe(newer)
+  })
 
+  it('revalidates configuration changed while byte-image decoding before mount commits', async () => {
+    let finish: ((bitmap: FakeImageBitmap) => void) | undefined
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<FakeImageBitmap>(resolve => { finish = resolve })))
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    const images = Object.assign(Object.create(null), { delayed: Uint8Array.of(1) })
+    const mounting = player.mount(makeVideo({ frames: 2, images }))
     player.setConfig({ startFrame: 2 })
-    pendingImages[0].onload?.()
-
+    finish?.(new FakeImageBitmap(1, 1))
     await expect(mounting).rejects.toThrow(/frame/)
     expect(player.videoEntity).toBeUndefined()
   })
@@ -940,10 +940,12 @@ describe('Player frame cache and destruction', () => {
     expect(offscreen.toDataURL).not.toHaveBeenCalled()
   })
 
-  it('closes owned cached frames on replacement but never caller-owned ImageBitmaps', async () => {
-    const owned = new FakeImageBitmap(20, 20)
-    const callerOwned = new FakeImageBitmap(20, 20)
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => owned))
+  it('closes decoded images and owned cached frames on replacement', async () => {
+    const decoded = new FakeImageBitmap(20, 20)
+    const cached = new FakeImageBitmap(20, 20)
+    vi.stubGlobal('createImageBitmap', vi.fn()
+      .mockResolvedValueOnce(decoded)
+      .mockResolvedValueOnce(cached))
     const player = new Player({
       container: new FakeCanvas() as unknown as HTMLCanvasElement,
       isCacheFrames: true
@@ -951,7 +953,7 @@ describe('Player frame cache and destruction', () => {
     await player.mount(makeVideo({
       size: { width: 20, height: 20 },
       frames: 1,
-      images: { caller: callerOwned as unknown as ImageBitmap }
+      images: Object.assign(Object.create(null), { image: Uint8Array.of(1) })
     }))
     player.start()
     await Promise.resolve()
@@ -959,8 +961,8 @@ describe('Player frame cache and destruction', () => {
 
     await player.mount(makeVideo({ frames: 1 }))
 
-    expect(owned.close).toHaveBeenCalledOnce()
-    expect(callerOwned.close).not.toHaveBeenCalled()
+    expect(decoded.close).toHaveBeenCalledOnce()
+    expect(cached.close).toHaveBeenCalledOnce()
   })
 
   it('closes cached and pending owned frames when frame caching is disabled', async () => {
@@ -1019,24 +1021,28 @@ describe('Player frame cache and destruction', () => {
   })
 
   it('does not cancel an in-flight mount when frame caching is toggled', async () => {
+    let finish: ((bitmap: FakeImageBitmap) => void) | undefined
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise<FakeImageBitmap>(resolve => { finish = resolve })))
     const player = new Player({
       container: new FakeCanvas() as unknown as HTMLCanvasElement,
       isCacheFrames: true
     })
-    const video = makeVideo({ images: { delayed: 'encoded' } })
+    const video = makeVideo({ images: Object.assign(Object.create(null), { delayed: Uint8Array.of(1) }) })
     const mounting = player.mount(video)
 
     player.setConfig({ isCacheFrames: false })
-    pendingImages[0].onload?.()
+    finish?.(new FakeImageBitmap(1, 1))
     await mounting
 
     expect(player.videoEntity).toBe(video)
   })
 
   it('is idempotently destroyed, releases resources, and rejects later playback calls', async () => {
-    const owned = new FakeImageBitmap(20, 20)
-    const callerOwned = new FakeImageBitmap(20, 20)
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => owned))
+    const decoded = new FakeImageBitmap(20, 20)
+    const cached = new FakeImageBitmap(20, 20)
+    vi.stubGlobal('createImageBitmap', vi.fn()
+      .mockResolvedValueOnce(decoded)
+      .mockResolvedValueOnce(cached))
     const canvas = new FakeCanvas()
     const player = new Player({
       container: canvas as unknown as HTMLCanvasElement,
@@ -1046,7 +1052,7 @@ describe('Player frame cache and destruction', () => {
     await player.mount(makeVideo({
       size: { width: 20, height: 20 },
       frames: 2,
-      images: { caller: callerOwned as unknown as ImageBitmap }
+      images: Object.assign(Object.create(null), { image: Uint8Array.of(1) })
     }))
     player.start()
     await Promise.resolve()
@@ -1056,8 +1062,8 @@ describe('Player frame cache and destruction', () => {
     player.destroy()
     player.destroy()
 
-    expect(owned.close).toHaveBeenCalledOnce()
-    expect(callerOwned.close).not.toHaveBeenCalled()
+    expect(decoded.close).toHaveBeenCalledOnce()
+    expect(cached.close).toHaveBeenCalledOnce()
     expect(observer.disconnect).toHaveBeenCalledOnce()
     expect(player.config.isUseIntersectionObserver).toBe(false)
     expect(player.videoEntity).toBeUndefined()

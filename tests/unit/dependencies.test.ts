@@ -1,4 +1,5 @@
 import { access, readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 
 import { describe, expect, it } from 'vitest'
 
@@ -32,15 +33,14 @@ describe('parser dependencies', () => {
       }
       files: string[]
     }
-    const [buildScript, verifyPackageScript] = await Promise.all([
+    const [buildScript, verifyPackageScript, readme] = await Promise.all([
       readFile('scripts/build.mjs', 'utf8'),
-      readFile('scripts/verify-package.mjs', 'utf8')
+      readFile('scripts/verify-package.mjs', 'utf8'),
+      readFile('README.md', 'utf8')
     ])
 
     expect(packageJson.devDependencies.fflate).toMatch(/^\^?\d/)
-    expect(packageJson.devDependencies.protobufjs).toBe(
-      'git+https://github.com/lijialiang/protobuf.js.git#b84b9b2d55ce07a0c9f28519054ce6b15ab092ca'
-    )
+    expect(packageJson.devDependencies.protobufjs).toBe('^8.7.2')
     expect(packageJson.devDependencies).not.toHaveProperty('zlibjs')
     expect(packageJson.devDependencies).not.toHaveProperty('@babel/core')
     expect(packageJson.devDependencies).not.toHaveProperty('@babel/preset-env')
@@ -80,6 +80,34 @@ describe('parser dependencies', () => {
     expect(buildScript).not.toMatch(/@rollup\/plugin-typescript/)
     expect(verifyPackageScript).toContain("resolve('typescript/package.json')")
     expect(verifyPackageScript).not.toMatch(/from ['"]typescript['"]/)
+    expect(buildScript).toContain('const maxBundleRawBytes = 90112')
+    expect(buildScript).toContain('const maxBundleGzipBytes = 25600')
+    expect(verifyPackageScript).toContain('const maxBundleRawBytes = 90112')
+    expect(verifyPackageScript).toContain('const maxBundleGzipBytes = 25600')
+    expect(readme).toContain('单个 JavaScript 产物 < 88 KiB（gzip < 25 KiB）')
     await expect(access('tsconfig.base.json')).rejects.toThrow()
+  })
+
+  it('commits a provenance-tracked decode-only static SVGA decoder', async () => {
+    const [schema, decoder, provenance, workerEntry] = await Promise.all([
+      readFile('src/parser/svga.proto', 'utf8'),
+      readFile('src/parser/svga.generated.ts', 'utf8'),
+      readFile('src/parser/PROTOBUF_PROVENANCE.md', 'utf8'),
+      readFile('src/parser/index.ts', 'utf8')
+    ])
+
+    expect(schema).toContain('message MovieEntity')
+    expect(createHash('sha256').update(schema).digest('hex')).toBe('12f395148ae23ff04bcf0e39937b3f804edad5d57fbd7b7e6b5e04e49adb17b8')
+    expect(decoder).toContain('protobufjs/minimal.js')
+    expect(decoder).toContain('MovieEntity.decode')
+    expect(decoder).not.toMatch(/Root\.fromJSON|\beval\b|\bFunction\b/)
+    expect(decoder).not.toContain('.encode =')
+    expect(decoder).not.toContain('.verify =')
+    expect(decoder).not.toContain('.fromObject =')
+    expect(decoder).not.toContain('.toObject =')
+    expect(provenance).toContain('protobufjs-cli@2.6.2')
+    expect(provenance).toContain('12f395148ae23ff04bcf0e39937b3f804edad5d57fbd7b7e6b5e04e49adb17b8')
+    expect(provenance).toContain('--no-encode')
+    expect(workerEntry).not.toMatch(/\beval\b|\bFunction\b/)
   })
 })

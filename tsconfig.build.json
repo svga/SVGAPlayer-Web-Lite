@@ -8,5 +8,5 @@
     "rootDir": "./src"
   },
   "files": ["src/index.ts", "src/parser/index.ts"],
-  "include": ["src/global.d.ts"]
+  "include": []
 }

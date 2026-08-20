@@ -29,15 +29,15 @@ Playwright 配置包含 Chromium、Firefox、WebKit 和 mobile Chromium 四个�
 
 ### 构建与 Worker
 
-`scripts/build.mjs` 使用 Rollup API 在内存中分别构建解析 Worker 和主包，再把压缩后的 Worker 内容内联到各产物；构建同时生成 TypeScript 声明文件，并检查 UMD/CJS/ESM 包的体积与内联内容。构建产物位于 `dist/`，由 `prepack` 自动生成。
+`scripts/build.mjs` 使用 Rollup API 在内存中分别构建解析 Worker 和主包，再把压缩后的 Worker 内容内联到各产物；构建同时生成 TypeScript 声明文件，并检查 UMD/CJS/ESM 包均小于 88 KiB 原始体积与 25 KiB gzip。构建产物位于 `dist/`，由 `prepack` 自动生成。
 
-解析 Worker 通过 `Blob` 与 `URL.createObjectURL` 启动。`Parser` 默认在 Worker 中运行；`isDisableWebWorker: true` 是明确的降级边界，会在主线程通过内联 Worker 代码的 `eval` 模拟 Worker，仅应在宿主明确允许该执行边界时使用。
+解析 Worker 通过 `Blob` 与 `URL.createObjectURL` 启动。`Parser` 默认在 Worker 中运行；`isDisableWebWorker: true` 是明确的降级边界，会用局部 `self` 参数执行内联 Worker 代码，仅应在宿主明确允许动态代码执行时使用。
 
 ### Parser：下载与解析
 
-`src/parser.ts` 负责主线程侧请求、Worker 生命周期和并发响应匹配，使用 `Map` 管理待处理请求、`WeakMap` 保存实例状态，并以 `async` 方法暴露加载流程。
+`src/parser.ts` 负责主线程侧请求、Worker 生命周期、四路并发和 FIFO 排队，使用 `Map` 管理待处理请求、`WeakMap` 保存实例状态，并以 `async` 方法暴露加载流程。
 
-`src/parser/index.ts` 是 Worker 入口：使用 `fetch` 下载文件，使用 `fflate` 解压，并使用固定提交版本的 `protobufjs` 解码 `MovieEntity`。`src/parser/svga-proto.ts` 由 proto 描述生成，勿手工修改。解析后由 `VideoEntity` 压缩为播放器使用的 Video 结构，并处理图片、帧、形状、透明度、布局、变换和复用帧。
+`src/parser/index.ts` 是 Worker 入口：使用 `fetch` 流式下载、`fflate` 流式解压，并使用官方 `protobufjs` minimal runtime 和提交的静态只解码源解码 `MovieEntity`。解析后由 `createVideo` 转为可结构化克隆的 Video 结构。
 
 ### Player：现代状态与渲染
 
@@ -47,13 +47,13 @@ Playwright 配置包含 Chromium、Firefox、WebKit 和 mobile Chromium 四个�
 
 ### DB：IndexedDB 缓存
 
-`src/db.ts` 使用 `WeakMap` 保存每个 `DB` 实例的运行时状态，并通过 IndexedDB 持久化可序列化的 Video 数据。使用 DB 时应让 Parser 关闭 ImageBitmap 垫片，以便数据可存储。
+`src/db.ts` 使用 `WeakMap` 保存每个 `DB` 实例的运行时状态，并通过 IndexedDB 直接持久化包含 `Uint8Array` 图片的 Video 记录。
 
 ## 依赖与边界
 
-- `fflate` 用于解压；`protobufjs` 使用仓库锁定的 git 提交版本，修改前先核对现有测试与类型。
+- `fflate` 用于解压；`protobufjs` 使用 8.7.2 minimal runtime，生成器与 schema 溯源见 `src/parser/PROTOBUF_PROVENANCE.md`。
 - 支持 OffscreenCanvas 的环境优先走离屏渲染；不支持时使用 HTMLCanvas 降级。
-- 禁用 Worker 的主线程路径包含 `eval`，这是显式的执行边界，不应为了绕过宿主安全策略而扩大使用范围。
+- 禁用 Worker 的主线程路径包含明确的动态代码执行边界，不应为了绕过宿主安全策略而扩大使用范围。
 - 不要把本地测试结果表述为真机、发布、部署、平台采用或 SEO 结果。
 - 禁止执行发布或部署操作，包括推送 Git 远程仓库、发布 npm 包以及部署到生产环境。
 

@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Video } from '../../src/types'
+import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from '../../src/parser/protocol'
 
 const fixtureDir = '__test__/svga'
 const fixtureBlobs = new Map([
@@ -65,28 +66,25 @@ describe('production SVGA fixtures', () => {
         arrayBuffer: async () => buffer
       }
     })
-    vi.stubGlobal('self', { document: {}, createImageBitmap: undefined })
-    vi.stubGlobal('window', { SVGAParserMockWorker: undefined })
-    vi.stubGlobal('btoa', (value: string) => Buffer.from(value, 'binary').toString('base64'))
+    const responses: ParserWorkerResponse[] = []
+    const scope: ParserWorkerScope = {
+      postMessage: response => { responses.push(response) }
+    }
+    vi.stubGlobal('self', scope)
 
     await import('../../src/parser/index')
-    const worker = window.SVGAParserMockWorker
-    if (!worker) throw new Error('direct parser worker unavailable')
 
-    for (const name of names) {
-      const parsed = new Promise<Video>((resolve, reject) => {
-        worker.onmessageCallback = data => data instanceof Error ? reject(data) : resolve(data)
-      })
-      await worker.onmessage({
-        data: {
-          url: `fixture:${name}`,
-          options: { isDisableImageBitmapShim: true }
-        }
-      })
+    for (const [index, name] of names.entries()) {
+      responses.length = 0
+      await scope.onmessage?.({
+        data: { requestId: index, url: `fixture:${name}` }
+      } as MessageEvent<ParserWorkerRequest>)
+      const response = responses[0]
       if (name === 'show.svga') {
-        await expect(parsed, name).rejects.toThrow('only support version@2')
+        expect(response.error?.message, name).toContain('only support version@2')
       } else {
-        await expect(parsed, name).resolves.toMatchObject({
+        expect(response.error, name).toBeUndefined()
+        expect(response.video as Video, name).toMatchObject({
           size: { width: expect.any(Number), height: expect.any(Number) },
           frames: expect.any(Number)
         })

@@ -1,232 +1,150 @@
 import {
-  Movie,
-  Video,
-  RawImages,
-  ReplaceElements,
-  DynamicElements,
-  VideoFrame,
-  VideoSprite,
-  SHAPE_TYPE,
-  SHAPE_TYPE_CODE,
-  VideoFrameShapes,
+  type Movie,
+  type RawImages,
+  type Video,
+  type VideoFrame,
+  type VideoFrameShapes,
+  type VideoSprite,
   LINE_CAP_CODE,
   LINE_JOIN_CODE,
-  RGBA
+  type RGBA,
+  SHAPE_TYPE,
+  SHAPE_TYPE_CODE
 } from '../types'
 
 const rgb = (value: number): number => {
-  if (typeof value !== 'number' || !isFinite(value)) return 0
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
   return Math.min(255, Math.max(0, Math.floor(value * 255)))
 }
 
 const alpha = (value: number): number => {
-  if (typeof value !== 'number' || !isFinite(value)) return 0
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
   return Math.min(1, Math.max(0, value))
 }
 
 const color = (value: { r: number, g: number, b: number, a: number }): RGBA<number, number, number, number> =>
-  ('rgba(' + rgb(value.r) + ', ' + rgb(value.g) + ', ' + rgb(value.b) + ', ' + alpha(value.a) + ')') as RGBA<number, number, number, number>
+  (`rgba(${rgb(value.r)}, ${rgb(value.g)}, ${rgb(value.b)}, ${alpha(value.a)})`) as RGBA<number, number, number, number>
 
-export class VideoEntity implements Video {
-  public version: string
-  public size = { width: 0, height: 0 }
-  public fps: number = 20
-  public frames: number = 0
-  public images: RawImages = {}
-  public replaceElements: ReplaceElements = {}
-  public dynamicElements: DynamicElements = {}
-  public sprites: VideoSprite[] = []
+export function createVideo (movie: Movie, images: RawImages = Object.create(null) as RawImages): Video {
+  const sprites: VideoSprite[] = []
 
-  constructor (movie: Movie, images: RawImages = {}) {
-    this.version = movie.version
+  movie.sprites.forEach(movieSprite => {
+    const frames: VideoFrame[] = []
+    const sprite: VideoSprite = { imageKey: movieSprite.imageKey, frames }
+    let lastShapes: VideoFrameShapes | undefined
 
-    const { viewBoxWidth, viewBoxHeight, fps, frames } = movie.params
-    this.size.width = viewBoxWidth
-    this.size.height = viewBoxHeight
-    this.fps = fps
-    this.frames = frames
-
-    this.sprites = []
-    movie.sprites.forEach(mSprite => {
-      const vFrames: VideoFrame[] = []
-      const vSprite: VideoSprite = {
-        imageKey: mSprite.imageKey,
-        frames: vFrames
+    movieSprite.frames.forEach(movieFrame => {
+      const layout = {
+        x: movieFrame.layout?.x ?? 0,
+        y: movieFrame.layout?.y ?? 0,
+        width: movieFrame.layout?.width ?? 0,
+        height: movieFrame.layout?.height ?? 0
       }
+      const transform = {
+        a: movieFrame.transform?.a ?? 1,
+        b: movieFrame.transform?.b ?? 0,
+        c: movieFrame.transform?.c ?? 0,
+        d: movieFrame.transform?.d ?? 1,
+        tx: movieFrame.transform?.tx ?? 0,
+        ty: movieFrame.transform?.ty ?? 0
+      }
+      let shapes: VideoFrameShapes = []
 
-      let lastShapes: VideoFrameShapes | undefined
+      movieFrame.shapes.forEach(movieShape => {
+        const movieStyles = movieShape.styles
+        if (movieStyles === null || movieStyles === undefined) return
 
-      mSprite.frames.forEach(mFrame => {
-        const layout = {
-          x: mFrame.layout?.x ?? 0.0,
-          y: mFrame.layout?.y ?? 0.0,
-          width: mFrame.layout?.width ?? 0.0,
-          height: mFrame.layout?.height ?? 0.0
+        const lineDash: number[] = []
+        if (movieStyles.lineDashI !== null && movieStyles.lineDashI > 0) lineDash.push(movieStyles.lineDashI)
+        if (movieStyles.lineDashII !== null && movieStyles.lineDashII > 0) {
+          if (lineDash.length < 1) lineDash.push(0)
+          lineDash.push(movieStyles.lineDashII)
+        }
+        if (movieStyles.lineDashIII !== null && movieStyles.lineDashIII > 0) {
+          while (lineDash.length < 2) lineDash.push(0)
+          lineDash[2] = movieStyles.lineDashIII
         }
 
-        const transform = {
-          a: mFrame.transform?.a ?? 1.0,
-          b: mFrame.transform?.b ?? 0.0,
-          c: mFrame.transform?.c ?? 0.0,
-          d: mFrame.transform?.d ?? 1.0,
-          tx: mFrame.transform?.tx ?? 0.0,
-          ty: mFrame.transform?.ty ?? 0.0
+        let lineCap: CanvasLineCap | null = null
+        if (movieStyles.lineCap === LINE_CAP_CODE.BUTT) lineCap = 'butt'
+        else if (movieStyles.lineCap === LINE_CAP_CODE.ROUND) lineCap = 'round'
+        else if (movieStyles.lineCap === LINE_CAP_CODE.SQUARE) lineCap = 'square'
+
+        let lineJoin: CanvasLineJoin | null = null
+        if (movieStyles.lineJoin === LINE_JOIN_CODE.MITER) lineJoin = 'miter'
+        else if (movieStyles.lineJoin === LINE_JOIN_CODE.ROUND) lineJoin = 'round'
+        else if (movieStyles.lineJoin === LINE_JOIN_CODE.BEVEL) lineJoin = 'bevel'
+
+        const styles = {
+          lineDash,
+          fill: movieStyles.fill === null || movieStyles.fill === undefined ? null : color(movieStyles.fill),
+          stroke: movieStyles.stroke === null || movieStyles.stroke === undefined ? null : color(movieStyles.stroke),
+          lineCap,
+          lineJoin,
+          strokeWidth: movieStyles.strokeWidth,
+          miterLimit: movieStyles.miterLimit
+        }
+        const shapeTransform = {
+          a: movieShape.transform?.a ?? 1,
+          b: movieShape.transform?.b ?? 0,
+          c: movieShape.transform?.c ?? 0,
+          d: movieShape.transform?.d ?? 1,
+          tx: movieShape.transform?.tx ?? 0,
+          ty: movieShape.transform?.ty ?? 0
         }
 
-        const clipPath = mFrame.clipPath ?? ''
-
-        let shapes: VideoFrameShapes = []
-
-        mFrame.shapes.forEach(mShape => {
-          const mStyles = mShape.styles
-          if (mStyles === null) return
-
-          const lineDash: number[] = []
-          if (mStyles.lineDashI !== null && mStyles.lineDashI > 0) {
-            lineDash.push(mStyles.lineDashI)
-          }
-          if (mStyles.lineDashII !== null && mStyles.lineDashII > 0) {
-            if (lineDash.length < 1) {
-              lineDash.push(0)
-            }
-            lineDash.push(mStyles.lineDashII)
-          }
-          if (mStyles.lineDashIII !== null && mStyles.lineDashIII > 0) {
-            if (lineDash.length < 2) {
-              lineDash.push(0)
-              lineDash.push(0)
-            }
-            lineDash[2] = mStyles.lineDashIII
-          }
-
-          let lineCap: CanvasLineCap | null = null
-          switch (mStyles.lineCap) {
-            case LINE_CAP_CODE.BUTT:
-              lineCap = 'butt'
-              break
-            case LINE_CAP_CODE.ROUND:
-              lineCap = 'round'
-              break
-            case LINE_CAP_CODE.SQUARE:
-              lineCap = 'square'
-              break
-          }
-
-          let lineJoin: CanvasLineJoin | null = null
-          switch (mStyles.lineJoin) {
-            case LINE_JOIN_CODE.BEVEL:
-              lineJoin = 'bevel'
-              break
-            case LINE_JOIN_CODE.ROUND:
-              lineJoin = 'round'
-              break
-            case LINE_JOIN_CODE.MITER:
-              lineJoin = 'miter'
-              break
-          }
-
-          let fill: RGBA<number, number, number, number> | null = null
-          if (mStyles.fill !== null) {
-            fill = color(mStyles.fill)
-          }
-
-          let stroke: RGBA<number, number, number, number> | null = null
-          if (mStyles.stroke !== null) {
-            stroke = color(mStyles.stroke)
-          }
-
-          const { strokeWidth, miterLimit } = mStyles
-
-          const styles = {
-            lineDash,
-            fill,
-            stroke,
-            lineCap,
-            lineJoin,
-            strokeWidth,
-            miterLimit
-          }
-
-          const transform = {
-            a: mShape.transform?.a ?? 1.0,
-            b: mShape.transform?.b ?? 0.0,
-            c: mShape.transform?.c ?? 0.0,
-            d: mShape.transform?.d ?? 1.0,
-            tx: mShape.transform?.tx ?? 0.0,
-            ty: mShape.transform?.ty ?? 0.0
-          }
-
-          if (mShape.type === SHAPE_TYPE_CODE.SHAPE && mShape.shape !== null) {
-            shapes.push({
-              type: SHAPE_TYPE.SHAPE,
-              path: mShape.shape,
-              styles,
-              transform
-            })
-          } else if (mShape.type === SHAPE_TYPE_CODE.RECT && mShape.rect !== null) {
-            shapes.push({
-              type: SHAPE_TYPE.RECT,
-              path: mShape.rect,
-              styles,
-              transform
-            })
-          } else if (mShape.type === SHAPE_TYPE_CODE.ELLIPSE && mShape.ellipse !== null) {
-            shapes.push({
-              type: SHAPE_TYPE.ELLIPSE,
-              path: mShape.ellipse,
-              styles,
-              transform
-            })
-          }
-        })
-
-        if (mFrame.shapes[0] !== undefined && mFrame.shapes[0].type === SHAPE_TYPE_CODE.KEEP && lastShapes !== undefined) {
-          shapes = lastShapes
-        } else {
-          lastShapes = shapes
+        if (movieShape.type === SHAPE_TYPE_CODE.SHAPE && movieShape.shape !== null && movieShape.shape !== undefined) {
+          shapes.push({ type: SHAPE_TYPE.SHAPE, path: { d: movieShape.shape.d }, styles, transform: shapeTransform })
+        } else if (movieShape.type === SHAPE_TYPE_CODE.RECT && movieShape.rect !== null && movieShape.rect !== undefined) {
+          shapes.push({
+            type: SHAPE_TYPE.RECT,
+            path: {
+              x: movieShape.rect.x,
+              y: movieShape.rect.y,
+              width: movieShape.rect.width,
+              height: movieShape.rect.height,
+              cornerRadius: movieShape.rect.cornerRadius
+            },
+            styles,
+            transform: shapeTransform
+          })
+        } else if (movieShape.type === SHAPE_TYPE_CODE.ELLIPSE && movieShape.ellipse !== null && movieShape.ellipse !== undefined) {
+          shapes.push({
+            type: SHAPE_TYPE.ELLIPSE,
+            path: {
+              x: movieShape.ellipse.x,
+              y: movieShape.ellipse.y,
+              radiusX: movieShape.ellipse.radiusX,
+              radiusY: movieShape.ellipse.radiusY
+            },
+            styles,
+            transform: shapeTransform
+          })
         }
-
-        const llx = transform.a * layout.x + transform.c * layout.y + transform.tx
-        const lrx = transform.a * (layout.x + layout.width) + transform.c * layout.y + transform.tx
-        const lbx = transform.a * layout.x + transform.c * (layout.y + layout.height) + transform.tx
-        const rbx = transform.a * (layout.x + layout.width) + transform.c * (layout.y + layout.height) + transform.tx
-        const lly = transform.b * layout.x + transform.d * layout.y + transform.ty
-        const lry = transform.b * (layout.x + layout.width) + transform.d * layout.y + transform.ty
-        const lby = transform.b * layout.x + transform.d * (layout.y + layout.height) + transform.ty
-        const rby = transform.b * (layout.x + layout.width) + transform.d * (layout.y + layout.height) + transform.ty
-        const nx = Math.min(Math.min(lbx, rbx), Math.min(llx, lrx))
-        const ny = Math.min(Math.min(lby, rby), Math.min(lly, lry))
-
-        const maskPath = clipPath.length > 0
-          ? {
-              d: clipPath,
-              transform: undefined,
-              styles: {
-                fill: 'rgba(0, 0, 0, 0)' as RGBA<0, 0, 0, 0>,
-                stroke: null,
-                strokeWidth: null,
-                lineCap: null,
-                lineJoin: null,
-                miterLimit: null,
-                lineDash: null
-              }
-            }
-          : null
-
-        vSprite.frames.push({
-          alpha: mFrame.alpha ?? 0,
-          layout,
-          transform,
-          clipPath,
-          shapes,
-          nx,
-          ny,
-          maskPath
-        })
       })
-      this.sprites.push(vSprite)
-    })
 
-    this.images = images
+      if (movieFrame.shapes[0]?.type === SHAPE_TYPE_CODE.KEEP && lastShapes !== undefined) shapes = lastShapes
+      else lastShapes = shapes
+
+      frames.push({
+        alpha: movieFrame.alpha ?? 0,
+        layout,
+        transform,
+        clipPath: movieFrame.clipPath ?? '',
+        shapes
+      })
+    })
+    sprites.push(sprite)
+  })
+
+  return {
+    version: movie.version,
+    size: { width: movie.params.viewBoxWidth, height: movie.params.viewBoxHeight },
+    fps: movie.params.fps,
+    frames: movie.params.frames,
+    images,
+    replaceElements: Object.create(null) as Video['replaceElements'],
+    dynamicElements: Object.create(null) as Video['dynamicElements'],
+    sprites
   }
 }

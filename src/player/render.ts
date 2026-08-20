@@ -64,7 +64,7 @@ function drawSprite (
     if (transform) context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
 
     if (bitmap) {
-      if (frame.maskPath !== null && !clipPath(context, frame.maskPath.d, frame.maskPath.transform)) return
+      if (frame.clipPath.length > 0 && !clipPath(context, frame.clipPath, undefined)) return
       if (replaceElement) context.drawImage(replaceElement, 0, 0, frame.layout.width, frame.layout.height)
       else context.drawImage(bitmap, 0, 0, frame.layout.width, frame.layout.height)
     }

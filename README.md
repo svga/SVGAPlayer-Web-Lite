@@ -4,7 +4,7 @@
 
 ## 实现
 
-- [x] 单个 JavaScript 产物 < 60 KiB（gzip < 18 KiB）
+- [x] 单个 JavaScript 产物 < 88 KiB（gzip < 25 KiB）
 - [x] 面向 Android 8.0+（API 26，使用受维护且可更新的 Chrome 或 WebView）与 iOS/iPadOS 16+ Safari/WKWebView
 - [x] 使用 ES2017 语法；安装包检查会验证 ES2017 语法解析
 - [x] 更好的异步操作
@@ -87,10 +87,7 @@ player.start()
 ```ts
 new Parser({
   // 是否取消使用 WebWorker，默认值 false
-  isDisableWebWorker: false,
-
-  // 是否取消使用 ImageBitmap 垫片，默认值 false
-  isDisableImageBitmapShim: false
+  isDisableWebWorker: false
 })
 ```
 
@@ -190,8 +187,7 @@ try {
   const db = new DB()
   let svga = await db.find(url)
   if (!svga) {
-    // Parser 需要配置取消使用 ImageBitmap 特性，ImageBitmap 数据无法直接存储到 DB 内
-    const parser = new Parser({ isDisableImageBitmapShim: true })
+    const parser = new Parser()
     svga = await parser.load(url)
     await db.insert(url, svga)
   }

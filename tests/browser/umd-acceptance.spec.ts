@@ -20,7 +20,6 @@ test('built UMD parses with real Worker and direct modes, then renders non-empty
       size: { width: number, height: number }
     }
     interface BrowserParser {
-      worker: unknown
       load: (url: string) => Promise<BrowserVideo>
       destroy: () => void
     }
@@ -32,15 +31,12 @@ test('built UMD parses with real Worker and direct modes, then renders non-empty
     }
     const browserWindow = window as unknown as Window & {
       SVGA: {
-        Parser: new (options: { isDisableWebWorker?: boolean, isDisableImageBitmapShim: boolean }) => BrowserParser
+        Parser: new (options?: { isDisableWebWorker?: boolean }) => BrowserParser
         Player: new (container: HTMLCanvasElement) => BrowserPlayer
       }
     }
-    const workerParser = new browserWindow.SVGA.Parser({ isDisableImageBitmapShim: true })
-    const directParser = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
+    const workerParser = new browserWindow.SVGA.Parser()
+    const directParser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
     try {
       const [workerVideo, directVideo] = await Promise.all([
         workerParser.load(`data:application/octet-stream;base64,${workerData}`),
@@ -62,9 +58,7 @@ test('built UMD parses with real Worker and direct modes, then renders non-empty
       player.destroy()
       return {
         directSize: directVideo.size,
-        directWorkerIsNative: directParser.worker instanceof Worker,
         nonEmptyPixels,
-        workerIsNative: workerParser.worker instanceof Worker,
         workerSize: workerVideo.size
       }
     } finally {
@@ -73,8 +67,6 @@ test('built UMD parses with real Worker and direct modes, then renders non-empty
     }
   }, { directData: directFixture, workerData: workerFixture })
 
-  expect(evidence.workerIsNative).toBe(true)
-  expect(evidence.directWorkerIsNative).toBe(false)
   expect(evidence.workerSize).toEqual({ width: 96, height: 96 })
   expect(evidence.directSize).toEqual({ width: 400, height: 400 })
   expect(evidence.nonEmptyPixels).toBeGreaterThan(0)
@@ -111,12 +103,16 @@ test('built UMD renders native SVG paths, masks, ellipses and rounded rectangles
     if (!sourceContext) throw new Error('source context unavailable')
     sourceContext.fillStyle = '#ff00ff'
     sourceContext.fillRect(0, 0, 40, 40)
-    const bitmap = await createImageBitmap(source)
+    const sourceBlob = await new Promise<Blob>((resolve, reject) => {
+      source.toBlob(value => {
+        if (value === null) reject(new Error('source image encoding failed'))
+        else resolve(value)
+      }, 'image/png')
+    })
+    const imageBytes = new Uint8Array(await sourceBlob.arrayBuffer())
     const baseFrame = {
       alpha: 1,
       transform: null,
-      nx: 0,
-      ny: 0,
       layout: { x: 0, y: 0, width: 40, height: 40 },
       clipPath: ''
     }
@@ -127,7 +123,7 @@ test('built UMD renders native SVG paths, masks, ellipses and rounded rectangles
       size: { width: 40, height: 40 },
       fps: 20,
       frames: 1,
-      images: { masked: bitmap },
+      images: Object.assign(Object.create(null), { masked: imageBytes }),
       replaceElements: Object.create(null),
       dynamicElements: Object.create(null),
       sprites: [
@@ -135,15 +131,7 @@ test('built UMD renders native SVG paths, masks, ellipses and rounded rectangles
           imageKey: 'masked',
           frames: [{
             ...baseFrame,
-            maskPath: { d: 'M0 0 H20 V40 H0 Z', transform: identity, styles: noStyle },
-            shapes: []
-          }]
-        },
-        {
-          imageKey: 'masked',
-          frames: [{
-            ...baseFrame,
-            maskPath: { d: '', transform: identity, styles: noStyle },
+            clipPath: 'M0 0 H20 V40 H0 Z',
             shapes: []
           }]
         },
@@ -151,7 +139,6 @@ test('built UMD renders native SVG paths, masks, ellipses and rounded rectangles
           imageKey: 'shapes',
           frames: [{
             ...baseFrame,
-            maskPath: null,
             shapes: [
               {
                 type: 'shape',
@@ -191,7 +178,6 @@ test('built UMD renders native SVG paths, masks, ellipses and rounded rectangles
       red: pixel(5, 5)
     }
     player.destroy()
-    bitmap.close()
     return result
   })
 
@@ -202,14 +188,14 @@ test('built UMD renders native SVG paths, masks, ellipses and rounded rectangles
   expect(evidence.maskedRight[3]).toBe(0)
 })
 
-test('built UMD transfers default Worker ImageBitmaps and mounts them for rendering', async ({ page }) => {
+test('built UMD transfers default Worker image bytes and Player decodes them for rendering', async ({ page }) => {
   const fixture = await readFixture('11')
   await page.goto('about:blank')
   await page.addScriptTag({ path: resolve('dist/index.min.js') })
 
   const evidence = await page.evaluate(async data => {
     interface BrowserVideo {
-      images: Record<string, string | ImageBitmap>
+      images: Record<string, Uint8Array>
     }
     interface BrowserParser {
       load: (url: string) => Promise<BrowserVideo>
@@ -233,8 +219,7 @@ test('built UMD transfers default Worker ImageBitmaps and mounts them for render
     try {
       const video = await parser.load(`data:application/octet-stream;base64,${data}`)
       const rasterValues = Object.keys(video.images).map(key => video.images[key])
-      const imageBitmapSupported = typeof ImageBitmap !== 'undefined' && typeof createImageBitmap === 'function'
-      const rasterValuesAreImageBitmaps = rasterValues.length > 0 && rasterValues.every(value => value instanceof ImageBitmap)
+      const rasterValuesAreBytes = rasterValues.length > 0 && rasterValues.every(value => value instanceof Uint8Array)
       const player = new browserWindow.SVGA.Player(canvas)
       await player.mount(video)
       player.start()
@@ -247,13 +232,13 @@ test('built UMD transfers default Worker ImageBitmaps and mounts them for render
         }
       }
       player.destroy()
-      return { imageBitmapSupported, nonEmptyPixels, rasterValuesAreImageBitmaps }
+      return { nonEmptyPixels, rasterValuesAreBytes }
     } finally {
       parser.destroy()
     }
   }, fixture)
 
-  if (evidence.imageBitmapSupported) expect(evidence.rasterValuesAreImageBitmaps).toBe(true)
+  expect(evidence.rasterValuesAreBytes).toBe(true)
   expect(evidence.nonEmptyPixels).toBeGreaterThan(0)
 })
 
@@ -290,14 +275,11 @@ test('built UMD runs lifecycle methods in callback order and clears destroyed pl
     }
     const browserWindow = window as unknown as Window & {
       SVGA: {
-        Parser: new (options: { isDisableWebWorker: boolean, isDisableImageBitmapShim: boolean }) => BrowserParser
+        Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser
         Player: new (options: { container: HTMLCanvasElement, endFrame: number, loop: boolean }) => BrowserPlayer
       }
     }
-    const parser = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
+    const parser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
     const video = await parser.load(`data:application/octet-stream;base64,${data}`)
     const canvas = document.createElement('canvas')
     document.body.appendChild(canvas)
@@ -392,14 +374,11 @@ test('built UMD renders replacement and dynamic elements from a retained fixture
     }
     const browserWindow = window as unknown as Window & {
       SVGA: {
-        Parser: new (options: { isDisableWebWorker: boolean, isDisableImageBitmapShim: boolean }) => BrowserParser
+        Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser
         Player: new (container: HTMLCanvasElement) => BrowserPlayer
       }
     }
-    const parser = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
+    const parser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
     const video = await parser.load(`data:application/octet-stream;base64,${data}`)
     const replacement = document.createElement('canvas')
     replacement.width = 94
@@ -471,7 +450,7 @@ test('built UMD uses frame cache and native IntersectionObserver, then releases 
     }
     const browserWindow = window as unknown as Window & {
       SVGA: {
-        Parser: new (options: { isDisableWebWorker: boolean, isDisableImageBitmapShim: boolean }) => BrowserParser
+        Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser
         Player: new (options: { container: HTMLCanvasElement, isCacheFrames: boolean }) => BrowserPlayer
       }
     }
@@ -504,10 +483,7 @@ test('built UMD uses frame cache and native IntersectionObserver, then releases 
       return result
     }
 
-    const parser = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
+    const parser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
     const video = await parser.load(`data:application/octet-stream;base64,${data}`)
     video.replaceElements.img_14 = colorCanvas('#ff0000')
     const canvas = document.createElement('canvas')
@@ -590,7 +566,7 @@ test('built UMD persists, deletes, and reopens data with real browser IndexedDB'
     const browserWindow = window as unknown as Window & {
       SVGA: {
         DB: new (options: { name: string, version: number, storeName: string }) => BrowserDb
-        Parser: new (options: { isDisableWebWorker: boolean, isDisableImageBitmapShim: boolean }) => BrowserParser
+        Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser
       }
     }
     const deleteDatabase = (name: string): Promise<void> => new Promise((resolve, reject) => {
@@ -601,10 +577,7 @@ test('built UMD persists, deletes, and reopens data with real browser IndexedDB'
     })
     const name = `svga-browser-${suffix}-${Date.now()}`
     const options = { name, version: 1, storeName: 'videos' }
-    const parser = new browserWindow.SVGA.Parser({
-      isDisableWebWorker: true,
-      isDisableImageBitmapShim: true
-    })
+    const parser = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
     try {
       const video = await parser.load(`data:application/octet-stream;base64,${data}`)
       const first = new browserWindow.SVGA.DB(options)

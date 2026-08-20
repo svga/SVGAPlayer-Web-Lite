@@ -1,29 +1,12 @@
-export interface ParserPostMessageArgs {
-  url: string
-  options: {
-    isDisableImageBitmapShim: boolean
-  }
-}
-
-export interface MockWebWorker {
-  onmessage: (event: { data: ParserPostMessageArgs }) => void
-  onmessageCallback: (data: Video | Error) => void
-  postMessage: (data: Video | Error) => void
-}
-
 export interface ParserConfigOptions {
   /**
    * 是否取消使用 WebWorker，默认值 false
    */
   isDisableWebWorker?: boolean
-  /**
-   * 是否取消使用 ImageBitmap 垫片，默认值 false
-   */
-  isDisableImageBitmapShim?: boolean
 }
 
 export interface RawImages {
-  [key: string]: string | HTMLImageElement | ImageBitmap
+  [key: string]: Uint8Array
 }
 
 export interface Rect {
@@ -147,20 +130,11 @@ export interface VideoShapeEllipse {
   transform: Transform
 }
 
-export interface MaskPath {
-  d: string
-  transform: Transform | undefined
-  styles: VideoStyles
-}
-
 export interface MovieFrame {
   alpha: number
   transform: Transform | null
-  nx: number
-  ny: number
   layout: Rect
   clipPath: string
-  maskPath: MaskPath | null
   shapes: MovieShape[]
 }
 
@@ -171,11 +145,8 @@ export type VideoFrameShapes = VideoFrameShape[]
 export interface VideoFrame {
   alpha: number
   transform: Transform | null
-  nx: number
-  ny: number
   layout: Rect
   clipPath: string
-  maskPath: MaskPath | null
   shapes: VideoFrameShapes
 }
 

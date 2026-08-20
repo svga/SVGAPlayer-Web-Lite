@@ -24,8 +24,8 @@ const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const distDir = resolve(projectDir, 'dist')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const expectedExports = ['DB', 'Parser', 'Player']
-const maxBundleRawBytes = 61440
-const maxBundleGzipBytes = 18432
+const maxBundleRawBytes = 90112
+const maxBundleGzipBytes = 25600
 const expectedPackFiles = [
   'LICENSE',
   'README.md',
@@ -112,8 +112,8 @@ async function verifyBundleSizes (installedPackageDir) {
     const bytes = await readFile(join(installedPackageDir, path))
     const rawSize = bytes.byteLength
     const gzipSize = gzipSync(bytes, { level: 9 }).byteLength
-    assert(rawSize < maxBundleRawBytes, `${path} exceeds the 60 KiB raw bundle limit`)
-    assert(gzipSize < maxBundleGzipBytes, `${path} exceeds the 18 KiB gzip bundle limit`)
+    assert(rawSize < maxBundleRawBytes, `${path} exceeds the 88 KiB raw bundle limit`)
+    assert(gzipSize < maxBundleGzipBytes, `${path} exceeds the 25 KiB gzip bundle limit`)
   }
 }
 

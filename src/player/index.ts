@@ -8,6 +8,7 @@ import {
 } from '../types'
 import { Animator } from './animator'
 import render from './render'
+import { validateVideo } from '../validate-video'
 
 type EventCallback = undefined | (() => void)
 
@@ -66,20 +67,39 @@ function storeFrameCache (
   runtime.cacheOrder.set(key, true)
 }
 
-const isFinitePositive = (value: number): boolean => Number.isFinite(value) && value > 0
+function clearBitmaps (cache: BitmapsCache): void {
+  for (const key of Object.keys(cache)) {
+    const bitmap = cache[key]
+    if (typeof ImageBitmap !== 'undefined' && bitmap instanceof ImageBitmap) bitmap.close()
+  }
+}
 
-function validateVideo (videoEntity: Video): void {
-  const { size, fps, frames, sprites } = videoEntity
+function validateBitmap (bitmap: { width: number, height: number }, key: string): void {
   if (
-    !size ||
-    ![size.width, size.height, fps].every(isFinitePositive) ||
-    !Number.isInteger(frames) || frames <= 0 ||
-    sprites.some(sprite => {
-      if (!Array.isArray(sprite.frames) || sprite.frames.length < frames) return true
-      for (let frame = frames; frame-- > 0;) if (sprite.frames[frame] === undefined) return true
-      return false
-    })
-  ) throw Error('video')
+    !Number.isFinite(bitmap.width) || !Number.isFinite(bitmap.height) ||
+    bitmap.width <= 0 || bitmap.height <= 0 ||
+    bitmap.width > 4096 || bitmap.height > 4096 ||
+    bitmap.width * bitmap.height > 16_777_216
+  ) throw Error('image:' + key)
+}
+
+async function decodeBitmap (bytes: Uint8Array, key: string): Promise<ImageBitmap | HTMLImageElement> {
+  const blob = new Blob([new Uint8Array(bytes)])
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(blob)
+    try { validateBitmap(bitmap, key) } catch (error) { bitmap.close(); throw error }
+    return bitmap
+  }
+  return await new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = window.URL.createObjectURL(blob)
+    const image = document.createElement('img')
+    image.onload = () => {
+      window.URL.revokeObjectURL(url)
+      try { validateBitmap(image, key); resolve(image) } catch (error) { reject(error) }
+    }
+    image.onerror = () => { window.URL.revokeObjectURL(url); reject(Error('image:' + key)) }
+    image.src = url
+  })
 }
 
 function validateFrameConfig (config: PlayerConfig, totalFrames?: number): void {
@@ -119,6 +139,7 @@ function releasePlayer (player: Player): void {
   disconnectObserver(player as unknown as PlayerInternal)
   ;(player as unknown as PlayerInternal).isBeIntersection = true
   clearFrameCache(runtime, (player as unknown as PlayerInternal).cacheFrames)
+  clearBitmaps((player as unknown as PlayerInternal).bitmapsCache)
   ;(player as unknown as PlayerInternal).bitmapsCache = Object.create(null) as BitmapsCache
   player.videoEntity = undefined
   player.currentFrame = 0
@@ -245,6 +266,7 @@ export class Player {
     this.animator.stop()
     runtime.timeline = 0
     clearFrameCache(runtime, this.cacheFrames as unknown as FrameCache)
+    clearBitmaps(this.bitmapsCache)
     const bitmapsCache = this.bitmapsCache = Object.create(null) as BitmapsCache
     this.videoEntity = undefined
     this.currentFrame = 0
@@ -255,18 +277,19 @@ export class Player {
     const totalFrames = videoEntity.frames - 1
     validateFrameConfig(this.config, totalFrames)
 
-    await Promise.all(Object.keys(videoEntity.images).map(key => {
-      const image = videoEntity.images[key]
-      if (typeof image !== 'string') return void (bitmapsCache[key] = image)
-      return new Promise<void>((resolve, reject) => {
-        const img = document.createElement('img')
-        img.onload = resolve as unknown as typeof img.onload
-        img.onerror = () => reject(Error('image:' + key))
-        img.src = 'data:image/png;base64,' + image
-        bitmapsCache[key] = img
-      })
-    }))
-    if (this.bitmapsCache !== bitmapsCache) return
+    try {
+      await Promise.all(Object.keys(videoEntity.images).map(async key => {
+        const bitmap = await decodeBitmap(videoEntity.images[key], key)
+        bitmapsCache[key] = bitmap
+      }))
+    } catch (error) {
+      clearBitmaps(bitmapsCache)
+      throw error
+    }
+    if (this.bitmapsCache !== bitmapsCache) {
+      clearBitmaps(bitmapsCache)
+      return
+    }
     validateFrameConfig(this.config, totalFrames)
     this.videoEntity = videoEntity
     this.totalFrames = totalFrames
