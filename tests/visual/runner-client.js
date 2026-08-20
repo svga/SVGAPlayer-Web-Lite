@@ -1,6 +1,6 @@
 const protocol = 'svga-visual-runner'
 const cancelGraceMs = 250
-const defaultRunTimeoutMs = 30_000
+const startupTimeoutMs = 30_000
 
 function createRunId () {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -9,10 +9,10 @@ function createRunId () {
   return Array.from(bytes, value => value.toString(16)).join('-')
 }
 
-function timeoutFor (options) {
+export function runnerTimeoutFor (options = {}) {
   if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) return options.timeoutMs
-  if (Number.isFinite(options.maxPlaybackMs) && options.maxPlaybackMs >= 0) return options.maxPlaybackMs + 1_000
-  return defaultRunTimeoutMs
+  if (!Number.isFinite(options.maxPlaybackMs) || options.maxPlaybackMs < 0) return startupTimeoutMs
+  return startupTimeoutMs + options.maxPlaybackMs * (options.includeWarm === true ? 2 : 1)
 }
 
 export function createIsolatedRunner (runtime, { target = document.body, onEvent = () => {} } = {}) {
@@ -98,13 +98,19 @@ export function createIsolatedRunner (runtime, { target = document.body, onEvent
     } else if (message.event === 'error' && !readyState) {
       settleReady(undefined, Error(message.error?.message || '隔离运行器启动失败'))
     }
-    if (['result', 'error', 'cancelled'].includes(message.event)) settleRun(message)
-    onEvent(message)
-    if (message.event === 'cancelled' && cancelRequested) dispose()
+    const terminal = ['result', 'error', 'cancelled'].includes(message.event)
+    if (terminal) settleRun(message)
+    try {
+      onEvent(message)
+    } catch (error) {
+      window.setTimeout(() => console.warn('SVGA isolated runner callback failed', error), 0)
+    } finally {
+      if (message.event === 'cancelled' && cancelRequested) dispose()
+    }
   }
   window.addEventListener('message', receive)
   target.append(frame)
-  readyTimer = window.setTimeout(dispose, defaultRunTimeoutMs)
+  readyTimer = window.setTimeout(dispose, startupTimeoutMs)
   return {
     frame,
     ready,
@@ -116,7 +122,7 @@ export function createIsolatedRunner (runtime, { target = document.body, onEvent
       coldRunStarted = true
       const transferred = buffer.slice(0)
       completion = new Promise(resolve => { resolveRun = resolve })
-      runTimer = window.setTimeout(cancel, timeoutFor(options))
+      runTimer = window.setTimeout(cancel, runnerTimeoutFor(options))
       try {
         frame.contentWindow?.postMessage({ protocol, event: 'run', runId, buffer: transferred, fixture, options }, origin, [transferred])
       } catch (error) {

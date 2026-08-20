@@ -24,6 +24,12 @@ const runnerSecurityHeaders = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'none'; connect-src 'self' blob:; img-src 'self' blob: data:; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self'; worker-src blob:"
 }
 
+export function runnerSecurityHeadersFor (runtime, baseline) {
+  return runtime === 'baseline' && baseline?.source === 'npm' && baseline.version === '2.1.1'
+    ? runnerSecurityHeaders
+    : securityHeaders
+}
+
 async function fixtureInventory (directory = fixtureDir) {
   const names = (await readdir(directory))
     .filter(name => name.endsWith('.svga'))
@@ -110,8 +116,8 @@ export async function createVisualTestServer (options = {}) {
     if (!file) return send(response, 404, 'Not Found', 'text/plain; charset=utf-8')
     try {
       const bytes = await readFile(file.path)
-      const headers = url.pathname === '/runner.html' && url.searchParams.get('runtime') === 'baseline'
-        ? runnerSecurityHeaders
+      const headers = url.pathname === '/runner.html'
+        ? runnerSecurityHeadersFor(url.searchParams.get('runtime'), baseline)
         : file.headers
       return send(response, 200, request.method === 'HEAD' ? '' : bytes, file.type, headers)
     } catch (error) {

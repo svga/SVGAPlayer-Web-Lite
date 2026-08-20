@@ -71,6 +71,7 @@ describe('visual comparison correctness states', () => {
     ['local-regression', successful, { status: 'failed' }, false],
     ['capability-change', successful, { ...successful, capabilities: { imageBitmap: false } }, false],
     ['metadata-change', successful, { ...successful, profile: { ...successful.profile, frames: 11 } }, false],
+    ['limited', successful, { ...successful, profile: undefined }, false],
     ['visual-change', successful, { ...successful, visual: { ...successful.visual, rgbaHash: 'bb' } }, false],
     ['limited', successful, { ...successful, visual: undefined }, false],
     ['limited', successful, { ...successful, visual: { ...successful.visual, frame: 1 } }, false],

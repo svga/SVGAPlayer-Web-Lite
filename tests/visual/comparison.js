@@ -148,6 +148,7 @@ export function compareCorrectness ({ baseline, local }) {
   if (baselineSuccess && !localSuccess) return { state: 'local-regression', performanceComparable: false }
   if (!baselineSuccess || !localSuccess) return { state: 'capability-change', performanceComparable: false }
   if (!sameValue(baseline.capabilities, local.capabilities)) return { state: 'capability-change', performanceComparable: false }
+  if (!baseline.profile || !local.profile) return { state: 'limited', performanceComparable: false }
   if (!sameProfile(baseline.profile, local.profile)) return { state: 'metadata-change', performanceComparable: false }
   if (!baseline.visual || !local.visual || baseline.visual.frame !== local.visual.frame) {
     return { state: 'limited', performanceComparable: false }

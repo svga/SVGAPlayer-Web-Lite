@@ -160,6 +160,25 @@ test('runs one isolated local runtime and returns runtime-only startup metrics',
   })
 })
 
+test('keeps a one-second cold and warm sample inside its full timeout budget', async ({ page }) => {
+  test.setTimeout(10_000)
+  await page.goto(visualTestUrl)
+  const event = await page.evaluate(async runtime => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const runner = (window as any).SVGAVisual.createIsolatedRunner(runtime, { onEvent: () => {} })
+    await runner.ready
+    const result = await runner.run({
+      buffer,
+      fixture: { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' },
+      options: { maxPlaybackMs: 1_000, includeWarm: true }
+    })
+    runner.dispose()
+    return result
+  }, isolatedRuntime)
+
+  expect(event).toMatchObject({ event: 'result', result: { status: 'sampled', warm: { status: 'sampled' } } })
+})
+
 test('copies one input buffer for sequential baseline and local runners', async ({ page }) => {
   await page.goto(visualTestUrl)
   const outcome = await page.evaluate(async () => {
@@ -255,6 +274,29 @@ test('cancels a pending isolated parser exactly once and releases its realm', as
   expect(outcome.connected).toBe(false)
 })
 
+test('disposes a cancelled runner even when its event callback throws', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const outcome = await page.evaluate(async () => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const runner = (window as any).SVGAVisual.createIsolatedRunner('local', {
+      onEvent: (event: { event: string }) => {
+        if (event.event === 'cancelled') throw Error('observer failure')
+      }
+    })
+    await runner.ready
+    runner.run({
+      buffer,
+      fixture: { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' },
+      options: { maxPlaybackMs: 10_000 }
+    })
+    const cancellation = await runner.cancel()
+    return { cancellation, connected: runner.frame.isConnected }
+  })
+
+  expect(outcome.cancellation).toMatchObject({ event: 'cancelled', stage: 'parse' })
+  expect(outcome.connected).toBe(false)
+})
+
 test('rejects a runner readiness promise when disposed before startup', async ({ browserDiagnostics, page }) => {
   browserDiagnostics.expectRequestCancellation('/runner.html')
   await page.goto(visualTestUrl)
@@ -300,7 +342,14 @@ test('serves an isolated no-cache page and rejects fixture path traversal', asyn
 
   const baselineRunnerResponse = await request.get(`${visualTestUrl}runner.html?runtime=baseline&runId=test`)
   expect(baselineRunnerResponse.status()).toBe(200)
-  expect(baselineRunnerResponse.headers()['content-security-policy']).toContain("script-src 'self' 'unsafe-eval'")
+  const runtimeResponse = await request.get(`${visualTestUrl}api/runtimes`)
+  const runtimes = await runtimeResponse.json() as { baseline: { version: string, source: string } | null }
+  const baselineAllowsLegacyEval = runtimes.baseline?.version === '2.1.1' && runtimes.baseline.source === 'npm'
+  if (baselineAllowsLegacyEval) {
+    expect(baselineRunnerResponse.headers()['content-security-policy']).toContain("script-src 'self' 'unsafe-eval'")
+  } else {
+    expect(baselineRunnerResponse.headers()['content-security-policy']).not.toContain("'unsafe-eval'")
+  }
 
   const traversal = await request.get(`${visualTestUrl}fixtures/%2e%2e%2fpackage.json`)
   expect(traversal.status()).toBe(404)
