@@ -11,6 +11,12 @@ const concat = (...parts: Uint8Array[]): Uint8Array => {
   return result
 }
 
+const repeat = (part: Uint8Array, count: number): Uint8Array => {
+  const result = new Uint8Array(part.length * count)
+  for (let index = 0; index < count; index++) result.set(part, index * part.length)
+  return result
+}
+
 const varint = (value: number): Uint8Array => {
   const bytes: number[] = []
   let remaining = value >>> 0
@@ -49,6 +55,8 @@ function movieBytes (images: Record<string, Uint8Array> = Object.create(null), t
 
 const compressedMovie = (images?: Record<string, Uint8Array>, targetLength?: number): Uint8Array =>
   new Uint8Array(deflateSync(movieBytes(images, targetLength)))
+
+const compressedWire = (bytes: Uint8Array): Uint8Array => new Uint8Array(deflateSync(bytes))
 
 interface FetchResult {
   status?: number
@@ -169,6 +177,36 @@ describe('parser worker', () => {
   it('rejects the v1 ZIP header at the worker call site', async () => {
     fetchResult.bytes = Uint8Array.from([80, 75, 3, 4])
     expect((await runWorker()).error?.message).toContain('version@2')
+  })
+
+  it.each([
+    ['sprites', repeat(field(4, 2, new Uint8Array()), 2_001)],
+    ['sprite frames', field(4, 2, repeat(field(2, 2, new Uint8Array()), 500_001))],
+    ['shapes', field(4, 2, field(2, 2, repeat(field(5, 2, new Uint8Array()), 100_001)))],
+    ['images', repeat(field(3, 2, new Uint8Array()), 513)],
+    ['audio entries', repeat(field(5, 2, new Uint8Array()), 513)],
+    ['path bytes', field(4, 2, field(2, 2, field(5, 2, field(2, 2, textField(1, 'M'.repeat(1_048_577))))))]
+  ])('rejects over-limit %s before the full generated decoder', async (_name, bytes) => {
+    fetchResult.bytes = compressedWire(bytes)
+    const { com } = await import('../../src/parser/svga.generated')
+    const decode = vi.spyOn((com as any).opensource.svga.MovieEntity, 'decode')
+
+    expect((await runWorker()).error?.message).toContain('wire')
+    expect(decode).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a group wire type', Uint8Array.of((4 << 3) | 3)],
+    ['a truncated length-delimited field', Uint8Array.of((4 << 3) | 2, 2, 0)],
+    ['an unterminated varint', Uint8Array.of(0x80)],
+    ['field number zero', Uint8Array.of(0)]
+  ])('rejects malformed wire data containing %s before decode', async (_name, bytes) => {
+    fetchResult.bytes = compressedWire(bytes)
+    const { com } = await import('../../src/parser/svga.generated')
+    const decode = vi.spyOn((com as any).opensource.svga.MovieEntity, 'decode')
+
+    expect((await runWorker()).error?.message).toContain('wire')
+    expect(decode).not.toHaveBeenCalled()
   })
 
   it('aborts direct in-flight work on the single cancel-all protocol message', async () => {

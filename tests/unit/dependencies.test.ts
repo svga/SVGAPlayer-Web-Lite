@@ -89,11 +89,12 @@ describe('parser dependencies', () => {
   })
 
   it('commits a provenance-tracked decode-only static SVGA decoder', async () => {
-    const [schema, decoder, provenance, workerEntry] = await Promise.all([
+    const [schema, decoder, provenance, workerEntry, attributes] = await Promise.all([
       readFile('src/parser/svga.proto', 'utf8'),
       readFile('src/parser/svga.generated.ts', 'utf8'),
       readFile('src/parser/PROTOBUF_PROVENANCE.md', 'utf8'),
-      readFile('src/parser/index.ts', 'utf8')
+      readFile('src/parser/index.ts', 'utf8'),
+      readFile('.gitattributes', 'utf8')
     ])
 
     expect(schema).toContain('message MovieEntity')
@@ -109,5 +110,6 @@ describe('parser dependencies', () => {
     expect(provenance).toContain('12f395148ae23ff04bcf0e39937b3f804edad5d57fbd7b7e6b5e04e49adb17b8')
     expect(provenance).toContain('--no-encode')
     expect(workerEntry).not.toMatch(/\beval\b|\bFunction\b/)
+    expect(attributes.trim()).toBe('src/parser/svga.proto whitespace=-trailing-space')
   })
 })

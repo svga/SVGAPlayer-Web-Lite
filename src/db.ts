@@ -54,16 +54,17 @@ function connect (state: DBState): Promise<IDBDatabase> {
   return state.connection
 }
 
-async function transact<T> (
+async function transact<T, R = T> (
   owner: DB,
   mode: IDBTransactionMode,
-  action: (store: IDBObjectStore) => IDBRequest<T>
-): Promise<T> {
+  action: (store: IDBObjectStore) => IDBRequest<T>,
+  convert?: (value: T, store: IDBObjectStore) => R
+): Promise<R> {
   const state = states.get(owner)
   if (state === undefined) throw dbError()
   const database = await connect(state)
-  return await new Promise<T>((resolve, reject) => {
-    let result: T
+  return await new Promise<R>((resolve, reject) => {
+    let result: R
     let failure: unknown
     let transaction: IDBTransaction | undefined
     let settled = false
@@ -79,11 +80,18 @@ async function transact<T> (
       transaction.oncomplete = finish
       transaction.onerror = () => { failure = transaction?.error || dbError() }
       transaction.onabort = () => { failure = failure || transaction?.error || dbError(); finish() }
-      const request = action(transaction.objectStore(state.storeName))
-      request.onsuccess = () => { result = request.result }
+      const store = transaction.objectStore(state.storeName)
+      const request = action(store)
+      request.onsuccess = () => {
+        try { result = convert === undefined ? request.result as unknown as R : convert(request.result, store) } catch (error) {
+          failure = error
+          try { transaction?.abort() } catch { finish() }
+        }
+      }
     } catch (error) {
       failure = error
-      try { transaction?.abort() } catch { finish() }
+      if (transaction === undefined) finish()
+      else try { transaction.abort() } catch { finish() }
     }
   })
 }
@@ -103,7 +111,7 @@ function copyImages (value: unknown): Video['images'] {
 
 function stableRecord (video: Video): Video {
   validateVideo(video)
-  const record: Video = {
+  const record = structuredClone({
     version: video.version,
     size: video.size,
     fps: video.fps,
@@ -112,8 +120,8 @@ function stableRecord (video: Video): Video {
     replaceElements: nullMap(),
     dynamicElements: nullMap(),
     sprites: video.sprites
-  }
-  return validateVideo(record)
+  })
+  return restoreRecord(record)
 }
 
 function restoreRecord (value: unknown): Video {
@@ -138,14 +146,14 @@ export class DB {
   }
 
   async find (id: IDBValidKey): Promise<Video | undefined> {
-    const value = await transact(this, 'readonly', store => store.get(id))
-    if (value === undefined) return undefined
-    try {
-      return restoreRecord(value)
-    } catch {
-      try { await this.delete(id) } catch {}
-      return undefined
-    }
+    return await transact<unknown, Video | undefined>(this, 'readwrite', store => store.get(id), (value, store) => {
+      if (value === undefined) return undefined
+      try { return restoreRecord(value) } catch {
+        const request = store.delete(id)
+        request.onerror = event => { event.preventDefault() }
+        return undefined
+      }
+    })
   }
 
   async insert (id: IDBValidKey, data: Video): Promise<void> {

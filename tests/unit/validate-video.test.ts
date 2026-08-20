@@ -50,6 +50,16 @@ function rejects (mutate: (video: Video) => void): void {
   expect(() => validateVideo(video)).toThrow('Invalid SVGA video')
 }
 
+function inheritedField (target: object, key: string, value: unknown, video: Video): void {
+  delete (target as Record<string, unknown>)[key]
+  Object.defineProperty(Object.prototype, key, { configurable: true, value })
+  try {
+    expect(() => validateVideo(video)).toThrow('Invalid SVGA video')
+  } finally {
+    delete (Object.prototype as Record<string, unknown>)[key]
+  }
+}
+
 describe('validateVideo semantic budgets', () => {
   it('accepts values equal to each scalar canvas/fps/frame budget', () => {
     const video = validVideo()
@@ -91,6 +101,17 @@ describe('validateVideo semantic budgets', () => {
     video.sprites[0].frames[0].shapes = Array.from({ length: 100_000 }, () => validShape())
     expect(validateVideo(video)).toBe(video)
     video.sprites[0].frames[0].shapes.push(validShape())
+    expect(() => validateVideo(video)).toThrow('Invalid SVGA video')
+  })
+
+  it('counts every repeated shape reference within a first-seen array', () => {
+    const video = validVideo()
+    const sharedShape = validShape()
+    video.sprites[0].frames[0].shapes = Array.from({ length: 100_001 }, () => sharedShape)
+    expect(() => validateVideo(video)).toThrow('Invalid SVGA video')
+
+    video.sprites[0].frames[0].shapes = [validShape('M'.repeat(524_289))]
+    video.sprites[0].frames[0].shapes.push(video.sprites[0].frames[0].shapes[0])
     expect(() => validateVideo(video)).toThrow('Invalid SVGA video')
   })
 
@@ -165,6 +186,29 @@ describe('validateVideo structure and numeric fields', () => {
     expect(() => validateVideo(inherited)).toThrow('Invalid SVGA video')
     rejects(video => { video.size = Object.create(video.size) as Video['size'] })
     rejects(video => { video.sprites[0] = Object.create(video.sprites[0]) as Video['sprites'][0] })
+  })
+
+  it('rejects required root and nested fields inherited through prototype pollution', () => {
+    let video = validVideo()
+    inheritedField(video, 'version', '2.0', video)
+
+    video = validVideo()
+    inheritedField(video.sprites[0], 'imageKey', 'image', video)
+
+    video = validVideo()
+    inheritedField(video.sprites[0].frames[0], 'alpha', 1, video)
+
+    video = validVideo()
+    video.sprites[0].frames[0].shapes = [validShape()]
+    inheritedField(video.sprites[0].frames[0].shapes[0], 'type', 'shape', video)
+
+    video = validVideo()
+    video.sprites[0].frames[0].shapes = [validShape()]
+    inheritedField(video.sprites[0].frames[0].shapes[0].styles, 'fill', null, video)
+
+    video = validVideo()
+    video.sprites[0].frames[0].shapes = [validShape('M0 0')]
+    inheritedField(video.sprites[0].frames[0].shapes[0].path, 'd', 'M0 0', video)
   })
 
   it('accepts dangerous own image and sprite keys through null-prototype maps', () => {

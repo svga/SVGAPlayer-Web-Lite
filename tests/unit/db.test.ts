@@ -1,4 +1,4 @@
-import { IDBFactory } from 'fake-indexeddb'
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DB, type DBOptions } from '../../src/db'
@@ -102,6 +102,31 @@ describe('DB stable Video records', () => {
     expect(Object.keys(result?.dynamicElements ?? {})).toEqual([])
   })
 
+  it('takes a synchronous deep snapshot before caller mutation', async () => {
+    const db = new DB(options())
+    const source = sampleVideo()
+    source.sprites[0].frames[0].shapes = [{
+      type: 'rect' as never,
+      path: { x: 1, y: 2, width: 3, height: 4, cornerRadius: 5 },
+      styles: { fill: null, stroke: null, strokeWidth: 0, lineCap: null, lineJoin: null, miterLimit: 0, lineDash: [] },
+      transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
+    }]
+
+    const inserting = db.insert('video', source)
+    source.size.width = 99
+    source.sprites[0].frames[0].layout.x = 99
+    ;(source.sprites[0].frames[0].shapes[0].path as { width: number }).width = 99
+    source.images.image[0] = 99
+    await inserting
+
+    const stored = await db.find('video')
+    expect(stored).toBeDefined()
+    expect(stored?.size.width).toBe(10)
+    expect(stored?.sprites[0].frames[0].layout.x).toBe(0)
+    expect(((stored as Video).sprites[0].frames[0].shapes[0].path as { width: number }).width).toBe(3)
+    expect(stored?.images.image).toEqual(Uint8Array.from([1, 2, 3]))
+  })
+
   it('validates inserts before opening or writing', async () => {
     const open = vi.spyOn(indexedDB, 'open')
     const db = new DB(options())
@@ -109,6 +134,17 @@ describe('DB stable Video records', () => {
     invalid.fps = 121
     await expect(db.insert('invalid', invalid)).rejects.toThrow('Invalid SVGA video')
     expect(open).not.toHaveBeenCalled()
+  })
+
+  it('rejects promptly when the configured object store is missing', async () => {
+    const config = options()
+    await seed(config, 'video', sampleVideo())
+    const db = new DB({ ...config, storeName: 'missing' })
+    const outcome = await Promise.race([
+      db.find('video').then(() => 'resolved', () => 'rejected'),
+      new Promise<string>(resolve => setTimeout(() => resolve('timeout'), 50))
+    ])
+    expect(outcome).toBe('rejected')
   })
 
   it.each([
@@ -121,6 +157,25 @@ describe('DB stable Video records', () => {
     const db = new DB(config)
     await expect(db.find('video')).resolves.toBeUndefined()
     await expect(rawFind(config, 'video')).resolves.toBeUndefined()
+  })
+
+  it('does not delete a concurrent valid write after reading an invalid cache entry', async () => {
+    const config = options()
+    await seed(config, 'video', 'old')
+    const db = new DB(config)
+    const valid = sampleVideo()
+    let concurrentWrite: Promise<void> | undefined
+    const originalGet = IDBObjectStore.prototype.get
+    const get = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (this: IDBObjectStore, key) {
+      const request = originalGet.call(this, key)
+      request.addEventListener('success', () => { concurrentWrite ??= db.insert('video', valid) })
+      return request
+    })
+
+    await expect(db.find('video')).resolves.toBeUndefined()
+    await concurrentWrite
+    get.mockRestore()
+    await expect(rawFind(config, 'video')).resolves.toMatchObject({ version: '2.0' })
   })
 
   it('preserves insert/find/delete signatures and closes each operation deterministically', async () => {

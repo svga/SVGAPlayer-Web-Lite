@@ -7,6 +7,7 @@ export default defineConfig({
         'src/db.ts',
         'src/parser.ts',
         'src/parser/index.ts',
+        'src/parser/wire-scan.ts',
         'src/parser/video-entity.ts',
         'src/validate-video.ts',
         'src/player/animator.ts',

@@ -5,6 +5,7 @@ import { validateVideo } from '../validate-video'
 import { com } from './svga.generated'
 import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerScope } from './protocol'
 import { createVideo } from './video-entity'
+import { scanMovieWire } from './wire-scan'
 
 const maxCompressedBytes = 8 * 1024 * 1024
 const maxDecompressedBytes = 16 * 1024 * 1024
@@ -97,7 +98,9 @@ function installParserWorker (scope: ParserWorkerScope): void {
       if (compressed[0] === 80 && compressed[1] === 75 && compressed[2] === 3 && compressed[3] === 4) {
         throw Error('this parser only support version@2 of SVGA.')
       }
-      const decoded = (com as any).opensource.svga.MovieEntity.decode(inflate(compressed)) as Movie
+      const inflated = inflate(compressed)
+      scanMovieWire(inflated)
+      const decoded = (com as any).opensource.svga.MovieEntity.decode(inflated) as Movie
       const video = validateVideo(createVideo(decoded, imageMap(decoded)))
       response = { requestId: request.requestId, video }
       scope.postMessage(response, transferList(video))

@@ -2,6 +2,15 @@ import { SHAPE_TYPE, type Transform, type Video, type VideoFrameShape, type Vide
 
 const error = (reason = 'structure'): never => { throw Error(`Invalid SVGA video: ${reason}`) }
 const owns = (value: object, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(value, key)
+const rootFields = ['version', 'size', 'fps', 'frames', 'images', 'replaceElements', 'dynamicElements', 'sprites']
+const spriteFields = ['imageKey', 'frames']
+const frameFields = ['alpha', 'layout', 'transform', 'clipPath', 'shapes']
+const shapeFields = ['type', 'path', 'styles', 'transform']
+const styleFields = ['fill', 'stroke', 'strokeWidth', 'lineCap', 'lineJoin', 'miterLimit', 'lineDash']
+
+function ownsAll (value: object, keys: string[]): boolean {
+  return keys.every(key => owns(value, key))
+}
 
 function record (value: unknown, nullOnly = false): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
@@ -32,7 +41,7 @@ function nullableFinite (value: unknown): boolean {
 }
 
 function styles (value: unknown): value is VideoStyles {
-  if (!record(value)) return false
+  if (!record(value) || !ownsAll(value, styleFields)) return false
   if (!nullableFinite(value.strokeWidth) || !nullableFinite(value.miterLimit)) return false
   if (value.fill !== null && typeof value.fill !== 'string') return false
   if (value.stroke !== null && typeof value.stroke !== 'string') return false
@@ -43,15 +52,15 @@ function styles (value: unknown): value is VideoStyles {
 }
 
 function shape (value: unknown): value is VideoFrameShape {
-  if (!record(value) || !transform(value.transform) || !styles(value.styles) || !record(value.path)) return false
-  if (value.type === SHAPE_TYPE.SHAPE) return typeof value.path.d === 'string'
+  if (!record(value) || !ownsAll(value, shapeFields) || !transform(value.transform) || !styles(value.styles) || !record(value.path)) return false
+  if (value.type === SHAPE_TYPE.SHAPE) return owns(value.path, 'd') && typeof value.path.d === 'string'
   if (value.type === SHAPE_TYPE.RECT) return finiteRecord(value.path, ['x', 'y', 'width', 'height', 'cornerRadius'])
   if (value.type === SHAPE_TYPE.ELLIPSE) return finiteRecord(value.path, ['x', 'y', 'radiusX', 'radiusY'])
   return false
 }
 
 export function validateVideo (value: unknown): Video {
-  if (!record(value)) error()
+  if (!record(value) || !ownsAll(value, rootFields)) error()
   const video = value as unknown as Video
   if (
     typeof video.version !== 'string' ||
@@ -72,15 +81,14 @@ export function validateVideo (value: unknown): Video {
   let shapes = 0
   let pathCharacters = 0
   const seenShapeArrays = new WeakSet<object>()
-  const seenShapes = new WeakSet<object>()
   for (const sprite of video.sprites) {
-    if (!record(sprite) || typeof sprite.imageKey !== 'string' || !array(sprite.frames) || sprite.frames.length < video.frames) error('sprite')
+    if (!record(sprite) || !ownsAll(sprite, spriteFields) || typeof sprite.imageKey !== 'string' || !array(sprite.frames) || sprite.frames.length < video.frames) error('sprite')
     spriteFrames += sprite.frames.length
     if (spriteFrames > 500_000) error('sprite frames')
 
     for (const frame of sprite.frames) {
       if (
-        !record(frame) || !finite(frame.alpha) ||
+        !record(frame) || !ownsAll(frame, frameFields) || !finite(frame.alpha) ||
         !finiteRecord(frame.layout, ['x', 'y', 'width', 'height']) ||
         !transform(frame.transform, true) ||
         typeof frame.clipPath !== 'string' ||
@@ -93,14 +101,11 @@ export function validateVideo (value: unknown): Video {
         seenShapeArrays.add(frame.shapes)
         for (const item of frame.shapes) {
           if (!shape(item)) error('shape')
-          if (!seenShapes.has(item)) {
-            seenShapes.add(item)
-            shapes++
-            if (shapes > 100_000) error('frame budgets')
-            if (item.type === SHAPE_TYPE.SHAPE) {
-              pathCharacters += item.path.d.length
-              if (pathCharacters > 1_048_576) error('path characters')
-            }
+          shapes++
+          if (shapes > 100_000) error('frame budgets')
+          if (item.type === SHAPE_TYPE.SHAPE) {
+            pathCharacters += item.path.d.length
+            if (pathCharacters > 1_048_576) error('path characters')
           }
         }
       }
