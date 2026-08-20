@@ -61,6 +61,7 @@ test('visual test page inventories every production fixture', async ({ page }) =
   await page.goto(visualTestUrl)
 
   await expect(page).toHaveTitle('SVGA 动画检验台')
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', 'data:,')
   await expect(page.getByTestId('fixture-item')).toHaveCount(17)
   await expect(page.locator('[data-fixture="soundwave.svga"]')).toContainText('soundwave.svga')
   await expect(page.locator('[data-fixture="show.svga"]')).toContainText('预期拒绝')
