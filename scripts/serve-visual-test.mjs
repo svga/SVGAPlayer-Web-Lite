@@ -57,7 +57,11 @@ async function handleRequest (request, response) {
 
   if (url.pathname.startsWith('/fixtures/')) {
     let name = ''
-    try { name = decodeURIComponent(url.pathname.slice('/fixtures/'.length)) } catch {}
+    try {
+      name = url.pathname === '/fixtures/extensionless'
+        ? '11.svga'
+        : decodeURIComponent(url.pathname.slice('/fixtures/'.length))
+    } catch {}
     const fixtures = await fixtureInventory()
     if (!fixtures.some(fixture => fixture.name === name)) {
       return send(response, 404, 'Not Found', 'text/plain; charset=utf-8')

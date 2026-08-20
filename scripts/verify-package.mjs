@@ -18,6 +18,8 @@ import { runInNewContext } from 'node:vm'
 import { gzipSync } from 'node:zlib'
 
 import { parse } from 'acorn'
+import { nodeResolve } from '@rollup/plugin-node-resolve'
+import { rollup } from 'rollup'
 
 const execFileAsync = promisify(execFile)
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -147,8 +149,14 @@ async function verifyTypeScriptConsumer (consumerDir) {
     "import { DB, Parser, Player, type DBOptions, type ParserConfigOptions, type PlayerConfig, type PlayerConfigOptions, type Video } from 'svga'",
     'const publicApi: [typeof DB, typeof Parser, typeof Player] = [DB, Parser, Player]',
     'declare const publicTypes: [DBOptions, ParserConfigOptions, PlayerConfig, PlayerConfigOptions, Video]',
-    "const options: PlayerConfigOptions = { container: document.createElement('canvas'), fillMode: 'backwards', playMode: 'fallbacks' }",
-    'new Player(options)',
+    "const options: PlayerConfigOptions = { container: document.createElement('canvas'), fillMode: 'backwards', playMode: 'fallbacks', isDisableOffscreenCanvas: true }",
+    'const player = new Player(options)',
+    'const progress: number = player.progress',
+    'player.onProcess = value => { const current: number = value; void current }',
+    'player.onProcess = () => {}',
+    'player.stepToFrame(0)',
+    'player.setConfig({ isDisableOffscreenCanvas: false })',
+    'void progress',
     'void publicApi',
     'void publicTypes',
     ''
@@ -165,6 +173,67 @@ async function verifyTypeScriptConsumer (consumerDir) {
     files: ['consumer.ts']
   }, null, 2))
   await runTypeScript(['--project', 'tsconfig.json'], consumerDir)
+}
+
+async function verifyRollupConsumer (consumerDir) {
+  const entry = join(consumerDir, 'rollup-consumer.mjs')
+  await writeFile(entry, [
+    "import { Player } from 'svga'",
+    'export const createPlayer = canvas => new Player({ container: canvas, isDisableOffscreenCanvas: true })',
+    ''
+  ].join('\n'))
+  const warnings = []
+  const bundle = await rollup({
+    input: entry,
+    onwarn: warning => warnings.push(warning.message),
+    plugins: [nodeResolve({
+      browser: true,
+      modulePaths: [join(consumerDir, 'node_modules')],
+      preferBuiltins: false
+    })]
+  })
+  try {
+    const generated = await bundle.generate({ format: 'es' })
+    const chunks = generated.output.filter(output => output.type === 'chunk')
+    assert.equal(chunks.length, 1, 'Rollup consumer did not produce exactly one JavaScript chunk')
+    assert.deepEqual(chunks[0].imports, [], 'Rollup consumer left unresolved imports')
+    assert.deepEqual(chunks[0].exports, ['createPlayer'], 'Rollup consumer lost its public entry export')
+    assert.equal(warnings.length, 0, `Rollup consumer emitted warnings: ${warnings.join('; ')}`)
+  } finally {
+    await bundle.close()
+  }
+}
+
+async function verifyVite445Consumer (consumerDir) {
+  await runNpm([
+    'install',
+    '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
+    '--no-package-lock',
+    '--save-dev',
+    'vite@4.4.5'
+  ], consumerDir)
+  await mkdir(join(consumerDir, 'src'))
+  await writeFile(join(consumerDir, 'index.html'), '<!doctype html><div id="app"></div><script type="module" src="/src/main.ts"></script>\n')
+  await writeFile(join(consumerDir, 'src/main.ts'), [
+    "import { Player, type PlayerConfigOptions } from 'svga'",
+    "const canvas = document.createElement('canvas')",
+    'const options: PlayerConfigOptions = { container: canvas, isDisableOffscreenCanvas: true }',
+    'const player = new Player(options)',
+    'player.onProcess = progress => { document.body.dataset.progress = String(progress) }',
+    'player.setConfig({ isDisableOffscreenCanvas: false })',
+    "document.querySelector('#app')?.append(canvas)",
+    'void player.progress',
+    ''
+  ].join('\n'))
+  const viteCli = join(consumerDir, 'node_modules/vite/bin/vite.js')
+  await execFileAsync(process.execPath, [viteCli, 'build'], {
+    cwd: consumerDir,
+    maxBuffer: 20 * 1024 * 1024
+  })
+  const assets = await listFiles(join(consumerDir, 'dist'))
+  assert(assets.some(path => path.endsWith('.js')), 'Vite 4.4.5 consumer produced no JavaScript asset')
 }
 
 async function verifyDeepImportsAreRejected (consumerDir) {
@@ -206,6 +275,8 @@ async function verifyPackedConsumer (archive, tempDir) {
   await verifyEsmConsumer(consumerDir)
   await verifyUmdConsumer(installedPackageDir)
   await verifyTypeScriptConsumer(consumerDir)
+  await verifyRollupConsumer(consumerDir)
+  await verifyVite445Consumer(consumerDir)
   await verifyDeepImportsAreRejected(consumerDir)
 }
 
