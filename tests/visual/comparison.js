@@ -135,6 +135,23 @@ function successful (result) {
   return result?.status === 'completed' || result?.status === 'sampled'
 }
 
+export function compareWarmCorrectness ({ baseline, local }) {
+  const baselineWarm = baseline?.warm
+  const localWarm = local?.warm
+  if (!baselineWarm || !localWarm) return { state: 'limited', performanceComparable: false }
+  const baselineSuccess = successful(baselineWarm)
+  const localSuccess = successful(localWarm)
+  if (!baselineSuccess && !localSuccess) return { state: 'both-failed', performanceComparable: false }
+  if (baselineSuccess && !localSuccess) return { state: 'local-regression', performanceComparable: false }
+  if (!baselineSuccess || !localSuccess) return { state: 'limited', performanceComparable: false }
+  if (baselineWarm.sampleSufficient !== true || localWarm.sampleSufficient !== true) return { state: 'limited', performanceComparable: false }
+  if (!baselineWarm.visual || !localWarm.visual || baselineWarm.visual.frame !== localWarm.visual.frame) {
+    return { state: 'limited', performanceComparable: false }
+  }
+  if (!sameVisual(baselineWarm.visual, localWarm.visual)) return { state: 'visual-change', performanceComparable: false }
+  return { state: 'match', performanceComparable: true }
+}
+
 export function compareCorrectness ({ baseline, local }) {
   const baselineSuccess = successful(baseline)
   const localSuccess = successful(local)

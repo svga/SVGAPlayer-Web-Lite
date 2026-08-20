@@ -20,7 +20,7 @@ let coldRunStarted = false
 
 function captureAsyncRunnerError (error) {
   if (!active || active.terminal) return
-  active.asyncError = error instanceof Error ? error.message : String(error)
+  active.asyncError = { stage: active.stage, message: error instanceof Error ? error.message : String(error) }
   active.finish?.('async-error')
 }
 
@@ -172,7 +172,7 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     }
     const reason = await playback
     if (token.cancelled || reason === 'cancelled') throw cancelledError()
-    if (token.asyncError) throw Error(`运行时异步错误：${token.asyncError}`)
+    if (token.asyncError) throw Error(`运行时异步错误：${token.asyncError.message}`)
     const runtimeResult = finishMonitors()
     const playbackResult = collector.summarize(Math.max(0, performance.now() - started), runtimeResult.rafFrames)
     return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual, playback: playbackResult, runtime: runtimeResult }
@@ -305,7 +305,8 @@ async function run (message) {
         firstPaintMs: warm.firstPaintMs,
         playback: warm.playback,
         runtime: warm.runtime,
-        visual: warm.visual
+        visual: warm.visual,
+        sampleSufficient: warm.playback.updateCount >= 2
       }
       if (warm.playback.updateCount < 2) result.warnings.push('热播放样本不足，播放质量指标仅供参考。')
     }
@@ -317,18 +318,19 @@ async function run (message) {
     }
   } catch (error) {
     const cancelled = token.cancelled || error?.name === 'AbortError'
+    const errorStage = token.asyncError?.stage || token.stage
     if (cancelled) sendCancelled(token)
     else if (isExpectedV1(fixture) && token.stage === 'parse' && String(error?.message || error).includes('only support version@2')) {
       token.terminal = true
       send('result', {
         result: {
           status: 'expected-rejection', fixture, capabilities: environment, warnings,
-          error: { stage: token.stage, message: error.message }
+          error: { stage: errorStage, message: error.message }
         }
       })
     } else {
       token.terminal = true
-      send('error', { error: { stage: token.stage, message: error instanceof Error ? error.message : String(error) } })
+      send('error', { error: { stage: errorStage, message: error instanceof Error ? error.message : String(error) } })
     }
   } finally {
     cleanup(token)

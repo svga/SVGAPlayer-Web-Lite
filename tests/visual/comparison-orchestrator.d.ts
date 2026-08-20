@@ -15,12 +15,15 @@ export interface ComparisonResult {
   warmAggregates: Record<'baseline' | 'local', Record<string, MetricAggregate>>
   warmMetricComparisons: Record<string, MetricComparison>
   correctness: { state: string, performanceComparable: boolean }
+  warmCorrectness: { state: string, performanceComparable: boolean }
+  warmPerformanceComparable: boolean
   warnings: string[]
   complete?: boolean
   cancelled?: boolean
 }
 
 export function comparisonCorrectness(rounds: ComparisonRounds): { state: string, performanceComparable: boolean }
+export function warmComparisonCorrectness(rounds: ComparisonRounds): { state: string, performanceComparable: boolean }
 export function comparisonAggregates(rounds: ComparisonRounds): Record<'baseline' | 'local', Record<string, MetricAggregate>>
 export function comparisonMetrics(rounds: ComparisonRounds, targetFps?: number): Record<string, MetricComparison>
 export function warmComparisonAggregates(rounds: ComparisonRounds): Record<'baseline' | 'local', Record<string, MetricAggregate>>

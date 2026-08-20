@@ -26,3 +26,4 @@ export function comparisonBand(baseline: MetricAggregate, local: MetricAggregate
 export function metricDirection(name: string): MetricComparison['direction']
 export function compareMetric(name: string, baseline: MetricAggregate | number[], local: MetricAggregate | number[], options?: { targetFps?: number }): MetricComparison
 export function compareCorrectness(input: { baseline: unknown, local: unknown }): { state: string, performanceComparable: boolean }
+export function compareWarmCorrectness(input: { baseline: unknown, local: unknown }): { state: string, performanceComparable: boolean }

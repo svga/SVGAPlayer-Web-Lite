@@ -8,7 +8,7 @@ import {
   median,
   relativeMad
 } from '../visual/comparison.js'
-import { comparisonCorrectness, warmComparisonAggregates, warmComparisonMetrics } from '../visual/comparison-orchestrator.js'
+import { comparisonCorrectness, warmComparisonAggregates, warmComparisonMetrics, warmComparisonCorrectness } from '../visual/comparison-orchestrator.js'
 
 describe('visual comparison statistics', () => {
   it('uses the middle value for odd, even, and singleton rounds', () => {
@@ -121,7 +121,12 @@ describe('visual comparison round summaries', () => {
   const matching = {
     status: 'completed', profile, capabilities: { worker: true },
     visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 },
-    warm: { status: 'sampled', startMs: 1, firstPaintMs: 2, playback: { targetFps: 20, actualFps: 20, skippedFrames: 0, skippedRate: 0, lateRate: 0, intervalP95Ms: 50, jitterMs: 0 }, runtime: { longTaskTotalMs: 0, longTaskMaxMs: 0, blockingMs: 0, heapDeltaBytes: 1 } }
+    warm: {
+      status: 'sampled', sampleSufficient: true, startMs: 1, firstPaintMs: 2,
+      visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 },
+      playback: { targetFps: 20, actualFps: 20, skippedFrames: 0, skippedRate: 0, lateRate: 0, intervalP95Ms: 50, jitterMs: 0 },
+      runtime: { longTaskTotalMs: 0, longTaskMaxMs: 0, blockingMs: 0, heapDeltaBytes: 1 }
+    }
   }
 
   it('retains an early local regression even when later round pairs match', () => {
@@ -136,6 +141,29 @@ describe('visual comparison round summaries', () => {
     const expected = { status: 'expected-rejection' }
     expect(comparisonCorrectness({ baseline: [expected, expected], local: [expected, expected] }))
       .toEqual({ state: 'expected-rejection', performanceComparable: false })
+  })
+
+  it('prioritizes an actual two-version failure over metadata review changes', () => {
+    const failed = { status: 'failed' }
+    expect(comparisonCorrectness({ baseline: [{ ...matching, profile: { ...profile, frames: 11 } }, failed], local: [matching, failed] }))
+      .toEqual({ state: 'both-failed', performanceComparable: false })
+  })
+
+  it('keeps warm correctness separate from a matching cold result', () => {
+    const coldMatchWarmVisualChange = {
+      baseline: [matching],
+      local: [{ ...matching, warm: { ...matching.warm, visual: { ...matching.warm.visual, rgbaHash: 'bb' } } }]
+    }
+    expect(comparisonCorrectness(coldMatchWarmVisualChange)).toEqual({ state: 'match', performanceComparable: true })
+    expect(warmComparisonCorrectness(coldMatchWarmVisualChange)).toEqual({ state: 'visual-change', performanceComparable: false })
+  })
+
+  it.each([
+    ['missing', { ...matching, warm: undefined }, 'limited'],
+    ['insufficient', { ...matching, warm: { ...matching.warm, sampleSufficient: false } }, 'limited'],
+    ['local failure', { ...matching, warm: { ...matching.warm, status: 'failed' } }, 'local-regression']
+  ])('marks %s warm data independently', (_, local, state) => {
+    expect(warmComparisonCorrectness({ baseline: [matching], local: [local] })).toEqual({ state, performanceComparable: false })
   })
 
   it('aggregates and compares warm-only start, playback, and runtime metrics', () => {

@@ -1,4 +1,4 @@
-import { aggregateVersionRounds, compareCorrectness, compareMetric } from './comparison.js'
+import { aggregateVersionRounds, compareCorrectness, compareMetric, compareWarmCorrectness } from './comparison.js'
 
 const metricPaths = [
   ['runtimeLoadMs', 'startup.runtimeLoadMs'], ['parseMs', 'startup.parseMs'], ['mountMs', 'startup.mountMs'],
@@ -38,7 +38,20 @@ export function comparisonCorrectness (rounds) {
   })
   if (states.every(state => state === 'expected-rejection')) return { state: 'expected-rejection', performanceComparable: false }
   if (states.every(state => state === 'match')) return { state: 'match', performanceComparable: true }
-  for (const state of ['local-regression', 'metadata-change', 'visual-change', 'capability-change', 'both-failed', 'limited']) {
+  for (const state of ['local-regression', 'both-failed', 'metadata-change', 'visual-change', 'capability-change', 'limited']) {
+    if (states.includes(state)) return { state, performanceComparable: false }
+  }
+  return { state: 'limited', performanceComparable: false }
+}
+
+export function warmComparisonCorrectness (rounds) {
+  const pairCount = Math.min(rounds.baseline.length, rounds.local.length)
+  if (pairCount === 0 || rounds.baseline.length !== rounds.local.length) return { state: 'limited', performanceComparable: false }
+  const states = Array.from({ length: pairCount }, (_, index) => {
+    return compareWarmCorrectness({ baseline: rounds.baseline[index], local: rounds.local[index] }).state
+  })
+  if (states.every(state => state === 'match')) return { state: 'match', performanceComparable: true }
+  for (const state of ['local-regression', 'both-failed', 'visual-change', 'limited']) {
     if (states.includes(state)) return { state, performanceComparable: false }
   }
   return { state: 'limited', performanceComparable: false }
@@ -97,6 +110,8 @@ export class ComparisonOrchestrator {
       rounds: { baseline: [], local: [] },
       aggregates: {},
       correctness: { state: 'limited', performanceComparable: false },
+      warmCorrectness: { state: 'limited', performanceComparable: false },
+      warmPerformanceComparable: false,
       metricComparisons: {},
       warmAggregates: {},
       warmMetricComparisons: {},
@@ -127,6 +142,8 @@ export class ComparisonOrchestrator {
     result.warmAggregates = warmComparisonAggregates(result.rounds)
     result.warmMetricComparisons = warmComparisonMetrics(result.rounds, targetFps)
     result.correctness = comparisonCorrectness(result.rounds)
+    result.warmCorrectness = warmComparisonCorrectness(result.rounds)
+    result.warmPerformanceComparable = result.correctness.state === 'match' && result.warmCorrectness.state === 'match'
     if (this.cancelled || runToken !== this.runToken) return { cancelled: true, fixture, warnings: [...new Set([...result.warnings, '人工取消：未保留不完整素材。'])] }
     result.complete = result.rounds.baseline.length === rounds && result.rounds.local.length === rounds
     return result

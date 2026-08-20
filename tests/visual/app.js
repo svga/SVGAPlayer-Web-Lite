@@ -41,6 +41,7 @@ const elements = {
   runtimeCards: document.querySelector('#runtime-cards'),
   warmComparison: document.querySelector('#warm-comparison'),
   warmComparisonMetrics: document.querySelector('#warm-comparison-metrics'),
+  warmComparisonNote: document.querySelector('#warm-comparison-note'),
   runSelected: document.querySelector('[data-testid="run-selected"]'),
   runStatus: document.querySelector('[data-testid="run-status"]'),
   selectedName: document.querySelector('[data-testid="selected-name"]'),
@@ -177,6 +178,7 @@ function clearComparisonOutput () {
   elements.comparisonMetrics.replaceChildren()
   elements.warmComparisonMetrics.replaceChildren()
   elements.warmComparison.hidden = true
+  elements.warmComparisonNote.textContent = '运行后显示'
   elements.comparisonResultNote.textContent = '运行后显示'
 }
 
@@ -542,6 +544,11 @@ async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, 
     elements.canvasMessage.hidden = true
 
     const played = await playMounted({ player, video, maxPlaybackMs })
+    if (active !== token || token.cancelled) {
+      try { player.destroy() } catch {}
+      token.player = null
+      return { status: 'cancelled' }
+    }
     const startup = {
       readMs: Number(readMs.toFixed(2)),
       throughputBytesPerSecond: Math.round(bytes.byteLength / Math.max(readMs, 0.01) * 1000),
@@ -577,13 +584,17 @@ async function runFixture (fixture, { maxPlaybackMs = Infinity, retain = false, 
     if (blobUrl) URL.revokeObjectURL(blobUrl)
     try { parser?.destroy() } catch {}
     try { player?.destroy() } catch {}
-    if (active === token) active = null
+    const ownsActive = active === token
+    if (ownsActive) active = null
     const cancelled = token.cancelled || error?.name === 'AbortError'
     if (cancelled) {
-      setStatus('cancelled')
-      setPlaybackControls('cancelled')
+      if (ownsActive) {
+        setStatus('cancelled')
+        setPlaybackControls('cancelled')
+      }
       return { status: 'cancelled', error }
     }
+    if (!ownsActive) return { status: 'cancelled', error }
     const message = error instanceof Error ? error.message : String(error)
     if (fixture.expectation === 'unsupported-v1' && stage === 'parsing' && message.includes('only support version@2')) {
       elements.canvasMessage.textContent = 'SVGA 1.x 已按预期拒绝'
@@ -675,7 +686,12 @@ function renderComparisonResult (result) {
   const warmAvailable = Object.values(result.warmAggregates?.baseline || {}).some(aggregate => aggregate.samples > 0) ||
     Object.values(result.warmAggregates?.local || {}).some(aggregate => aggregate.samples > 0)
   elements.warmComparison.hidden = !warmAvailable
-  if (warmAvailable) renderComparisonMetricRows(elements.warmComparisonMetrics, result.warmAggregates, result.warmMetricComparisons, result.correctness.performanceComparable)
+  if (warmAvailable) {
+    const warmComparable = result.warmPerformanceComparable === true
+    const warmLabel = correctnessLabels[result.warmCorrectness?.state] || result.warmCorrectness?.state || '能力/样本受限'
+    elements.warmComparisonNote.textContent = `${warmLabel} · ${warmComparable ? '可比较性能' : '不作性能优劣结论'}`
+    renderComparisonMetricRows(elements.warmComparisonMetrics, result.warmAggregates, result.warmMetricComparisons, warmComparable)
+  }
 }
 
 function appendBatchRow (fixture, result) {

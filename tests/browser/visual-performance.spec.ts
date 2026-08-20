@@ -101,8 +101,11 @@ test('runs the stable three-round warm comparison in alternating order', async (
   expect((report as any).fixtures[0].orders).toEqual([['baseline', 'local'], ['local', 'baseline'], ['baseline', 'local']])
   expect((report as any).fixtures[0].warmAggregates.baseline.startMs.samples).toBe(3)
   expect((report as any).fixtures[0].warmMetricComparisons.startMs).toBeTruthy()
+  expect((report as any).fixtures[0].warmCorrectness).toMatchObject({ state: expect.any(String), performanceComparable: expect.any(Boolean) })
+  expect((report as any).fixtures[0].warmPerformanceComparable).toBe((report as any).fixtures[0].correctness.state === 'match' && (report as any).fixtures[0].warmCorrectness.state === 'match')
   await expect(page.locator('#warm-comparison')).toBeVisible()
   await expect(page.locator('#warm-comparison-metrics')).toContainText('启动')
+  await expect(page.locator('#warm-comparison-note')).toContainText(/一致|能力|视觉|回归|失败/)
 })
 
 test('starting a full comparison cancels a local playback before creating isolated runners', async ({ page }) => {
@@ -138,6 +141,25 @@ test('cancelling the first selected fetch does not publish an old or partial rep
   await expect(page.getByTestId('comparison-status')).toHaveAttribute('data-state', 'cancelled')
   await expect(page.getByTestId('export-json')).toBeDisabled()
   await expect(page.locator('#comparison-metrics')).toBeEmpty()
+})
+
+test('switching fixtures cancels an old local run without overwriting the new idle state', async ({ browserDiagnostics, page }) => {
+  test.setTimeout(15_000)
+  browserDiagnostics.expectRequestCancellation('/fixtures/soundwave.svga')
+  await page.goto(visualTestUrl)
+  let releaseFetch: (() => void) | undefined
+  await page.route('**/fixtures/soundwave.svga', async route => {
+    await new Promise<void>(resolve => { releaseFetch = resolve })
+    await route.continue()
+  })
+  await page.getByTestId('run-selected').click()
+  await expect.poll(() => Boolean(releaseFetch)).toBe(true)
+  await page.locator('[data-fixture="11.svga"]').click()
+  releaseFetch?.()
+  await expect(page.getByTestId('selected-name')).toHaveText('11.svga')
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
+  await page.waitForTimeout(100)
+  await expect(page.getByTestId('run-status')).toHaveAttribute('data-state', 'idle')
 })
 
 test('changing fixtures clears the previous comparison report before a new run', async ({ page }) => {
@@ -410,6 +432,27 @@ test('settles isolated start failures and paint-time cancellation without leavin
   expect((outcome.startFailure as { error: { message: string } }).error.message).toContain('intentional start failure')
   expect(outcome.cancelled).toMatchObject({ event: 'cancelled', stage: 'start' })
   expect(outcome.connected).toBe(false)
+})
+
+test('reports asynchronous runner errors with the stage where they occurred', async ({ page }) => {
+  await page.goto(visualTestUrl)
+  const outcome = await page.evaluate(async () => {
+    const buffer = await (await fetch('/fixtures/soundwave.svga')).arrayBuffer()
+    const fixture = { name: 'soundwave.svga', bytes: buffer.byteLength, expectation: 'playable' }
+    let runner: any
+    runner = (window as any).SVGAVisual.createIsolatedRunner('local', {
+      onEvent: (event: { event: string, stage?: string }) => {
+        if (event.event === 'stage' && event.stage === 'start') {
+          runner.frame.contentWindow.dispatchEvent(new ErrorEvent('error', { error: Error('late start error') }))
+        }
+      }
+    })
+    await runner.ready
+    const terminal = await runner.run({ buffer, fixture, options: { maxPlaybackMs: 1_000 } })
+    runner.dispose()
+    return terminal
+  })
+  expect(outcome).toMatchObject({ event: 'error', error: { stage: 'start', message: expect.stringContaining('late start error') } })
 })
 
 test('cancels a pending isolated parser exactly once and releases its realm', async ({ page }) => {
