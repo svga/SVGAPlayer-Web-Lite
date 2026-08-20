@@ -28,5 +28,10 @@ export function comparisonAggregates(rounds: ComparisonRounds): Record<'baseline
 export function comparisonMetrics(rounds: ComparisonRounds, targetFps?: number): Record<string, MetricComparison>
 export function warmComparisonAggregates(rounds: ComparisonRounds): Record<'baseline' | 'local', Record<string, MetricAggregate>>
 export function warmComparisonMetrics(rounds: ComparisonRounds, targetFps?: number): Record<string, MetricComparison>
+export function comparisonSummaryWarnings(
+  aggregates: Record<'baseline' | 'local', Record<string, MetricAggregate>>,
+  rounds: number,
+  options?: { scope?: string, directional?: boolean }
+): string[]
 export function createComparisonReport(input: unknown): Record<string, unknown>
 export function sharedReadResult(buffer: ArrayBuffer, readMs: number): { buffer: ArrayBuffer, read: { bytes: number, readMs: number, throughputBytesPerSecond: number } }

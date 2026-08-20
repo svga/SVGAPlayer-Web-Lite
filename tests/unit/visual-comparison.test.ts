@@ -8,7 +8,15 @@ import {
   median,
   relativeMad
 } from '../visual/comparison.js'
-import { comparisonCorrectness, warmComparisonAggregates, warmComparisonMetrics, warmComparisonCorrectness } from '../visual/comparison-orchestrator.js'
+import {
+  comparisonAggregates,
+  comparisonCorrectness,
+  comparisonMetrics,
+  comparisonSummaryWarnings,
+  warmComparisonAggregates,
+  warmComparisonCorrectness,
+  warmComparisonMetrics
+} from '../visual/comparison-orchestrator.js'
 
 describe('visual comparison statistics', () => {
   it('uses the middle value for odd, even, and singleton rounds', () => {
@@ -56,6 +64,13 @@ describe('visual comparison statistics', () => {
   it('keeps heap readings as approximate trends instead of performance verdicts', () => {
     const result = compareMetric('heapDeltaBytes', aggregateRounds([100]), aggregateRounds([10]))
     expect(result).toMatchObject({ direction: 'approximate', outcome: 'limited', approximate: true })
+  })
+
+  it('keeps cadence counters and page RAF as observations instead of unbounded higher-is-better scores', () => {
+    expect(compareMetric('updateCount', aggregateRounds([10]), aggregateRounds([20])))
+      .toMatchObject({ direction: 'observation', outcome: 'limited', observational: true })
+    expect(compareMetric('rafFps', aggregateRounds([60]), aggregateRounds([120])))
+      .toMatchObject({ direction: 'observation', outcome: 'limited', observational: true })
   })
 })
 
@@ -134,13 +149,55 @@ describe('visual comparison round summaries', () => {
   const matching = {
     status: 'completed', profile, capabilities: { worker: true },
     visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 },
+    startup: { runtimeLoadMs: 1, parseMs: 2, mountMs: 3, startMs: 4, firstPaintMs: 5, playerReadyMs: 6, runtimeReadyMs: 7 },
+    playback: {
+      targetFps: 20, actualFps: 20, activeDurationMs: 500, updateCount: 10, advancedFrames: 10,
+      skippedFrames: 0, skippedRate: 0, intervalAverageMs: 50, intervalP50Ms: 50, intervalP95Ms: 51,
+      intervalP99Ms: 52, intervalMaxMs: 53, jitterMs: 1, lateFrames: 0, lateRate: 0, rafFps: 60
+    },
+    runtime: { longTaskCount: 0, longTaskTotalMs: 0, longTaskMaxMs: 0, blockingMs: 0, heapDeltaBytes: 1 },
     warm: {
       status: 'sampled', sampleSufficient: true, startMs: 1, firstPaintMs: 2,
       visual: { rgbaHash: 'aa', frame: 0, width: 100, height: 100, nonEmptyPixels: 20 },
-      playback: { targetFps: 20, actualFps: 20, skippedFrames: 0, skippedRate: 0, lateRate: 0, intervalP95Ms: 50, jitterMs: 0 },
-      runtime: { longTaskTotalMs: 0, longTaskMaxMs: 0, blockingMs: 0, heapDeltaBytes: 1 }
+      playback: {
+        targetFps: 20, actualFps: 20, activeDurationMs: 500, updateCount: 10, advancedFrames: 10,
+        skippedFrames: 0, skippedRate: 0, intervalAverageMs: 50, intervalP50Ms: 50, intervalP95Ms: 51,
+        intervalP99Ms: 52, intervalMaxMs: 53, jitterMs: 1, lateFrames: 0, lateRate: 0, rafFps: 60
+      },
+      runtime: { longTaskCount: 0, longTaskTotalMs: 0, longTaskMaxMs: 0, blockingMs: 0, heapDeltaBytes: 1 }
     }
   }
+
+  it('aggregates every playback cadence and long-task field for cold and warm comparisons', () => {
+    const rounds = { baseline: [matching], local: [matching] }
+    const required = [
+      'actualFps', 'activeDurationMs', 'updateCount', 'advancedFrames', 'skippedFrames', 'skippedRate',
+      'intervalAverageMs', 'intervalP50Ms', 'intervalP95Ms', 'intervalP99Ms', 'intervalMaxMs', 'jitterMs',
+      'lateFrames', 'lateRate', 'rafFps', 'longTaskCount', 'longTaskTotalMs', 'longTaskMaxMs', 'blockingMs'
+    ]
+    expect(Object.keys(comparisonAggregates(rounds).baseline)).toEqual(expect.arrayContaining(required))
+    expect(Object.keys(comparisonMetrics(rounds, 20))).toEqual(expect.arrayContaining(required))
+    expect(Object.keys(warmComparisonAggregates(rounds).baseline)).toEqual(expect.arrayContaining(required))
+    expect(Object.keys(warmComparisonMetrics(rounds, 20))).toEqual(expect.arrayContaining(required))
+  })
+
+  it('warns for directional single rounds, high dispersion, and missing samples', () => {
+    const aggregates = {
+      baseline: {
+        parseMs: { samples: 3, median: 10, relativeMad: 0.2 },
+        mountMs: { samples: 2, median: 2, relativeMad: 0 }
+      },
+      local: {
+        parseMs: { samples: 3, median: 8, relativeMad: 0 },
+        mountMs: { samples: 3, median: 2, relativeMad: 0 }
+      }
+    }
+    expect(comparisonSummaryWarnings(aggregates, 1)).toContain('单轮结果为方向性数据；请使用稳定 3 轮复测后再判断趋势。')
+    expect(comparisonSummaryWarnings(aggregates, 3)).toEqual(expect.arrayContaining([
+      expect.stringContaining('相对 MAD 超过 10%'),
+      expect.stringContaining('样本不足')
+    ]))
+  })
 
   it('retains an early local regression even when later round pairs match', () => {
     const rounds = {

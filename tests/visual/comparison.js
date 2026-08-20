@@ -4,6 +4,7 @@ const lowerBetterMetrics = new Set([
   'intervalP95Ms', 'intervalP99Ms', 'intervalMaxMs', 'jitterMs', 'longTaskCount',
   'longTaskTotalMs', 'longTaskMaxMs', 'blockingMs'
 ])
+const observationalMetrics = new Set(['activeDurationMs', 'updateCount', 'advancedFrames', 'rafFps'])
 
 function finiteValues (values) {
   return values.filter(value => typeof value === 'number' && Number.isFinite(value))
@@ -52,6 +53,7 @@ export function comparisonBand (baseline, local) {
 export function metricDirection (name) {
   if (name.startsWith('heap')) return 'approximate'
   if (name === 'actualFps') return 'target-distance'
+  if (observationalMetrics.has(name)) return 'observation'
   return lowerBetterMetrics.has(name) ? 'lower' : 'higher'
 }
 
@@ -74,7 +76,7 @@ export function compareMetric (name, baselineInput, localInput, options = {}) {
       absoluteDelta: null, percentDelta: null, bandPercent: comparisonBand(baseline, local), outcome: 'limited'
     }
   }
-  if (direction === 'approximate') {
+  if (direction === 'approximate' || direction === 'observation') {
     const absoluteDelta = localMedian - baselineMedian
     return {
       name,
@@ -87,7 +89,7 @@ export function compareMetric (name, baselineInput, localInput, options = {}) {
       percentDelta: baselineMedian === 0 ? null : absoluteDelta / Math.abs(baselineMedian),
       bandPercent: comparisonBand(baseline, local),
       outcome: 'limited',
-      approximate: true
+      ...(direction === 'approximate' ? { approximate: true } : { observational: true })
     }
   }
   const baselineValue = direction === 'target-distance' ? Math.abs(baselineMedian - targetFps) : baselineMedian

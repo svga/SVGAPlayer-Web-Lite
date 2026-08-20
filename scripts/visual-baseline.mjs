@@ -492,9 +492,8 @@ export async function prepareBaselineRuntime (request, suppliedDependencies = {}
     const resolved = await resolveFromNpm(baseline, dependencies)
     if (resolved.version !== baseline) throw new Error('npm resolved a version different from the requested baseline')
     return await downloadRuntime(resolved.version, resolved.integrity, dependencies)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    throw new Error(`Unable to prepare exact baseline ${baseline}: ${reason}`)
+  } catch {
+    return null
   }
 }
 

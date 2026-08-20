@@ -1,23 +1,28 @@
 import { aggregateVersionRounds, compareCorrectness, compareMetric, compareWarmCorrectness } from './comparison.js'
 
+const playbackMetricNames = [
+  'actualFps', 'activeDurationMs', 'updateCount', 'advancedFrames', 'skippedFrames', 'skippedRate',
+  'intervalAverageMs', 'intervalP50Ms', 'intervalP95Ms', 'intervalP99Ms', 'intervalMaxMs', 'jitterMs',
+  'lateFrames', 'lateRate', 'rafFps'
+]
+const runtimeMetricNames = ['longTaskCount', 'longTaskTotalMs', 'longTaskMaxMs', 'blockingMs']
+const heapMetricNames = ['heapBeforeBytes', 'heapMountBytes', 'heapAfterBytes', 'heapPeakBytes', 'heapDeltaBytes']
+const prefixedMetrics = (prefix, names) => names.map(name => [name, `${prefix}.${name}`])
+
 const metricPaths = [
   ['runtimeLoadMs', 'startup.runtimeLoadMs'], ['parseMs', 'startup.parseMs'], ['mountMs', 'startup.mountMs'],
   ['startMs', 'startup.startMs'], ['firstPaintMs', 'startup.firstPaintMs'], ['playerReadyMs', 'startup.playerReadyMs'],
-  ['runtimeReadyMs', 'startup.runtimeReadyMs'], ['actualFps', 'playback.actualFps'], ['skippedFrames', 'playback.skippedFrames'],
-  ['skippedRate', 'playback.skippedRate'], ['lateRate', 'playback.lateRate'], ['intervalP95Ms', 'playback.intervalP95Ms'],
-  ['jitterMs', 'playback.jitterMs'], ['longTaskTotalMs', 'runtime.longTaskTotalMs'], ['longTaskMaxMs', 'runtime.longTaskMaxMs'],
-  ['blockingMs', 'runtime.blockingMs'], ['heapBeforeBytes', 'runtime.heapBeforeBytes'], ['heapMountBytes', 'runtime.heapMountBytes'],
-  ['heapAfterBytes', 'runtime.heapAfterBytes'], ['heapPeakBytes', 'runtime.heapPeakBytes'], ['heapDeltaBytes', 'runtime.heapDeltaBytes']
+  ['runtimeReadyMs', 'startup.runtimeReadyMs'],
+  ...prefixedMetrics('playback', playbackMetricNames),
+  ...prefixedMetrics('runtime', runtimeMetricNames),
+  ...prefixedMetrics('runtime', heapMetricNames)
 ]
 
 const warmMetricPaths = [
-  ['startMs', 'warm.startMs'], ['firstPaintMs', 'warm.firstPaintMs'], ['actualFps', 'warm.playback.actualFps'],
-  ['skippedFrames', 'warm.playback.skippedFrames'], ['skippedRate', 'warm.playback.skippedRate'],
-  ['lateRate', 'warm.playback.lateRate'], ['intervalP95Ms', 'warm.playback.intervalP95Ms'],
-  ['jitterMs', 'warm.playback.jitterMs'], ['longTaskTotalMs', 'warm.runtime.longTaskTotalMs'],
-  ['longTaskMaxMs', 'warm.runtime.longTaskMaxMs'], ['blockingMs', 'warm.runtime.blockingMs'],
-  ['heapBeforeBytes', 'warm.runtime.heapBeforeBytes'], ['heapMountBytes', 'warm.runtime.heapMountBytes'],
-  ['heapAfterBytes', 'warm.runtime.heapAfterBytes'], ['heapPeakBytes', 'warm.runtime.heapPeakBytes'], ['heapDeltaBytes', 'warm.runtime.heapDeltaBytes']
+  ['startMs', 'warm.startMs'], ['firstPaintMs', 'warm.firstPaintMs'],
+  ...prefixedMetrics('warm.playback', playbackMetricNames),
+  ...prefixedMetrics('warm.runtime', runtimeMetricNames),
+  ...prefixedMetrics('warm.runtime', heapMetricNames)
 ]
 
 function round (value) {
@@ -77,6 +82,25 @@ export function warmComparisonAggregates (rounds) {
 export function warmComparisonMetrics (rounds, targetFps) {
   const aggregates = warmComparisonAggregates(rounds)
   return Object.fromEntries(warmMetricPaths.map(([name]) => [name, compareMetric(name, aggregates.baseline[name], aggregates.local[name], { targetFps })]))
+}
+
+export function comparisonSummaryWarnings (aggregates, rounds, { scope = '冷启动', directional = true } = {}) {
+  const warnings = []
+  if (directional && rounds === 1) warnings.push('单轮结果为方向性数据；请使用稳定 3 轮复测后再判断趋势。')
+  const names = new Set([...Object.keys(aggregates?.baseline || {}), ...Object.keys(aggregates?.local || {})])
+  const noisy = [...names].filter(name => {
+    const baselineMad = aggregates?.baseline?.[name]?.relativeMad
+    const localMad = aggregates?.local?.[name]?.relativeMad
+    return (Number.isFinite(baselineMad) && baselineMad > 0.1) || (Number.isFinite(localMad) && localMad > 0.1)
+  })
+  if (noisy.length) warnings.push(`${scope}有 ${noisy.length} 个指标的相对 MAD 超过 10%，结果噪声较大。`)
+  const insufficient = [...names].filter(name => {
+    const baselineSamples = aggregates?.baseline?.[name]?.samples || 0
+    const localSamples = aggregates?.local?.[name]?.samples || 0
+    return baselineSamples + localSamples > 0 && (baselineSamples < rounds || localSamples < rounds)
+  })
+  if (insufficient.length) warnings.push(`${scope}有 ${insufficient.length} 个指标样本不足，相关结论仅供参考。`)
+  return warnings
 }
 
 export class ComparisonOrchestrator {
@@ -144,6 +168,9 @@ export class ComparisonOrchestrator {
     result.correctness = comparisonCorrectness(result.rounds)
     result.warmCorrectness = warmComparisonCorrectness(result.rounds)
     result.warmPerformanceComparable = result.correctness.state === 'match' && result.warmCorrectness.state === 'match'
+    result.warnings.push(...comparisonSummaryWarnings(result.aggregates, rounds))
+    if (includeWarm) result.warnings.push(...comparisonSummaryWarnings(result.warmAggregates, rounds, { scope: '热播放', directional: false }))
+    result.warnings = [...new Set(result.warnings)]
     if (this.cancelled || runToken !== this.runToken) return { cancelled: true, fixture, warnings: [...new Set([...result.warnings, '人工取消：未保留不完整素材。'])] }
     result.complete = result.rounds.baseline.length === rounds && result.rounds.local.length === rounds
     return result

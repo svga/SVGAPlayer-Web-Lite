@@ -91,7 +91,7 @@ test('keeps local diagnostics available while a server reports no baseline runti
   }
   const { createVisualTestServer } = module
   const { server } = await createVisualTestServer({
-    baseline: { baseline: 'latest' }, cacheDir: `/tmp/svga-visual-empty-${Date.now()}`,
+    baseline: { baseline: '2.1.1' }, cacheDir: `/tmp/svga-visual-empty-${Date.now()}`,
     run: async () => { throw Error('offline') }
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -120,6 +120,13 @@ test('compares the selected fixture with shared input, finite metrics, and expor
   await page.getByTestId('compare-selected').click()
   await expect(page.getByTestId('comparison-status')).toHaveAttribute('data-state', /match|limited|expected-rejection|metadata-change|visual-change/, { timeout: 30_000 })
   await expect(page.locator('#comparison-metrics')).toContainText('运行时加载')
+  await expect(page.locator('#comparison-metrics')).toContainText('P99 帧间隔')
+  await expect(page.locator('#comparison-metrics')).toContainText('页面 RAF 频率')
+  await expect(page.locator('#comparison-metrics')).toContainText('长任务数')
+  await expect(page.locator('.comparison-metric-row').first().locator('td').nth(0)).toContainText('中位')
+  await expect(page.locator('.comparison-metric-row').first().locator('td').nth(1)).toContainText('MAD')
+  await expect(page.locator('.comparison-metric-row').first().locator('td').nth(2)).toContainText(/↑ 改善|↓ 退化|≈ 波动带内/)
+  await expect(page.locator('#comparison-warnings')).toContainText('单轮结果为方向性数据')
   await expect(page.getByTestId('player-canvas')).toBeVisible()
   await expect(page.locator('.canvas-bay iframe')).toHaveCount(0)
   const finite = await page.locator('.comparison-metric-row').evaluateAll(rows => rows.every(row => !row.textContent?.includes('NaN')))
@@ -160,6 +167,8 @@ test('runs the stable three-round warm comparison in alternating order', async (
   expect((report as any).fixtures[0].warmPerformanceComparable).toBe((report as any).fixtures[0].correctness.state === 'match' && (report as any).fixtures[0].warmCorrectness.state === 'match')
   await expect(page.locator('#warm-comparison')).toBeVisible()
   await expect(page.locator('#warm-comparison-metrics')).toContainText('启动')
+  await expect(page.locator('#warm-comparison-metrics .comparison-metric-row').first().locator('td').nth(0)).toContainText('MAD')
+  await expect(page.locator('#warm-comparison-metrics .comparison-metric-row').first().locator('td').nth(2)).toContainText(/↑ 改善|↓ 退化|≈ 波动带内/)
   await expect(page.locator('#warm-comparison-note')).toContainText(/一致|能力|视觉|回归|失败/)
 })
 

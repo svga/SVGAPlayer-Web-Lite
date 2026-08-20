@@ -6,7 +6,7 @@ export interface MetricAggregate {
 
 export interface MetricComparison {
   name: string
-  direction: 'lower' | 'higher' | 'target-distance' | 'approximate'
+  direction: 'lower' | 'higher' | 'target-distance' | 'approximate' | 'observation'
   baseline: MetricAggregate
   local: MetricAggregate
   baselineValue: number | null
@@ -16,6 +16,7 @@ export interface MetricComparison {
   bandPercent: number
   outcome: 'regression' | 'improvement' | 'within-band' | 'limited'
   approximate?: boolean
+  observational?: boolean
 }
 
 export function median(values: number[]): number | null

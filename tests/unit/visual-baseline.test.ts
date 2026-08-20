@@ -293,13 +293,13 @@ describe('baseline runtime preparation', () => {
     }
   })
 
-  it('fails an exact baseline request with its version and acquisition reason', async () => {
+  it('keeps the local-only page available when an exact baseline cannot be acquired', async () => {
     const projectDir = await temporaryDirectory()
     await expect(prepareBaselineRuntime({ baseline: '2.1.1' }, {
       projectDir,
       cacheDir: join(projectDir, '.cache'),
       run: async () => { throw new Error('registry unavailable') }
-    })).rejects.toThrow(/2\.1\.1.*registry unavailable/)
+    })).resolves.toBeNull()
   })
 
   it('rejects an unsafe direct baseline request before it can become a package spec or cache path', async () => {

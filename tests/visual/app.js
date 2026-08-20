@@ -128,8 +128,20 @@ function runtimeDetails (runtime) {
   ]
 }
 
+function staticComparisonWarnings () {
+  const warnings = []
+  if (!runtimes.baseline) warnings.push('基线运行时不可用：本地单素材测试仍可使用，但所有对比按钮已禁用。')
+  if (runtimes.baseline?.version && runtimes.local?.version === runtimes.baseline.version) warnings.push('基线与本地版本相同，性能差异不能代表版本变化。')
+  if (runtimes.baseline?.cacheState === 'stale-cache') warnings.push('基线来自过期缓存，网络恢复后建议重新确认。')
+  return warnings
+}
+
+function renderComparisonWarnings (additional = []) {
+  const warnings = [...new Set([...staticComparisonWarnings(), ...additional])]
+  elements.comparisonWarnings.replaceChildren(...warnings.map(text => Object.assign(document.createElement('p'), { textContent: text })))
+}
+
 function renderRuntimeCards () {
-  const warning = []
   const cards = ['baseline', 'local'].map(runtime => {
     const value = runtimes[runtime]
     const card = document.createElement('article')
@@ -147,11 +159,8 @@ function renderRuntimeCards () {
     card.append(heading, list)
     return card
   })
-  if (!runtimes.baseline) warning.push('基线运行时不可用：本地单素材测试仍可使用，但所有对比按钮已禁用。')
-  if (runtimes.baseline?.version && runtimes.local?.version === runtimes.baseline.version) warning.push('基线与本地版本相同，性能差异不能代表版本变化。')
-  if (runtimes.baseline?.cacheState === 'stale-cache') warning.push('基线来自过期缓存，网络恢复后建议重新确认。')
   elements.runtimeCards.replaceChildren(...cards)
-  elements.comparisonWarnings.replaceChildren(...warning.map(text => Object.assign(document.createElement('p'), { textContent: text })))
+  renderComparisonWarnings()
 }
 
 function comparisonOptions () {
@@ -186,6 +195,7 @@ function discardComparisonReport () {
   comparisonReport = null
   elements.exportJson.disabled = true
   clearComparisonOutput()
+  renderComparisonWarnings()
 }
 
 const setPlaybackControls = state => {
@@ -691,35 +701,69 @@ const correctnessLabels = {
 const comparisonMetricLabels = {
   runtimeLoadMs: '运行时加载', parseMs: '解析', mountMs: '挂载', startMs: '启动', firstPaintMs: '首帧绘制',
   playerReadyMs: '播放器就绪', runtimeReadyMs: '运行时就绪', actualFps: '实际 FPS（目标感知）', skippedFrames: '跳帧',
-  skippedRate: '跳帧比例', lateRate: '慢帧比例', intervalP95Ms: 'P95 帧间隔', jitterMs: '帧间隔抖动',
+  activeDurationMs: '有效播放时间', updateCount: '更新次数', advancedFrames: '推进帧数', skippedRate: '跳帧比例',
+  intervalAverageMs: '平均帧间隔', intervalP50Ms: 'P50 帧间隔', intervalP95Ms: 'P95 帧间隔',
+  intervalP99Ms: 'P99 帧间隔', intervalMaxMs: '最大帧间隔', jitterMs: '帧间隔抖动', lateFrames: '慢帧数',
+  lateRate: '慢帧比例', rafFps: '页面 RAF 频率', longTaskCount: '长任务数',
   longTaskTotalMs: '长任务总时长', longTaskMaxMs: '最长任务', blockingMs: '阻塞时长',
   heapBeforeBytes: '运行前堆内存', heapMountBytes: '挂载后堆内存', heapAfterBytes: '播放后堆内存',
   heapPeakBytes: '峰值堆内存', heapDeltaBytes: '堆内存增量'
 }
 
-function comparisonValue (metric, aggregate) {
-  if (!aggregate || !Number.isFinite(aggregate.median)) return '—'
-  if (metric.includes('Bytes')) return `${formatBytes(aggregate.median)}（中位）`
-  if (metric.includes('Fps')) return `${aggregate.median} fps`
-  if (metric.includes('Rate')) return `${aggregate.median}%`
-  if (metric === 'skippedFrames') return `${aggregate.median}`
-  return formatMilliseconds(aggregate.median)
+const countComparisonMetrics = new Set(['updateCount', 'advancedFrames', 'skippedFrames', 'lateFrames', 'longTaskCount'])
+
+function roundedPercent (value) {
+  return `${Number((value * 100).toFixed(2))}%`
 }
 
-function comparisonOutcome (comparison, performanceComparable) {
-  if (!comparison || comparison.outcome === 'limited') return comparison?.approximate ? '仅趋势，不作优劣判断' : '数据受限'
+function comparisonValue (metric, aggregate) {
+  if (!aggregate || !Number.isFinite(aggregate.median)) return '—'
+  const value = metric.includes('Bytes')
+    ? formatBytes(aggregate.median)
+    : metric.includes('Fps')
+      ? `${aggregate.median} fps`
+      : metric.includes('Rate')
+        ? `${aggregate.median}%`
+        : countComparisonMetrics.has(metric)
+          ? `${aggregate.median}`
+          : formatMilliseconds(aggregate.median)
+  const mad = aggregate.samples > 1 && Number.isFinite(aggregate.relativeMad) ? roundedPercent(aggregate.relativeMad) : '样本不足'
+  return `${value}（中位 · MAD ${mad} · n=${aggregate.samples}）`
+}
+
+function comparisonDelta (metric, comparison) {
+  if (Number.isFinite(comparison.percentDelta)) return roundedPercent(Math.abs(comparison.percentDelta))
+  if (!Number.isFinite(comparison.absoluteDelta)) return '不可用'
+  const magnitude = Math.abs(comparison.absoluteDelta)
+  if (metric.includes('Bytes')) return formatBytes(magnitude)
+  if (metric.includes('Fps')) return `${Number(magnitude.toFixed(2))} fps`
+  if (metric.includes('Rate')) return `${Number(magnitude.toFixed(2))} 个百分点`
+  if (countComparisonMetrics.has(metric)) return `${Number(magnitude.toFixed(2))}`
+  return formatMilliseconds(magnitude)
+}
+
+function comparisonOutcome (metric, comparison, performanceComparable) {
+  if (!comparison) return '数据受限'
   if (!performanceComparable) return '正确性未通过，未作性能结论'
-  return comparison.outcome === 'improvement' ? '变化超出波动带' : comparison.outcome === 'regression' ? '变化超出波动带' : '处于波动带内'
+  const delta = comparisonDelta(metric, comparison)
+  const band = roundedPercent(comparison.bandPercent)
+  if (comparison.approximate) return `≈ 近似趋势：差异 ${delta}（内存不作优劣判断）`
+  if (comparison.observational) return `• 观察值：差异 ${delta}（不作优劣判断）`
+  if (comparison.outcome === 'limited') return '数据受限'
+  if (comparison.outcome === 'improvement') return `↑ 改善 ${delta}（阈值 ${band}）`
+  if (comparison.outcome === 'regression') return `↓ 退化 ${delta}（阈值 ${band}）`
+  return `≈ 波动带内：差异 ${delta}（阈值 ${band}）`
 }
 
 function renderComparisonMetricRows (target, aggregates, comparisons, performanceComparable) {
   const rows = Object.entries(comparisons).map(([metric, comparison]) => {
     const row = document.createElement('tr')
     row.className = 'comparison-metric-row'
-    const cells = [comparisonMetricLabels[metric] || metric, comparisonValue(metric, aggregates.baseline[metric]), comparisonValue(metric, aggregates.local[metric]), comparisonOutcome(comparison, performanceComparable)]
+    const cells = [comparisonMetricLabels[metric] || metric, comparisonValue(metric, aggregates.baseline[metric]), comparisonValue(metric, aggregates.local[metric]), comparisonOutcome(metric, comparison, performanceComparable)]
     row.append(...cells.map((text, index) => {
       const cell = document.createElement(index === 0 ? 'th' : 'td')
       if (index === 0) cell.scope = 'row'
+      if (index === 3) cell.dataset.outcome = comparison?.outcome || 'limited'
       cell.textContent = text
       return cell
     }))
@@ -732,6 +776,7 @@ function renderComparisonResult (result) {
   const note = `${correctnessLabels[result.correctness.state] || result.correctness.state} · ${result.correctness.performanceComparable ? '可比较性能' : '不作性能优劣结论'}`
   elements.comparisonResultNote.textContent = note
   renderComparisonMetricRows(elements.comparisonMetrics, result.aggregates, result.metricComparisons, result.correctness.performanceComparable)
+  renderComparisonWarnings(result.warnings || [])
   const warmAvailable = Object.values(result.warmAggregates?.baseline || {}).some(aggregate => aggregate.samples > 0) ||
     Object.values(result.warmAggregates?.local || {}).some(aggregate => aggregate.samples > 0)
   elements.warmComparison.hidden = !warmAvailable
@@ -758,8 +803,8 @@ function appendBatchRow (fixture, result) {
     comparisonValue('actualFps', baseline.actualFps), comparisonValue('actualFps', local.actualFps),
     comparisonValue('skippedFrames', baseline.skippedFrames), comparisonValue('skippedFrames', local.skippedFrames),
     result.correctness.performanceComparable
-      ? comparisonOutcome(result.metricComparisons.playerReadyMs, true)
-      : result.warnings.join('；') || '正确性未通过，未作性能结论'
+      ? comparisonOutcome('playerReadyMs', result.metricComparisons.playerReadyMs, true)
+      : `正确性：${correctnessLabels[result.correctness.state] || result.correctness.state}，未作性能结论`
   ]
   row.append(...values.map((value, index) => {
     const cell = document.createElement(index === 0 ? 'th' : 'td')
@@ -843,7 +888,7 @@ async function runSelectedComparison () {
       return
     }
     comparisonState('failed', '当前素材对比失败')
-    elements.comparisonWarnings.replaceChildren(Object.assign(document.createElement('p'), { textContent: error instanceof Error ? error.message : String(error) }))
+    renderComparisonWarnings([error instanceof Error ? error.message : String(error)])
     setBatchState('failed', '对比失败')
   } finally {
     elements.canvas.hidden = false
@@ -891,9 +936,11 @@ async function runBatch () {
   }
 
   const cancelled = batchCancelled || completed.some(result => result.warnings.some(warning => warning.includes('人工取消')))
-  const reportWarnings = cancelled ? ['人工取消：已完成行已保留。'] : runError ? [`全量对比失败：${runError}`] : []
+  const runWarnings = cancelled ? ['人工取消：已完成行已保留。'] : runError ? [`全量对比失败：${runError}`] : []
+  const reportWarnings = [...new Set([...runWarnings, ...completed.flatMap(result => result.warnings || [])])]
   publishComparisonReport(createComparisonReport({ runtimes, environment: environmentProfile(), config, fixtures: completed, warnings: reportWarnings }))
   if (completed.length) renderComparisonResult(completed[completed.length - 1])
+  renderComparisonWarnings(reportWarnings)
   if (cancelled) {
     setBatchState('cancelled', '已取消')
     comparisonState('cancelled', '已取消，已保留完成结果')
@@ -902,7 +949,7 @@ async function runBatch () {
   if (runError) {
     setBatchState('failed', '全量对比失败')
     comparisonState('failed', '全量对比失败')
-    elements.comparisonWarnings.replaceChildren(Object.assign(document.createElement('p'), { textContent: runError }))
+    renderComparisonWarnings([runError])
     return
   }
   const labels = completed.reduce((counts, result) => {
@@ -1020,7 +1067,5 @@ void loadRuntimes().catch(error => {
   runtimes = { local: null, baseline: null }
   renderRuntimeCards()
   comparisonState('limited', '运行时信息不可用')
-  elements.comparisonWarnings.replaceChildren(Object.assign(document.createElement('p'), {
-    textContent: error instanceof Error ? error.message : String(error)
-  }))
+  renderComparisonWarnings([error instanceof Error ? error.message : String(error)])
 })
