@@ -10,7 +10,7 @@ import type {
   Video,
   VideoFrame,
   VideoFrameShape,
-  VideoStyles
+  VideoStyles,
 } from '../../src/types'
 
 interface Operation {
@@ -29,45 +29,61 @@ class RecordingContext {
   public miterLimit = 10
   public lineCap: CanvasLineCap = 'butt'
   public lineJoin: CanvasLineJoin = 'miter'
-  private record (name: string, args: unknown[] = []): void {
+  private record(name: string, args: unknown[] = []): void {
     this.operations.push({ name, args })
     if (this.throwMethod === name) throw new Error(`throw from ${name}`)
   }
 
-  public save (): void {
+  public save(): void {
     this.depth++
     this.record('save')
   }
 
-  public restore (): void {
+  public restore(): void {
     this.depth--
     this.record('restore')
   }
 
-  public transform (...args: number[]): void {
+  public transform(...args: number[]): void {
     this.record('transform', args)
   }
 
-  public drawImage (...args: unknown[]): void { this.record('drawImage', args) }
-  public clip (...args: unknown[]): void { this.record('clip', args) }
-  public fill (...args: unknown[]): void { this.record('fill', args) }
-  public stroke (...args: unknown[]): void { this.record('stroke', args) }
-  public setLineDash (args: number[]): void { this.record('setLineDash', args) }
+  public drawImage(...args: unknown[]): void {
+    this.record('drawImage', args)
+  }
+  public clip(...args: unknown[]): void {
+    this.record('clip', args)
+  }
+  public fill(...args: unknown[]): void {
+    this.record('fill', args)
+  }
+  public stroke(...args: unknown[]): void {
+    this.record('stroke', args)
+  }
+  public setLineDash(args: number[]): void {
+    this.record('setLineDash', args)
+  }
 }
 
 class RecordingPath2D {
   public static readonly instances: RecordingPath2D[] = []
   public readonly operations: Operation[] = []
 
-  constructor (public readonly source?: string) {
+  constructor(public readonly source?: string) {
     if (source === 'invalid') throw new Error('invalid SVG path')
     RecordingPath2D.instances.push(this)
   }
 
-  public moveTo (...args: number[]): void { this.operations.push({ name: 'moveTo', args }) }
-  public arcTo (...args: number[]): void { this.operations.push({ name: 'arcTo', args }) }
-  public closePath (): void { this.operations.push({ name: 'closePath', args: [] }) }
-  public ellipse (...args: number[]): void {
+  public moveTo(...args: number[]): void {
+    this.operations.push({ name: 'moveTo', args })
+  }
+  public arcTo(...args: number[]): void {
+    this.operations.push({ name: 'arcTo', args })
+  }
+  public closePath(): void {
+    this.operations.push({ name: 'closePath', args: [] })
+  }
+  public ellipse(...args: number[]): void {
     if (args[2] < 0 || args[3] < 0) throw new Error('invalid ellipse radius')
     this.operations.push({ name: 'ellipse', args })
   }
@@ -75,7 +91,9 @@ class RecordingPath2D {
 
 class RecordingCanvas {
   public readonly context = new RecordingContext()
-  public getContext (): RecordingContext { return this.context }
+  public getContext(): RecordingContext {
+    return this.context
+  }
 }
 
 const identity: Transform = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
@@ -86,25 +104,25 @@ const emptyStyles: VideoStyles = {
   lineCap: null,
   lineJoin: null,
   miterLimit: null,
-  lineDash: null
+  lineDash: null,
 }
 
-function pathShape (d: string, styles: VideoStyles = emptyStyles): VideoFrameShape {
+function pathShape(d: string, styles: VideoStyles = emptyStyles): VideoFrameShape {
   return { type: SHAPE_TYPE.SHAPE, path: { d }, transform: identity, styles }
 }
 
-function frame (shapes: VideoFrameShape[], overrides: Partial<VideoFrame> = {}): VideoFrame {
+function frame(shapes: VideoFrameShape[], overrides: Partial<VideoFrame> = {}): VideoFrame {
   return {
     alpha: 1,
     transform: null,
     layout: { x: 0, y: 0, width: 100, height: 100 },
     clipPath: '',
     shapes,
-    ...overrides
+    ...overrides,
   }
 }
 
-function video (frames: VideoFrame[]): Video {
+function video(frames: VideoFrame[]): Video {
   return {
     version: '2.0',
     size: { width: 100, height: 100 },
@@ -113,34 +131,29 @@ function video (frames: VideoFrame[]): Video {
     images: Object.create(null),
     replaceElements: Object.create(null),
     dynamicElements: Object.create(null),
-    sprites: [{ imageKey: 'sprite', frames }]
+    sprites: [{ imageKey: 'sprite', frames }],
   }
 }
 
-function draw (
+function draw(
   frames: VideoFrame[],
   bitmaps: BitmapsCache = {},
   dynamic: DynamicElements = {},
-  replacements: ReplaceElements = {}
+  replacements: ReplaceElements = {},
 ): RecordingContext {
   const canvas = new RecordingCanvas()
-  render(
-    canvas as unknown as HTMLCanvasElement,
-    bitmaps,
-    dynamic,
-    replacements,
-    video(frames),
-    0
-  )
+  render(canvas as unknown as HTMLCanvasElement, bitmaps, dynamic, replacements, video(frames), 0)
   return canvas.context
 }
 
-function argsFor (context: RecordingContext, name: string): unknown[][] {
-  return context.operations.filter(operation => operation.name === name).map(operation => operation.args)
+function argsFor(context: RecordingContext, name: string): unknown[][] {
+  return context.operations
+    .filter((operation) => operation.name === name)
+    .map((operation) => operation.args)
 }
 
-function pathForSource (source: string): RecordingPath2D {
-  const path = RecordingPath2D.instances.find(candidate => candidate.source === source)
+function pathForSource(source: string): RecordingPath2D {
+  const path = RecordingPath2D.instances.find((candidate) => candidate.source === source)
   if (!path) throw new Error(`missing path: ${source}`)
   return path
 }
@@ -149,7 +162,9 @@ beforeEach(() => {
   RecordingPath2D.instances.length = 0
   vi.stubGlobal('Path2D', RecordingPath2D)
   vi.stubGlobal('CSS', {
-    supports: vi.fn((_property: string, value: string) => !value.includes('invalid') && !value.endsWith(' L")'))
+    supports: vi.fn(
+      (_property: string, value: string) => !value.includes('invalid') && !value.endsWith(' L")'),
+    ),
   })
 })
 
@@ -159,20 +174,31 @@ afterEach(() => {
 
 describe('default renderer native path handling', () => {
   it('delegates SVG parsing and ellipse construction to native Path2D', () => {
-    const styles: VideoStyles = { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)', stroke: 'rgba(4, 5, 6, 1)' }
-    const context = draw([frame([
-      pathShape('M0 0 A10 5 0 0 1 20 0', styles),
-      {
-        type: SHAPE_TYPE.ELLIPSE,
-        path: { x: 10, y: 20, radiusX: 3, radiusY: 4 },
-        transform: identity,
-        styles
-      }
-    ])])
+    const styles: VideoStyles = {
+      ...emptyStyles,
+      fill: 'rgba(1, 2, 3, 1)',
+      stroke: 'rgba(4, 5, 6, 1)',
+    }
+    const context = draw([
+      frame([
+        pathShape('M0 0 A10 5 0 0 1 20 0', styles),
+        {
+          type: SHAPE_TYPE.ELLIPSE,
+          path: { x: 10, y: 20, radiusX: 3, radiusY: 4 },
+          transform: identity,
+          styles,
+        },
+      ]),
+    ])
 
     const svgPath = pathForSource('M0 0 A10 5 0 0 1 20 0')
-    const ellipsePath = RecordingPath2D.instances.find(path => path.operations.some(operation => operation.name === 'ellipse'))
-    expect(ellipsePath?.operations).toContainEqual({ name: 'ellipse', args: [10, 20, 3, 4, 0, 0, Math.PI * 2] })
+    const ellipsePath = RecordingPath2D.instances.find((path) =>
+      path.operations.some((operation) => operation.name === 'ellipse'),
+    )
+    expect(ellipsePath?.operations).toContainEqual({
+      name: 'ellipse',
+      args: [10, 20, 3, 4, 0, 0, Math.PI * 2],
+    })
     expect(argsFor(context, 'fill')).toEqual([[svgPath], [ellipsePath]])
     expect(argsFor(context, 'stroke')).toEqual([[svgPath], [ellipsePath]])
   })
@@ -186,15 +212,17 @@ describe('default renderer native path handling', () => {
   })
 
   it('skips empty SVG paths and invalid native shape arguments', () => {
-    const context = draw([frame([
-      pathShape('', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' }),
-      {
-        type: SHAPE_TYPE.ELLIPSE,
-        path: { x: 10, y: 20, radiusX: -1, radiusY: 4 },
-        transform: identity,
-        styles: { ...emptyStyles, fill: 'rgba(4, 5, 6, 1)' }
-      }
-    ])])
+    const context = draw([
+      frame([
+        pathShape('', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' }),
+        {
+          type: SHAPE_TYPE.ELLIPSE,
+          path: { x: 10, y: 20, radiusX: -1, radiusY: 4 },
+          transform: identity,
+          styles: { ...emptyStyles, fill: 'rgba(4, 5, 6, 1)' },
+        },
+      ]),
+    ])
 
     expect(argsFor(context, 'fill')).toEqual([])
     expect(argsFor(context, 'stroke')).toEqual([])
@@ -205,9 +233,13 @@ describe('default renderer native path handling', () => {
     const bitmap = { kind: 'bitmap' } as unknown as HTMLImageElement
     const dynamic = { kind: 'dynamic', width: 10, height: 10 } as unknown as HTMLImageElement
     const context = draw(
-      [frame([pathShape('M0 0 H10 V10 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })], { clipPath: 'invalid' })],
+      [
+        frame([pathShape('M0 0 H10 V10 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })], {
+          clipPath: 'invalid',
+        }),
+      ],
       { sprite: bitmap },
-      { sprite: dynamic }
+      { sprite: dynamic },
     )
 
     expect(argsFor(context, 'drawImage')).toEqual([])
@@ -225,30 +257,32 @@ describe('default renderer native path handling', () => {
 
   it.each(['M0 0 H10 V10 H0 Z invalid', 'M0 0 L'])(
     'fails closed before Path2D for a clipPath with trailing input: %s',
-    mask => {
+    (mask) => {
       const context = draw([frame([], { clipPath: mask })], { sprite: {} as HTMLImageElement })
 
       expect(argsFor(context, 'drawImage')).toEqual([])
-      expect(RecordingPath2D.instances.find(path => path.source === mask)).toBeUndefined()
+      expect(RecordingPath2D.instances.find((path) => path.source === mask)).toBeUndefined()
       expect(context.depth).toBe(0)
-    }
+    },
   )
 
   it.each(['\u00a0', '\u000b'])(
     'does not normalize an invalid SVG whitespace character %s',
-    whitespace => {
+    (whitespace) => {
       const mask = `M0 0${whitespace}H10 V10 H0 Z`
       vi.mocked(CSS.supports).mockReturnValue(false)
       const context = draw([frame([], { clipPath: mask })], { sprite: {} as HTMLImageElement })
 
       expect(CSS.supports).toHaveBeenCalledWith('offset-path', 'path(' + JSON.stringify(mask) + ')')
       expect(argsFor(context, 'drawImage')).toEqual([])
-    }
+    },
   )
 
   it('fails closed for a nonempty clipPath when CSS.supports is unavailable', () => {
     vi.stubGlobal('CSS', undefined)
-    const context = draw([frame([], { clipPath: 'M0 0 H10 V10 H0 Z' })], { sprite: {} as HTMLImageElement })
+    const context = draw([frame([], { clipPath: 'M0 0 H10 V10 H0 Z' })], {
+      sprite: {} as HTMLImageElement,
+    })
 
     expect(argsFor(context, 'drawImage')).toEqual([])
     expect(RecordingPath2D.instances).toHaveLength(0)
@@ -257,26 +291,29 @@ describe('default renderer native path handling', () => {
 
   it.each(['replacement', 'dynamic', 'shape'] as const)(
     'applies a sprite clipPath once to a %s-only sprite',
-    visual => {
+    (visual) => {
       const replacement = { kind: 'replacement' } as unknown as HTMLImageElement
       const dynamic = { kind: 'dynamic', width: 10, height: 10 } as unknown as HTMLImageElement
-      const shapes = visual === 'shape'
-        ? [pathShape('M0 0 H5 V5 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })]
-        : []
+      const shapes =
+        visual === 'shape'
+          ? [pathShape('M0 0 H5 V5 Z', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' })]
+          : []
       const mask = 'M0 0 H10 V10 Z'
       const context = draw(
         [frame(shapes, { clipPath: mask })],
         {},
         visual === 'dynamic' ? { sprite: dynamic } : {},
-        visual === 'replacement' ? { sprite: replacement } : {}
+        visual === 'replacement' ? { sprite: replacement } : {},
       )
 
       expect(argsFor(context, 'clip')).toEqual([[pathForSource(mask)]])
-      if (visual === 'replacement') expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([replacement])
-      if (visual === 'dynamic') expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([dynamic])
+      if (visual === 'replacement')
+        expect(argsFor(context, 'drawImage').map((args) => args[0])).toEqual([replacement])
+      if (visual === 'dynamic')
+        expect(argsFor(context, 'drawImage').map((args) => args[0])).toEqual([dynamic])
       if (visual === 'shape') expect(argsFor(context, 'fill')).toHaveLength(1)
       expect(context.depth).toBe(0)
-    }
+    },
   )
 
   it('does not construct or apply a clip for an empty clipPath', () => {
@@ -285,14 +322,16 @@ describe('default renderer native path handling', () => {
 
     expect(argsFor(context, 'clip')).toEqual([])
     expect(RecordingPath2D.instances).toHaveLength(0)
-    expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([dynamic])
+    expect(argsFor(context, 'drawImage').map((args) => args[0])).toEqual([dynamic])
   })
 })
 
 describe('default renderer lifecycle and preserved drawing behavior', () => {
   it('rejects a missing rendering context', () => {
     const canvas = { getContext: () => null }
-    expect(() => render(canvas as unknown as HTMLCanvasElement, {}, {}, {}, video([]), 0)).toThrow('Invalid render context')
+    expect(() => render(canvas as unknown as HTMLCanvasElement, {}, {}, {}, video([]), 0)).toThrow(
+      'Invalid render context',
+    )
   })
 
   it('applies every explicit shape style and clamps oversized rectangle radii', () => {
@@ -303,21 +342,27 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
       lineCap: 'round',
       lineJoin: 'bevel',
       miterLimit: 4,
-      lineDash: [1, 2]
+      lineDash: [1, 2],
     }
-    const context = draw([frame([{
-      type: SHAPE_TYPE.RECT,
-      path: { x: 0, y: 0, width: 6, height: 4, cornerRadius: 10 },
-      transform: identity,
-      styles
-    }])])
+    const context = draw([
+      frame([
+        {
+          type: SHAPE_TYPE.RECT,
+          path: { x: 0, y: 0, width: 6, height: 4, cornerRadius: 10 },
+          transform: identity,
+          styles,
+        },
+      ]),
+    ])
 
     expect(context.lineWidth).toBe(2)
     expect(context.miterLimit).toBe(4)
     expect(context.lineCap).toBe('round')
     expect(context.lineJoin).toBe('bevel')
     expect(argsFor(context, 'setLineDash')).toEqual([[1, 2]])
-    const path = RecordingPath2D.instances.find(candidate => candidate.operations.some(operation => operation.name === 'arcTo'))
+    const path = RecordingPath2D.instances.find((candidate) =>
+      candidate.operations.some((operation) => operation.name === 'arcTo'),
+    )
     expect(path?.operations[0]).toEqual({ name: 'moveTo', args: [2, 0] })
   })
 
@@ -333,14 +378,16 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
     canvas.context.throwMethod = 'stroke'
     const strokeStyles: VideoStyles = { ...emptyStyles, stroke: 'rgba(1, 2, 3, 1)' }
 
-    expect(() => render(
-      canvas as unknown as HTMLCanvasElement,
-      {},
-      {},
-      {},
-      video([frame([pathShape('M0 0 L1 1', strokeStyles)])]),
-      0
-    )).toThrow('throw from stroke')
+    expect(() =>
+      render(
+        canvas as unknown as HTMLCanvasElement,
+        {},
+        {},
+        {},
+        video([frame([pathShape('M0 0 L1 1', strokeStyles)])]),
+        0,
+      ),
+    ).toThrow('throw from stroke')
     expect(argsFor(canvas.context, 'save')).toHaveLength(2)
     expect(argsFor(canvas.context, 'restore')).toHaveLength(2)
     expect(canvas.context.depth).toBe(0)
@@ -355,14 +402,14 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
         type: SHAPE_TYPE.ELLIPSE,
         path: { x: 10, y: 20, radiusX: 3, radiusY: 4 },
         transform: identity,
-        styles: emptyStyles
+        styles: emptyStyles,
       },
       {
         type: SHAPE_TYPE.RECT,
         path: { x: 1, y: 2, width: 20, height: 10, cornerRadius: 3 },
         transform: identity,
-        styles: emptyStyles
-      }
+        styles: emptyStyles,
+      },
     ]
     const maskTransform: Transform = { a: 2, b: 0, c: 0, d: 2, tx: 5, ty: 6 }
     const maskPath = 'M0 0 L10 0 L10 10 Z'
@@ -370,42 +417,42 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
       [frame(shapes, { clipPath: maskPath, transform: maskTransform })],
       { sprite: bitmap },
       { sprite: dynamic },
-      { sprite: replacement }
+      { sprite: replacement },
     )
 
     expect(argsFor(context, 'clip')).toEqual([[pathForSource(maskPath)]])
     expect(argsFor(context, 'transform')).toContainEqual([2, 0, 0, 2, 5, 6])
-    expect(argsFor(context, 'drawImage').map(args => args[0])).toEqual([replacement, dynamic])
-    const ellipsePath = RecordingPath2D.instances.find(path => path.operations.some(operation => operation.name === 'ellipse'))
-    expect(ellipsePath?.operations).toContainEqual({ name: 'ellipse', args: [10, 20, 3, 4, 0, 0, Math.PI * 2] })
-    const rectPath = RecordingPath2D.instances.find(path => path.operations.filter(operation => operation.name === 'arcTo').length === 4)
+    expect(argsFor(context, 'drawImage').map((args) => args[0])).toEqual([replacement, dynamic])
+    const ellipsePath = RecordingPath2D.instances.find((path) =>
+      path.operations.some((operation) => operation.name === 'ellipse'),
+    )
+    expect(ellipsePath?.operations).toContainEqual({
+      name: 'ellipse',
+      args: [10, 20, 3, 4, 0, 0, Math.PI * 2],
+    })
+    const rectPath = RecordingPath2D.instances.find(
+      (path) => path.operations.filter((operation) => operation.name === 'arcTo').length === 4,
+    )
     expect(rectPath?.operations).toEqual([
       { name: 'moveTo', args: [4, 2] },
       { name: 'arcTo', args: [21, 2, 21, 12, 3] },
       { name: 'arcTo', args: [21, 12, 1, 12, 3] },
       { name: 'arcTo', args: [1, 12, 1, 2, 3] },
       { name: 'arcTo', args: [1, 2, 21, 2, 3] },
-      { name: 'closePath', args: [] }
+      { name: 'closePath', args: [] },
     ])
     expect(context.depth).toBe(0)
   })
 
   it.each(['constructor', '__proto__'])(
     'reads %s from bitmap, replacement, and dynamic maps only when it is an own property',
-    imageKey => {
+    (imageKey) => {
       const source = video([frame([])])
       source.sprites[0].imageKey = imageKey
       const empty = Object.create(null) as Record<string, never>
 
       const inheritedBitmapCanvas = new RecordingCanvas()
-      render(
-        inheritedBitmapCanvas as unknown as HTMLCanvasElement,
-        {},
-        empty,
-        empty,
-        source,
-        0
-      )
+      render(inheritedBitmapCanvas as unknown as HTMLCanvasElement, {}, empty, empty, source, 0)
       expect(argsFor(inheritedBitmapCanvas.context, 'drawImage')).toEqual([])
 
       const bitmap = { kind: 'bitmap' } as unknown as HTMLImageElement
@@ -418,20 +465,15 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
         empty,
         {},
         source,
-        0
+        0,
       )
-      expect(argsFor(inheritedReplacementCanvas.context, 'drawImage').map(args => args[0])).toEqual([bitmap])
+      expect(
+        argsFor(inheritedReplacementCanvas.context, 'drawImage').map((args) => args[0]),
+      ).toEqual([bitmap])
 
       const inheritedDynamicCanvas = new RecordingCanvas()
-      render(
-        inheritedDynamicCanvas as unknown as HTMLCanvasElement,
-        empty,
-        {},
-        empty,
-        source,
-        0
-      )
+      render(inheritedDynamicCanvas as unknown as HTMLCanvasElement, empty, {}, empty, source, 0)
       expect(argsFor(inheritedDynamicCanvas.context, 'drawImage')).toEqual([])
-    }
+    },
   )
 })

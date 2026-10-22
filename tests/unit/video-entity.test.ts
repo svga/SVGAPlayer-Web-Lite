@@ -6,7 +6,7 @@ import {
   LINE_JOIN_CODE,
   type Movie,
   type MovieFrame,
-  SHAPE_TYPE_CODE
+  SHAPE_TYPE_CODE,
 } from '../../src/types'
 
 const frame = (shapes: MovieFrame['shapes'] = []): MovieFrame => ({
@@ -14,14 +14,14 @@ const frame = (shapes: MovieFrame['shapes'] = []): MovieFrame => ({
   layout: { x: 0, y: 0, width: 10, height: 10 },
   transform: null,
   clipPath: '',
-  shapes
+  shapes,
 })
 
 const movie = (frames: MovieFrame[] = [frame()]): Movie => ({
   version: '2.0',
   images: Object.create(null),
   params: { fps: 20, frames: frames.length, viewBoxHeight: 100, viewBoxWidth: 100 },
-  sprites: [{ imageKey: 'image', frames }]
+  sprites: [{ imageKey: 'image', frames }],
 })
 
 const styles = {
@@ -33,7 +33,7 @@ const styles = {
   miterLimit: 2,
   lineDashI: 0,
   lineDashII: 0,
-  lineDashIII: 0
+  lineDashIII: 0,
 }
 
 describe('createVideo', () => {
@@ -66,7 +66,7 @@ describe('createVideo', () => {
       rect: null,
       ellipse: null,
       styles,
-      transform: null
+      transform: null,
     }
     const keep = {
       type: SHAPE_TYPE_CODE.KEEP,
@@ -74,7 +74,7 @@ describe('createVideo', () => {
       rect: null,
       ellipse: null,
       styles: null,
-      transform: null
+      transform: null,
     }
     const video = createVideo(movie([frame([shape]), frame([keep])]))
     const first = video.sprites[0].frames[0].shapes[0]
@@ -86,14 +86,16 @@ describe('createVideo', () => {
 
   it('copies generated message paths into plain validation-safe records', () => {
     const generatedPath = Object.assign(Object.create({ generated: true }), { d: 'M0 0' })
-    const source = frame([{
-      type: SHAPE_TYPE_CODE.SHAPE,
-      shape: generatedPath,
-      rect: null,
-      ellipse: null,
-      styles,
-      transform: null
-    }])
+    const source = frame([
+      {
+        type: SHAPE_TYPE_CODE.SHAPE,
+        shape: generatedPath,
+        rect: null,
+        ellipse: null,
+        styles,
+        transform: null,
+      },
+    ])
     const path = createVideo(movie([source])).sprites[0].frames[0].shapes[0].path
     expect(path).toEqual({ d: 'M0 0' })
     expect(Object.getPrototypeOf(path)).toBe(Object.prototype)
@@ -105,28 +107,42 @@ describe('createVideo', () => {
       shape: null,
       rect: { x: 1, y: 2, width: 3, height: 4, cornerRadius: 5 },
       ellipse: null,
-      styles: { ...styles, lineDashI: null, lineDashII: 2, lineDashIII: 3, lineCap: LINE_CAP_CODE.SQUARE, lineJoin: LINE_JOIN_CODE.ROUND },
-      transform: null
+      styles: {
+        ...styles,
+        lineDashI: null,
+        lineDashII: 2,
+        lineDashIII: 3,
+        lineCap: LINE_CAP_CODE.SQUARE,
+        lineJoin: LINE_JOIN_CODE.ROUND,
+      },
+      transform: null,
     }
     const ellipse = {
       type: SHAPE_TYPE_CODE.ELLIPSE,
       shape: null,
       rect: null,
       ellipse: { x: 6, y: 7, radiusX: 8, radiusY: 9 },
-      styles: { ...styles, lineDashI: 1, lineDashII: null, lineDashIII: 3, lineCap: LINE_CAP_CODE.BUTT, lineJoin: LINE_JOIN_CODE.MITER },
-      transform: null
+      styles: {
+        ...styles,
+        lineDashI: 1,
+        lineDashII: null,
+        lineDashIII: 3,
+        lineCap: LINE_CAP_CODE.BUTT,
+        lineJoin: LINE_JOIN_CODE.MITER,
+      },
+      transform: null,
     }
     const parsed = createVideo(movie([frame([rect, ellipse])])).sprites[0].frames[0].shapes
 
     expect(parsed[0]).toMatchObject({
       type: 'rect',
       path: rect.rect,
-      styles: { lineCap: 'square', lineDash: [0, 2, 3], lineJoin: 'round' }
+      styles: { lineCap: 'square', lineDash: [0, 2, 3], lineJoin: 'round' },
     })
     expect(parsed[1]).toMatchObject({
       type: 'ellipse',
       path: ellipse.ellipse,
-      styles: { lineCap: 'butt', lineDash: [1, 0, 3], lineJoin: 'miter' }
+      styles: { lineCap: 'butt', lineDash: [1, 0, 3], lineJoin: 'miter' },
     })
   })
 })

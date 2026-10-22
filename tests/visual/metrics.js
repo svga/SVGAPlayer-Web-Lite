@@ -1,20 +1,20 @@
 const round = (value, digits = 2) => Number(value.toFixed(digits))
 
-function percentile (values, fraction) {
+function percentile(values, fraction) {
   if (values.length === 0) return 0
   const sorted = [...values].sort((first, second) => first - second)
   const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)
   return sorted[index]
 }
 
-function deviation (values) {
+function deviation(values) {
   if (values.length < 2) return 0
   const average = values.reduce((sum, value) => sum + value, 0) / values.length
   const variance = values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length
   return Math.sqrt(variance)
 }
 
-export function profileVideo (video, fileBytes) {
+export function profileVideo(video, fileBytes) {
   const spriteFrames = video.sprites.reduce((sum, sprite) => sum + sprite.frames.length, 0)
   const shapes = video.sprites.reduce((sum, sprite) => {
     return sum + sprite.frames.reduce((frameSum, frame) => frameSum + frame.shapes.length, 0)
@@ -28,18 +28,18 @@ export function profileVideo (video, fileBytes) {
     pixels,
     fps: video.fps,
     frames: video.frames,
-    durationMs: round(video.frames / video.fps * 1000),
+    durationMs: round((video.frames / video.fps) * 1000),
     images: Object.keys(video.images).length,
     imageBytes,
     sprites: video.sprites.length,
     spriteFrames,
     shapes,
-    rgbaBytes: pixels * 4
+    rgbaBytes: pixels * 4,
   }
 }
 
 export class PlaybackCollector {
-  constructor (targetFps) {
+  constructor(targetFps) {
     this.targetFps = targetFps
     this.intervalTarget = 1000 / targetFps
     this.intervals = []
@@ -51,7 +51,7 @@ export class PlaybackCollector {
     this.lastTimestamp = undefined
   }
 
-  record (frame, timestamp) {
+  record(frame, timestamp) {
     if (this.lastFrame !== undefined && this.lastTimestamp !== undefined) {
       const delta = Math.abs(frame - this.lastFrame)
       const interval = timestamp - this.lastTimestamp
@@ -65,7 +65,7 @@ export class PlaybackCollector {
           frame,
           interval: round(interval),
           kind: skipped > 0 ? 'skip' : interval > this.intervalTarget * 1.5 ? 'late' : 'ok',
-          skipped
+          skipped,
         })
       }
     }
@@ -73,24 +73,25 @@ export class PlaybackCollector {
     this.lastTimestamp = timestamp
   }
 
-  split () {
+  split() {
     this.lastFrame = undefined
     this.lastTimestamp = undefined
   }
 
-  summarize (activeDurationMs, rafFrames) {
+  summarize(activeDurationMs, rafFrames) {
     const average = this.intervals.length
       ? this.intervals.reduce((sum, value) => sum + value, 0) / this.intervals.length
       : 0
-    const lateFrames = this.intervals.filter(value => value > this.intervalTarget * 1.5).length
+    const lateFrames = this.intervals.filter((value) => value > this.intervalTarget * 1.5).length
     return {
       targetFps: this.targetFps,
-      actualFps: activeDurationMs > 0 ? round(this.advancedFrames / activeDurationMs * 1000) : 0,
+      actualFps: activeDurationMs > 0 ? round((this.advancedFrames / activeDurationMs) * 1000) : 0,
       activeDurationMs: round(activeDurationMs),
       updateCount: this.updateCount,
       advancedFrames: this.advancedFrames,
       skippedFrames: this.skippedFrames,
-      skippedRate: this.advancedFrames > 0 ? round(this.skippedFrames / this.advancedFrames * 100) : 0,
+      skippedRate:
+        this.advancedFrames > 0 ? round((this.skippedFrames / this.advancedFrames) * 100) : 0,
       intervalAverageMs: round(average),
       intervalP50Ms: round(percentile(this.intervals, 0.5)),
       intervalP95Ms: round(percentile(this.intervals, 0.95)),
@@ -98,27 +99,28 @@ export class PlaybackCollector {
       intervalMaxMs: round(this.intervals.length ? Math.max(...this.intervals) : 0),
       jitterMs: round(deviation(this.intervals)),
       lateFrames,
-      lateRate: this.intervals.length ? round(lateFrames / this.intervals.length * 100) : 0,
-      rafFps: activeDurationMs > 0 ? round(rafFrames / activeDurationMs * 1000) : 0,
-      ticks: this.ticks.slice(-160)
+      lateRate: this.intervals.length ? round((lateFrames / this.intervals.length) * 100) : 0,
+      rafFps: activeDurationMs > 0 ? round((rafFrames / activeDurationMs) * 1000) : 0,
+      ticks: this.ticks.slice(-160),
     }
   }
 }
 
-export function createLongTaskMonitor () {
-  const supported = typeof PerformanceObserver !== 'undefined' &&
+export function createLongTaskMonitor() {
+  const supported =
+    typeof PerformanceObserver !== 'undefined' &&
     PerformanceObserver.supportedEntryTypes?.includes('longtask')
   const durations = []
   let observer
   let result
   if (supported) {
-    observer = new PerformanceObserver(list => {
+    observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) durations.push(entry.duration)
     })
     observer.observe({ type: 'longtask' })
   }
   return {
-    finish () {
+    finish() {
       if (result) return result
       observer?.disconnect()
       result = supported
@@ -127,15 +129,15 @@ export function createLongTaskMonitor () {
             count: durations.length,
             totalMs: round(durations.reduce((sum, value) => sum + value, 0)),
             maxMs: round(durations.length ? Math.max(...durations) : 0),
-            blockingMs: round(durations.reduce((sum, value) => sum + Math.max(0, value - 50), 0))
+            blockingMs: round(durations.reduce((sum, value) => sum + Math.max(0, value - 50), 0)),
           }
         : { supported: false }
       return result
-    }
+    },
   }
 }
 
-export function createRuntimeMonitor () {
+export function createRuntimeMonitor() {
   const memory = performance.memory
   const heapSamples = []
   let rafFrames = 0
@@ -154,7 +156,7 @@ export function createRuntimeMonitor () {
   }
   rafId = requestAnimationFrame(frame)
   return {
-    finish () {
+    finish() {
       if (result) return result
       stopped = true
       cancelAnimationFrame(rafId)
@@ -169,16 +171,16 @@ export function createRuntimeMonitor () {
               beforeBytes: heapSamples[0] || 0,
               afterBytes: lastHeapSample,
               peakBytes: heapSamples.length ? Math.max(...heapSamples) : 0,
-              deltaBytes: lastHeapSample - (heapSamples[0] || 0)
+              deltaBytes: lastHeapSample - (heapSamples[0] || 0),
             }
-          : { supported: false }
+          : { supported: false },
       }
       return result
-    }
+    },
   }
 }
 
-export function environmentProfile () {
+export function environmentProfile() {
   return {
     browser: navigator.userAgent,
     viewport: `${window.innerWidth}×${window.innerHeight}`,
@@ -188,21 +190,25 @@ export function environmentProfile () {
     worker: typeof Worker !== 'undefined',
     offscreenCanvas: typeof OffscreenCanvas !== 'undefined',
     imageBitmap: typeof createImageBitmap === 'function',
-    longTask: typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes?.includes('longtask'),
-    advancedMemory: typeof performance.measureUserAgentSpecificMemory === 'function' && window.crossOriginIsolated
+    longTask:
+      typeof PerformanceObserver !== 'undefined' &&
+      PerformanceObserver.supportedEntryTypes?.includes('longtask'),
+    advancedMemory:
+      typeof performance.measureUserAgentSpecificMemory === 'function' &&
+      window.crossOriginIsolated,
   }
 }
 
-export function readHeapBytes () {
+export function readHeapBytes() {
   const value = performance.memory?.usedJSHeapSize
   return Number.isFinite(value) ? value : null
 }
 
-export async function nextPaint () {
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+export async function nextPaint() {
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
 }
 
-export function formatBytes (bytes) {
+export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return '不可用'
   const absolute = Math.abs(bytes)
   if (absolute < 1024) return `${Math.round(bytes)} B`
@@ -210,6 +216,6 @@ export function formatBytes (bytes) {
   return `${round(bytes / 1024 ** 2, 2)} MiB`
 }
 
-export function formatMilliseconds (value) {
+export function formatMilliseconds(value) {
   return `${round(value)} ms`
 }

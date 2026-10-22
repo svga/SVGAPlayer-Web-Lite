@@ -4,7 +4,7 @@ import {
   createRuntimeMonitor,
   environmentProfile,
   profileVideo,
-  readHeapBytes
+  readHeapBytes,
 } from './metrics.js'
 
 const protocol = 'svga-visual-runner'
@@ -18,44 +18,49 @@ let active = null
 let hiddenDuringRun = document.hidden
 let coldRunStarted = false
 
-function captureAsyncRunnerError (error) {
+function captureAsyncRunnerError(error) {
   if (!active || active.terminal) return false
-  active.asyncError = { stage: active.stage, message: error instanceof Error ? error.message : String(error) }
+  active.asyncError = {
+    stage: active.stage,
+    message: error instanceof Error ? error.message : String(error),
+  }
   active.finish?.('async-error')
   return true
 }
 
-window.addEventListener('error', event => {
+window.addEventListener('error', (event) => {
   if (captureAsyncRunnerError(event.error || event.message)) event.preventDefault()
 })
-window.addEventListener('unhandledrejection', event => {
+window.addEventListener('unhandledrejection', (event) => {
   if (captureAsyncRunnerError(event.reason)) event.preventDefault()
 })
 
-function send (event, payload = {}) {
+function send(event, payload = {}) {
   window.parent.postMessage({ protocol, event, runId, ...payload }, parentOrigin)
 }
 
-function isExpectedV1 (fixture) {
+function isExpectedV1(fixture) {
   return fixture?.name === 'show.svga' || fixture?.expectation === 'unsupported-v1'
 }
 
-function warningForCapabilities () {
+function warningForCapabilities() {
   const environment = environmentProfile()
   const warnings = []
   if (!environment.worker) warnings.push('当前浏览器不提供 Worker，无法运行默认解析路径。')
-  if (!environment.imageBitmap) warnings.push('当前浏览器不提供 ImageBitmap，图片解码将使用后备路径。')
-  if (!environment.offscreenCanvas) warnings.push('当前浏览器不提供 OffscreenCanvas，渲染将使用 HTML Canvas。')
+  if (!environment.imageBitmap)
+    warnings.push('当前浏览器不提供 ImageBitmap，图片解码将使用后备路径。')
+  if (!environment.offscreenCanvas)
+    warnings.push('当前浏览器不提供 OffscreenCanvas，渲染将使用 HTML Canvas。')
   if (!environment.longTask) warnings.push('当前浏览器不提供长任务观察接口。')
   if (readHeapBytes() === null) warnings.push('当前浏览器不提供可采样的 JS 堆数据。')
   return { environment, warnings }
 }
 
-function round (value) {
+function round(value) {
   return Number(value.toFixed(2))
 }
 
-function fingerprint (frame) {
+function fingerprint(frame) {
   const context = canvas.getContext('2d', { willReadFrequently: true })
   if (!context || canvas.width === 0 || canvas.height === 0) return null
   try {
@@ -75,14 +80,14 @@ function fingerprint (frame) {
       width: canvas.width,
       height: canvas.height,
       nonEmptyPixels,
-      rgbaHash: (hash >>> 0).toString(16).padStart(8, '0')
+      rgbaHash: (hash >>> 0).toString(16).padStart(8, '0'),
     }
   } catch {
     return null
   }
 }
 
-function collectRuntime (longTasks, runtimeMonitor) {
+function collectRuntime(longTasks, runtimeMonitor) {
   const longTask = longTasks.finish()
   const runtimeResult = runtimeMonitor.finish()
   return {
@@ -96,20 +101,20 @@ function collectRuntime (longTasks, runtimeMonitor) {
     heapAfterBytes: runtimeResult.heap.afterBytes,
     heapPeakBytes: runtimeResult.heap.peakBytes,
     heapDeltaBytes: runtimeResult.heap.deltaBytes,
-    rafFrames: runtimeResult.rafFrames
+    rafFrames: runtimeResult.rafFrames,
   }
 }
 
-function cancelledError () {
+function cancelledError() {
   return DOMException('Cancelled', 'AbortError')
 }
 
-function waitForPaint (token) {
-  return new Promise(resolve => {
+function waitForPaint(token) {
+  return new Promise((resolve) => {
     let first = 0
     let second = 0
     let settled = false
-    const finish = painted => {
+    const finish = (painted) => {
       if (settled) return
       settled = true
       window.cancelAnimationFrame(first)
@@ -125,7 +130,7 @@ function waitForPaint (token) {
   })
 }
 
-async function playMounted (token, player, video, maxPlaybackMs) {
+async function playMounted(token, player, video, maxPlaybackMs) {
   const collector = new PlaybackCollector(video.fps)
   const longTasks = createLongTaskMonitor()
   const runtimeMonitor = createRuntimeMonitor()
@@ -137,8 +142,10 @@ async function playMounted (token, player, video, maxPlaybackMs) {
   let timeoutId = 0
   let completed = false
   let resolvePlayback
-  const playback = new Promise(resolve => { resolvePlayback = resolve })
-  const finish = reason => {
+  const playback = new Promise((resolve) => {
+    resolvePlayback = resolve
+  })
+  const finish = (reason) => {
     if (completed) return
     completed = true
     window.clearTimeout(timeoutId)
@@ -154,7 +161,9 @@ async function playMounted (token, player, video, maxPlaybackMs) {
       const frame = player.currentFrame
       collector.record(frame, performance.now())
       if (!processVisualReady) {
-        processVisualReady = Promise.resolve().then(() => token.cancelled ? null : fingerprint(frame))
+        processVisualReady = Promise.resolve().then(() =>
+          token.cancelled ? null : fingerprint(frame),
+        )
       }
       const tick = collector.ticks[collector.ticks.length - 1]
       if (tick) send('ticks', { ticks: [tick] })
@@ -180,9 +189,19 @@ async function playMounted (token, player, video, maxPlaybackMs) {
     if (token.cancelled || reason === 'cancelled') throw cancelledError()
     if (token.asyncError) throw Error(`运行时异步错误：${token.asyncError.message}`)
     const runtimeResult = finishMonitors()
-    const playbackResult = collector.summarize(Math.max(0, performance.now() - started), runtimeResult.rafFrames)
+    const playbackResult = collector.summarize(
+      Math.max(0, performance.now() - started),
+      runtimeResult.rafFrames,
+    )
     const processVisual = processVisualReady ? await processVisualReady : null
-    return { reason, startMs: round(startMs), firstPaintMs: round(firstPaintMs), visual: processVisual || startVisual, playback: playbackResult, runtime: runtimeResult }
+    return {
+      reason,
+      startMs: round(startMs),
+      firstPaintMs: round(firstPaintMs),
+      visual: processVisual || startVisual,
+      playback: playbackResult,
+      runtime: runtimeResult,
+    }
   } finally {
     window.clearTimeout(timeoutId)
     token.paintCancel?.()
@@ -192,29 +211,35 @@ async function playMounted (token, player, video, maxPlaybackMs) {
   }
 }
 
-function cleanup (token) {
+function cleanup(token) {
   if (token.cleaned) return
   token.cleaned = true
   token.paintCancel?.()
   token.paintCancel = null
   if (token.blobUrl) {
-    try { URL.revokeObjectURL(token.blobUrl) } catch {}
+    try {
+      URL.revokeObjectURL(token.blobUrl)
+    } catch {}
     token.blobUrl = null
   }
-  try { token.parser?.destroy() } catch {}
+  try {
+    token.parser?.destroy()
+  } catch {}
   token.parser = null
-  try { token.player?.destroy() } catch {}
+  try {
+    token.player?.destroy()
+  } catch {}
   token.player = null
   token.finish = null
 }
 
-function sendCancelled (token) {
+function sendCancelled(token) {
   if (token.terminal) return
   token.terminal = true
   send('cancelled', { stage: token.stage })
 }
 
-function abortActive () {
+function abortActive() {
   if (!active) return
   const token = active
   token.cancelled = true
@@ -223,30 +248,42 @@ function abortActive () {
   cleanup(token)
 }
 
-async function run (message) {
+async function run(message) {
   if (active) abortActive()
   const token = {
-    cancelled: false, cleaned: false, terminal: false, stage: 'parse', parser: null,
-    player: null, blobUrl: null, finish: null, paintCancel: null
+    cancelled: false,
+    cleaned: false,
+    terminal: false,
+    stage: 'parse',
+    parser: null,
+    player: null,
+    blobUrl: null,
+    finish: null,
+    paintCancel: null,
   }
   active = token
   hiddenDuringRun = document.hidden
   const fixture = message.fixture || {}
   const options = message.options || {}
-  const maxPlaybackMs = Number.isFinite(options.maxPlaybackMs) && options.maxPlaybackMs >= 0
-    ? options.maxPlaybackMs
-    : Infinity
+  const maxPlaybackMs =
+    Number.isFinite(options.maxPlaybackMs) && options.maxPlaybackMs >= 0
+      ? options.maxPlaybackMs
+      : Infinity
   const { environment, warnings } = warningForCapabilities()
   const heapBeforeBytes = readHeapBytes()
   try {
     if (!(message.buffer instanceof ArrayBuffer)) throw Error('run.buffer 必须是 ArrayBuffer')
     send('stage', { stage: token.stage })
     token.parser = new window.SVGA.Parser()
-    token.blobUrl = URL.createObjectURL(new Blob([message.buffer], { type: 'application/octet-stream' }))
+    token.blobUrl = URL.createObjectURL(
+      new Blob([message.buffer], { type: 'application/octet-stream' }),
+    )
     const parseStarted = performance.now()
     const video = await token.parser.load(token.blobUrl)
     const parseMs = performance.now() - parseStarted
-    try { token.parser.destroy() } catch {}
+    try {
+      token.parser.destroy()
+    } catch {}
     token.parser = null
     URL.revokeObjectURL(token.blobUrl)
     token.blobUrl = null
@@ -260,7 +297,7 @@ async function run (message) {
       container: canvas,
       loop: false,
       isCacheFrames: options.cacheFrames === true,
-      isOpenNoExecutionDelay: options.timerWorker === true
+      isOpenNoExecutionDelay: options.timerWorker === true,
     })
     const mountStarted = performance.now()
     await token.player.mount(video)
@@ -279,12 +316,16 @@ async function run (message) {
       firstPaintMs: cold.firstPaintMs,
       playerReadyMs,
       runtimeLoadMs: round(runtimeLoadMs),
-      runtimeReadyMs: round(runtimeLoadMs + playerReadyMs)
+      runtimeReadyMs: round(runtimeLoadMs + playerReadyMs),
     }
     if (cold.runtime.heapSupported && heapBeforeBytes !== null && heapMountBytes !== null) {
       cold.runtime.heapBeforeBytes = heapBeforeBytes
       cold.runtime.heapMountBytes = heapMountBytes
-      cold.runtime.heapPeakBytes = Math.max(cold.runtime.heapPeakBytes, heapBeforeBytes, heapMountBytes)
+      cold.runtime.heapPeakBytes = Math.max(
+        cold.runtime.heapPeakBytes,
+        heapBeforeBytes,
+        heapMountBytes,
+      )
       cold.runtime.heapDeltaBytes = cold.runtime.heapAfterBytes - heapBeforeBytes
     } else cold.runtime.heapSupported = false
     if (!cold.visual) warnings.push('首个可观察画面无法读取，未生成视觉指纹。')
@@ -300,7 +341,7 @@ async function run (message) {
       runtime: cold.runtime,
       visual: cold.visual,
       warnings,
-      sampleSufficient: cold.playback.updateCount >= 2
+      sampleSufficient: cold.playback.updateCount >= 2,
     }
     if (options.includeWarm === true && !token.cancelled) {
       token.stage = 'warm'
@@ -313,9 +354,10 @@ async function run (message) {
         playback: warm.playback,
         runtime: warm.runtime,
         visual: warm.visual,
-        sampleSufficient: warm.playback.updateCount >= 2
+        sampleSufficient: warm.playback.updateCount >= 2,
       }
-      if (warm.playback.updateCount < 2) result.warnings.push('热播放样本不足，播放质量指标仅供参考。')
+      if (warm.playback.updateCount < 2)
+        result.warnings.push('热播放样本不足，播放质量指标仅供参考。')
     }
     if (token.cancelled) {
       sendCancelled(token)
@@ -327,17 +369,29 @@ async function run (message) {
     const cancelled = token.cancelled || error?.name === 'AbortError'
     const errorStage = token.asyncError?.stage || token.stage
     if (cancelled) sendCancelled(token)
-    else if (isExpectedV1(fixture) && token.stage === 'parse' && String(error?.message || error).includes('only support version@2')) {
+    else if (
+      isExpectedV1(fixture) &&
+      token.stage === 'parse' &&
+      String(error?.message || error).includes('only support version@2')
+    ) {
       token.terminal = true
       send('result', {
         result: {
-          status: 'expected-rejection', fixture, capabilities: environment, warnings,
-          error: { stage: errorStage, message: error.message }
-        }
+          status: 'expected-rejection',
+          fixture,
+          capabilities: environment,
+          warnings,
+          error: { stage: errorStage, message: error.message },
+        },
       })
     } else {
       token.terminal = true
-      send('error', { error: { stage: errorStage, message: error instanceof Error ? error.message : String(error) } })
+      send('error', {
+        error: {
+          stage: errorStage,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })
     }
   } finally {
     cleanup(token)
@@ -345,16 +399,24 @@ async function run (message) {
   }
 }
 
-function acceptMessage (event) {
+function acceptMessage(event) {
   const message = event.data
-  return event.origin === parentOrigin && event.source === window.parent && message?.protocol === protocol && message.runId === runId
+  return (
+    event.origin === parentOrigin &&
+    event.source === window.parent &&
+    message?.protocol === protocol &&
+    message.runId === runId
+  )
 }
 
-window.addEventListener('message', event => {
+window.addEventListener('message', (event) => {
   if (!acceptMessage(event)) return
   if (event.data.event === 'cancel') abortActive()
   else if (event.data.event === 'run') {
-    if (coldRunStarted) send('error', { error: { stage: 'protocol', message: '每个隔离运行器只能执行一次冷启动测量' } })
+    if (coldRunStarted)
+      send('error', {
+        error: { stage: 'protocol', message: '每个隔离运行器只能执行一次冷启动测量' },
+      })
     else {
       coldRunStarted = true
       void run(event.data)
@@ -373,12 +435,15 @@ if ((runtime === 'local' || runtime === 'baseline') && runId && window.parent !=
   script.onload = () => {
     runtimeLoadMs = performance.now() - startedAt
     if (typeof window.SVGA?.Parser !== 'function' || typeof window.SVGA?.Player !== 'function') {
-      send('error', { error: { stage: 'runtime', message: '运行时没有提供 SVGA.Parser 和 SVGA.Player' } })
+      send('error', {
+        error: { stage: 'runtime', message: '运行时没有提供 SVGA.Parser 和 SVGA.Player' },
+      })
       return
     }
     send('ready', { runtime, runtimeLoadMs: round(runtimeLoadMs) })
   }
-  script.onerror = () => send('error', { error: { stage: 'runtime', message: '运行时脚本加载失败' } })
+  script.onerror = () =>
+    send('error', { error: { stage: 'runtime', message: '运行时脚本加载失败' } })
   document.head.append(script)
 } else {
   send('error', { error: { stage: 'runtime', message: '无效的 runtime 或 runId' } })

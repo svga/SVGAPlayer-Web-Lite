@@ -10,9 +10,10 @@ import { scanMovieWire } from './wire-scan'
 const maxCompressedBytes = 8 * 1024 * 1024
 const maxDecompressedBytes = 16 * 1024 * 1024
 
-async function download (url: string, signal: AbortSignal): Promise<Uint8Array> {
+async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(url, { signal })
-  if (response.status < 200 || response.status >= 300) throw Error(`Fetch, ${response.statusText || response.status}`)
+  if (response.status < 200 || response.status >= 300)
+    throw Error(`Fetch, ${response.statusText || response.status}`)
 
   const chunks: Uint8Array[] = []
   let length = 0
@@ -28,7 +29,9 @@ async function download (url: string, signal: AbortSignal): Promise<Uint8Array> 
         chunks.push(chunk)
       }
     } catch (error) {
-      try { await reader.cancel(error) } catch {}
+      try {
+        await reader.cancel(error)
+      } catch {}
       throw error
     } finally {
       reader.releaseLock()
@@ -42,11 +45,14 @@ async function download (url: string, signal: AbortSignal): Promise<Uint8Array> 
 
   const bytes = new Uint8Array(length)
   let offset = 0
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
   return bytes
 }
 
-function inflate (source: Uint8Array): Uint8Array {
+function inflate(source: Uint8Array): Uint8Array {
   const chunks: Uint8Array[] = []
   let length = 0
   const stream = new Unzlib((chunk) => {
@@ -62,15 +68,18 @@ function inflate (source: Uint8Array): Uint8Array {
   }
   const output = new Uint8Array(length)
   let offset = 0
-  for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength }
+  for (const chunk of chunks) {
+    output.set(chunk, offset)
+    offset += chunk.byteLength
+  }
   return output
 }
 
-function imageEntries (images: Movie['images']): Array<[string, Uint8Array]> {
-  return Object.keys(images).map(key => [key, images[key]])
+function imageEntries(images: Movie['images']): Array<[string, Uint8Array]> {
+  return Object.keys(images).map((key) => [key, images[key]])
 }
 
-function imageMap (movie: Movie): RawImages {
+function imageMap(movie: Movie): RawImages {
   const images = Object.create(null) as RawImages
   for (const [key, value] of imageEntries(movie.images)) {
     if (!key.startsWith('audio')) images[key] = value
@@ -78,7 +87,7 @@ function imageMap (movie: Movie): RawImages {
   return images
 }
 
-function transferList (video: Video): ArrayBuffer[] {
+function transferList(video: Video): ArrayBuffer[] {
   const buffers = new Set<ArrayBuffer>()
   for (const image of Object.values(video.images)) {
     if (image.buffer instanceof ArrayBuffer) buffers.add(image.buffer)
@@ -86,7 +95,7 @@ function transferList (video: Video): ArrayBuffer[] {
   return [...buffers]
 }
 
-function installParserWorker (scope: ParserWorkerScope): void {
+function installParserWorker(scope: ParserWorkerScope): void {
   const controllers = new Map<number, AbortController>()
 
   scope.onmessage = async (event: MessageEvent<ParserWorkerRequest>): Promise<void> => {
@@ -103,7 +112,12 @@ function installParserWorker (scope: ParserWorkerScope): void {
     let completed = false
     try {
       const compressed = await download(request.url, controller.signal)
-      if (compressed[0] === 80 && compressed[1] === 75 && compressed[2] === 3 && compressed[3] === 4) {
+      if (
+        compressed[0] === 80 &&
+        compressed[1] === 75 &&
+        compressed[2] === 3 &&
+        compressed[3] === 4
+      ) {
         throw Error('this parser only support version@2 of SVGA.')
       }
       const inflated = inflate(compressed)
@@ -118,7 +132,7 @@ function installParserWorker (scope: ParserWorkerScope): void {
       const source = error instanceof Error ? error : Error(String(error))
       response = {
         requestId: request.requestId,
-        error: { name: source.name, message: `[SVGA Parser Error] ${source.message}` }
+        error: { name: source.name, message: `[SVGA Parser Error] ${source.message}` },
       }
       scope.postMessage(response)
     } finally {

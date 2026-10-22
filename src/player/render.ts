@@ -9,30 +9,30 @@ import {
   BitmapsCache,
   Drawable,
   PlayerElement,
-  ReplaceElements
+  ReplaceElements,
 } from '../types'
 
-function ownValue<T> (values: { [key: string]: T }, key: string): T | undefined {
-  return ({}).hasOwnProperty.call(values, key) ? values[key] : undefined
+function ownValue<T>(values: { [key: string]: T }, key: string): T | undefined {
+  return {}.hasOwnProperty.call(values, key) ? values[key] : undefined
 }
 
-function numberOrZero (value: number | null | undefined): number {
+function numberOrZero(value: number | null | undefined): number {
   return value == null ? 0 : value
 }
 
-function render (
+function render(
   canvas: HTMLCanvasElement | OffscreenCanvas,
   bitmapsCache: BitmapsCache,
   dynamicElements: DynamicElements,
   replaceElements: ReplaceElements,
   videoEntity: Video,
-  currentFrame: number
+  currentFrame: number,
 ): void {
   const context = canvas.getContext('2d')
 
   if (context === null || !('save' in context)) throw Error('Invalid render context')
 
-  videoEntity.sprites.forEach(sprite => {
+  videoEntity.sprites.forEach((sprite) => {
     const key = sprite.imageKey
     drawSprite(
       context,
@@ -40,18 +40,18 @@ function render (
       currentFrame,
       ownValue(bitmapsCache, key),
       ownValue(replaceElements, key),
-      ownValue(dynamicElements, key)
+      ownValue(dynamicElements, key),
     )
   })
 }
 
-function drawSprite (
+function drawSprite(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   sprite: VideoSprite,
   currentFrame: number,
   bitmap: Drawable | undefined,
   replaceElement: PlayerElement | undefined,
-  dynamicElement: PlayerElement | undefined
+  dynamicElement: PlayerElement | undefined,
 ): void {
   const frame = sprite.frames[currentFrame]
   if (!frame || frame.alpha < 0.05) return
@@ -60,24 +60,36 @@ function drawSprite (
   try {
     context.globalAlpha = frame.alpha
     const transform = frame.transform
-    if (transform) context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
+    if (transform)
+      context.transform(
+        transform.a,
+        transform.b,
+        transform.c,
+        transform.d,
+        transform.tx,
+        transform.ty,
+      )
     if (frame.clipPath && !clipPath(context, frame.clipPath)) return
 
     const image = replaceElement || bitmap
     if (image) context.drawImage(image, 0, 0, frame.layout.width, frame.layout.height)
 
     if (dynamicElement) {
-      context.drawImage(dynamicElement, (frame.layout.width - dynamicElement.width) / 2, (frame.layout.height - dynamicElement.height) / 2)
+      context.drawImage(
+        dynamicElement,
+        (frame.layout.width - dynamicElement.width) / 2,
+        (frame.layout.height - dynamicElement.height) / 2,
+      )
     }
-    frame.shapes.forEach(shape => drawShape(context, shape))
+    frame.shapes.forEach((shape) => drawShape(context, shape))
   } finally {
     context.restore()
   }
 }
 
-function drawShape (
+function drawShape(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  shape: VideoFrameShape
+  shape: VideoFrameShape,
 ): void {
   switch (shape.type) {
     case SHAPE_TYPE.SHAPE:
@@ -86,25 +98,32 @@ function drawShape (
     case SHAPE_TYPE.ELLIPSE:
       drawEllipse(
         context,
-        numberOrZero(shape.path.x), numberOrZero(shape.path.y),
-        numberOrZero(shape.path.radiusX), numberOrZero(shape.path.radiusY),
-        shape.transform, shape.styles
+        numberOrZero(shape.path.x),
+        numberOrZero(shape.path.y),
+        numberOrZero(shape.path.radiusX),
+        numberOrZero(shape.path.radiusY),
+        shape.transform,
+        shape.styles,
       )
       break
     case SHAPE_TYPE.RECT:
       drawRect(
         context,
-        numberOrZero(shape.path.x), numberOrZero(shape.path.y),
-        numberOrZero(shape.path.width), numberOrZero(shape.path.height), numberOrZero(shape.path.cornerRadius),
-        shape.transform, shape.styles
+        numberOrZero(shape.path.x),
+        numberOrZero(shape.path.y),
+        numberOrZero(shape.path.width),
+        numberOrZero(shape.path.height),
+        numberOrZero(shape.path.cornerRadius),
+        shape.transform,
+        shape.styles,
       )
       break
   }
 }
 
-function resetShapeStyles (
+function resetShapeStyles(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  styles: VideoStyles
+  styles: VideoStyles,
 ): void {
   context.strokeStyle = styles.stroke || 'transparent'
   if (styles.strokeWidth && styles.strokeWidth > 0) context.lineWidth = styles.strokeWidth
@@ -115,16 +134,24 @@ function resetShapeStyles (
   if (styles.lineDash) context.setLineDash(styles.lineDash)
 }
 
-function drawStyled (
+function drawStyled(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   transform: Transform | undefined,
   styles: VideoStyles,
-  path: Path2D
+  path: Path2D,
 ): void {
   context.save()
   try {
     resetShapeStyles(context, styles)
-    if (transform) context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty)
+    if (transform)
+      context.transform(
+        transform.a,
+        transform.b,
+        transform.c,
+        transform.d,
+        transform.tx,
+        transform.ty,
+      )
     if (styles.fill) context.fill(path)
     if (styles.stroke) context.stroke(path)
   } finally {
@@ -132,7 +159,7 @@ function drawStyled (
   }
 }
 
-function svgPath (d: string | undefined): Path2D | undefined {
+function svgPath(d: string | undefined): Path2D | undefined {
   if (!d) return undefined
   try {
     return new Path2D(d)
@@ -141,39 +168,41 @@ function svgPath (d: string | undefined): Path2D | undefined {
   }
 }
 
-function drawSvgPath (
+function drawSvgPath(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   d: string | undefined,
   transform: Transform | undefined,
-  styles: VideoStyles
+  styles: VideoStyles,
 ): void {
   const path = svgPath(d)
   if (path) drawStyled(context, transform, styles, path)
 }
 
-function clipPath (
+function clipPath(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
-  d: string
+  d: string,
 ): boolean {
   const normalized = d.replace(/[ \t\r\n]+/g, ' ')
   if (
-    typeof CSS === 'undefined' || typeof CSS.supports !== 'function' ||
+    typeof CSS === 'undefined' ||
+    typeof CSS.supports !== 'function' ||
     !CSS.supports('offset-path', 'path(' + JSON.stringify(normalized) + ')')
-  ) return false
+  )
+    return false
   const path = svgPath(normalized)
   if (!path) return false
   context.clip(path)
   return true
 }
 
-function drawEllipse (
+function drawEllipse(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   x: number,
   y: number,
   radiusX: number,
   radiusY: number,
   transform: Transform | undefined,
-  styles: VideoStyles
+  styles: VideoStyles,
 ): void {
   let path: Path2D
   try {
@@ -185,7 +214,7 @@ function drawEllipse (
   drawStyled(context, transform, styles, path)
 }
 
-function drawRect (
+function drawRect(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   x: number,
   y: number,
@@ -193,7 +222,7 @@ function drawRect (
   height: number,
   cornerRadius: number,
   transform: Transform | undefined,
-  styles: VideoStyles
+  styles: VideoStyles,
 ): void {
   let path: Path2D
   try {

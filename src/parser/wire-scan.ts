@@ -1,6 +1,8 @@
-const invalid = (): never => { throw Error('Invalid SVGA protobuf wire data') }
+const invalid = (): never => {
+  throw Error('Invalid SVGA protobuf wire data')
+}
 
-export function scanMovieWire (source: Uint8Array): void {
+export function scanMovieWire(source: Uint8Array): void {
   let offset = 0
   let sprites = 0
   let frames = 0
@@ -24,7 +26,9 @@ export function scanMovieWire (source: Uint8Array): void {
     return invalid()
   }
 
-  const bounded = (value: number, maximum: number): void => { if (value > maximum) invalid() }
+  const bounded = (value: number, maximum: number): void => {
+    if (value > maximum) invalid()
+  }
   const budgetField = (kind: number, field: number): boolean =>
     (kind === 0 && field >= 3 && field <= 5) ||
     (kind === 1 && field === 2) ||
@@ -50,16 +54,26 @@ export function scanMovieWire (source: Uint8Array): void {
         let nested = -1
         if (kind === 0) {
           if (field === 3) bounded(++images, 512)
-          else if (field === 4) { bounded(++sprites, 2_000); nested = 1 }
-          else if (field === 5) bounded(++audios, 512)
-        } else if (kind === 1 && field === 2) { bounded(++frames, 500_000); nested = 2 }
-        else if (kind === 2) {
-          if (field === 4) bounded(paths += length, 1_048_576)
-          else if (field === 5) { bounded(++shapes, 100_000); nested = 3 }
+          else if (field === 4) {
+            bounded(++sprites, 2_000)
+            nested = 1
+          } else if (field === 5) bounded(++audios, 512)
+        } else if (kind === 1 && field === 2) {
+          bounded(++frames, 500_000)
+          nested = 2
+        } else if (kind === 2) {
+          if (field === 4) bounded((paths += length), 1_048_576)
+          else if (field === 5) {
+            bounded(++shapes, 100_000)
+            nested = 3
+          }
         } else if (kind === 3 && field === 2) nested = 4
-        else if (kind === 4 && field === 1) bounded(paths += length, 1_048_576)
+        else if (kind === 4 && field === 1) bounded((paths += length), 1_048_576)
         if (nested < 0) offset = next
-        else { scan(next, nested); if (offset !== next) invalid() }
+        else {
+          scan(next, nested)
+          if (offset !== next) invalid()
+        }
       } else invalid()
     }
     if (offset !== end) invalid()

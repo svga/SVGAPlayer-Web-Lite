@@ -4,7 +4,7 @@ type Scheduler = Worker | number | null
 
 let runId = 0
 
-function requestFrame (animator: Animator): number {
+function requestFrame(animator: Animator): number {
   let rafId: number
   rafId = window.requestAnimationFrame(() => {
     ;(animator as unknown as { __svgaFrame: (scheduler: number) => void }).__svgaFrame(rafId)
@@ -31,9 +31,9 @@ export class Animator {
     return performance.now()
   }
 
-  public __svgaRun (): void {
+  public __svgaRun(): void {
     this.__svgaStop()
-    const marker = -(++runId)
+    const marker = -++runId
     this.__svgaScheduler = marker
     this.__svgaStartTime = this.__svgaClock()
     this.__svgaFraction = 0.0
@@ -43,7 +43,11 @@ export class Animator {
       this.__svgaOnUpdate(this.__svgaStart)
       if (this.__svgaScheduler !== marker) return
 
-      if (!Number.isFinite(this.__svgaDuration) || this.__svgaDuration <= 0 || this.__svgaStart === this.__svgaEnd) {
+      if (
+        !Number.isFinite(this.__svgaDuration) ||
+        this.__svgaDuration <= 0 ||
+        this.__svgaStart === this.__svgaEnd
+      ) {
         this.__svgaStop()
         this.__svgaOnEnd()
         return
@@ -57,22 +61,24 @@ export class Animator {
     }
   }
 
-  public __svgaStop (): void {
+  public __svgaStop(): void {
     const scheduler = this.__svgaScheduler
     this.__svgaScheduler = null
     if (typeof scheduler === 'number') {
       if (scheduler >= 0) window.cancelAnimationFrame(scheduler)
     } else if (scheduler !== null) {
-      try { scheduler.terminate() } catch {}
+      try {
+        scheduler.terminate()
+      } catch {}
     }
   }
 
-  public get __svgaValue (): number {
-    const value = ((this.__svgaEnd - this.__svgaStart) * this.__svgaFraction) + this.__svgaStart
+  public get __svgaValue(): number {
+    const value = (this.__svgaEnd - this.__svgaStart) * this.__svgaFraction + this.__svgaStart
     return this.__svgaEnd < this.__svgaStart ? Math.ceil(value) : Math.floor(value)
   }
 
-  private __svgaFrame (scheduler: Worker | number): void {
+  private __svgaFrame(scheduler: Worker | number): void {
     if (this.__svgaScheduler !== scheduler) return
     try {
       const ended = this.__svgaDelta(this.__svgaClock() - this.__svgaStartTime)
@@ -91,45 +97,57 @@ export class Animator {
     }
   }
 
-  private __svgaTimer (): void {
+  private __svgaTimer(): void {
     let worker: Worker | undefined
     let url: string | undefined
     try {
       url = window.URL.createObjectURL(new Blob([WORKER]))
       worker = new Worker(url)
-    } catch {} finally {
+    } catch {
+    } finally {
       if (url) window.URL.revokeObjectURL(url)
     }
     if (!worker) return void (this.__svgaScheduler = requestFrame(this))
     this.__svgaScheduler = worker
     worker.onmessage = this.__svgaFrame.bind(this, worker)
-    worker.onerror = event => {
+    worker.onerror = (event) => {
       event.preventDefault()
       this.__svgaFallback(worker as Worker)
     }
-    worker.onmessageerror = () => { this.__svgaFallback(worker as Worker) }
+    worker.onmessageerror = () => {
+      this.__svgaFallback(worker as Worker)
+    }
     this.__svgaSignal(worker)
   }
 
-  private __svgaSignal (worker: Worker): void {
-    try { worker.postMessage(null) } catch { this.__svgaFallback(worker) }
+  private __svgaSignal(worker: Worker): void {
+    try {
+      worker.postMessage(null)
+    } catch {
+      this.__svgaFallback(worker)
+    }
   }
 
-  private __svgaFallback (worker: Worker): void {
+  private __svgaFallback(worker: Worker): void {
     if (this.__svgaScheduler !== worker) return
-    try { worker.terminate() } catch {}
+    try {
+      worker.terminate()
+    } catch {}
     this.__svgaScheduler = requestFrame(this)
   }
 
-  private __svgaDelta (deltaTime: number): boolean {
+  private __svgaDelta(deltaTime: number): boolean {
     const loopDuration = this.__svgaDuration - this.__svgaLoopStart
-    const ended = loopDuration <= 0 || deltaTime >= this.__svgaLoopStart + loopDuration * this.__svgaLoop
+    const ended =
+      loopDuration <= 0 || deltaTime >= this.__svgaLoopStart + loopDuration * this.__svgaLoop
     if (ended) {
       this.__svgaFraction = this.__svgaFill === 1 ? 0.0 : 1.0
     } else {
-      this.__svgaFraction = deltaTime <= this.__svgaDuration
-        ? deltaTime / this.__svgaDuration
-        : ((deltaTime - this.__svgaLoopStart) % loopDuration + this.__svgaLoopStart) / this.__svgaDuration
+      this.__svgaFraction =
+        deltaTime <= this.__svgaDuration
+          ? deltaTime / this.__svgaDuration
+          : (((deltaTime - this.__svgaLoopStart) % loopDuration) + this.__svgaLoopStart) /
+            this.__svgaDuration
     }
     this.__svgaOnUpdate(this.__svgaValue)
     return ended

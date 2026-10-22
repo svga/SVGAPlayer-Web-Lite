@@ -13,7 +13,7 @@ export default defineConfig({
         'src/validate-video.ts',
         'src/player/animator.ts',
         'src/player/index.ts',
-        'src/player/render.ts'
+        'src/player/render.ts',
       ],
       exclude: ['src/parser/svga.generated.ts'],
       provider: 'v8',
@@ -22,9 +22,9 @@ export default defineConfig({
         branches: 90,
         functions: 95,
         lines: 95,
-        statements: 95
-      }
+        statements: 95,
+      },
     },
-    include: ['tests/unit/**/*.test.ts']
-  }
+    include: ['tests/unit/**/*.test.ts'],
+  },
 })

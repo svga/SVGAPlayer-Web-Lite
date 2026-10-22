@@ -28,13 +28,13 @@ export interface Transform {
 export const enum LINE_CAP_CODE {
   BUTT = 0,
   ROUND = 1,
-  SQUARE = 2
+  SQUARE = 2,
 }
 
 export const enum LINE_JOIN_CODE {
   MITER = 0,
   ROUND = 1,
-  BEVEL = 2
+  BEVEL = 2,
 }
 
 export interface RGBA_CODE {
@@ -44,19 +44,24 @@ export interface RGBA_CODE {
   a: number
 }
 
-export type RGBA<R extends number, G extends number, B extends number, A extends number> = `rgba(${R}, ${G}, ${B}, ${A})`
+export type RGBA<
+  R extends number,
+  G extends number,
+  B extends number,
+  A extends number,
+> = `rgba(${R}, ${G}, ${B}, ${A})`
 
 export const enum SHAPE_TYPE_CODE {
   SHAPE = 0,
   RECT = 1,
   ELLIPSE = 2,
-  KEEP = 3
+  KEEP = 3,
 }
 
 export const enum SHAPE_TYPE {
   SHAPE = 'shape',
   RECT = 'rect',
-  ELLIPSE = 'ellipse'
+  ELLIPSE = 'ellipse',
 }
 
 export interface MovieStyles {
@@ -138,7 +143,7 @@ export interface MovieFrame {
   shapes: MovieShape[]
 }
 
-export type VideoFrameShape = VideoShapeShape|VideoShapeRect|VideoShapeEllipse
+export type VideoFrameShape = VideoShapeShape | VideoShapeRect | VideoShapeEllipse
 
 export type VideoFrameShapes = VideoFrameShape[]
 

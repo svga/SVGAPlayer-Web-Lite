@@ -18,41 +18,49 @@ test('browser bundles expose the public package exports', async ({ page }) => {
 
   const esmCode = await readFile(resolve('dist/index.mjs'), 'utf8')
   const esmUrl = `data:text/javascript;base64,${Buffer.from(esmCode).toString('base64')}`
-  const esmExports = await page.evaluate(async url => Object.keys(await import(url)).sort(), esmUrl)
+  const esmExports = await page.evaluate(
+    async (url) => Object.keys(await import(url)).sort(),
+    esmUrl,
+  )
   expect(esmExports).toEqual(expectedExports)
 })
 
-test('built UMD direct Parser instances keep local state without public worker globals', async ({ page }) => {
+test('built UMD direct Parser instances keep local state without public worker globals', async ({
+  page,
+}) => {
   const [firstFile, secondFile] = await Promise.all([
     readFile(resolve('tests/fixtures/svga/11.svga')),
-    readFile(resolve('tests/fixtures/svga/soundwave.svga'))
+    readFile(resolve('tests/fixtures/svga/soundwave.svga')),
   ])
   await page.goto('about:blank')
   await page.addScriptTag({ path: resolve('dist/index.min.js') })
 
-  const evidence = await page.evaluate(async ({ firstData, secondData }) => {
-    interface BrowserParser {
-      load: (url: string) => Promise<{ size: { width: number, height: number } }>
-      destroy: () => void
-    }
-    const browserWindow = window as unknown as Window & {
-      SVGA: { Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser }
-    }
-    const first = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
-    const second = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
-    const [firstVideo, secondVideo] = await Promise.all([
-      first.load(`data:application/octet-stream;base64,${firstData}`),
-      second.load(`data:application/octet-stream;base64,${secondData}`)
-    ])
-    first.destroy()
-    second.destroy()
-    return {
-      firstSize: firstVideo.size,
-      secondSize: secondVideo.size,
-      firstHasWorker: Object.prototype.hasOwnProperty.call(first, 'worker'),
-      hasLegacyGlobal: Object.prototype.hasOwnProperty.call(window, 'SVGAParserMockWorker')
-    }
-  }, { firstData: firstFile.toString('base64'), secondData: secondFile.toString('base64') })
+  const evidence = await page.evaluate(
+    async ({ firstData, secondData }) => {
+      interface BrowserParser {
+        load: (url: string) => Promise<{ size: { width: number; height: number } }>
+        destroy: () => void
+      }
+      const browserWindow = window as unknown as Window & {
+        SVGA: { Parser: new (options: { isDisableWebWorker: boolean }) => BrowserParser }
+      }
+      const first = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
+      const second = new browserWindow.SVGA.Parser({ isDisableWebWorker: true })
+      const [firstVideo, secondVideo] = await Promise.all([
+        first.load(`data:application/octet-stream;base64,${firstData}`),
+        second.load(`data:application/octet-stream;base64,${secondData}`),
+      ])
+      first.destroy()
+      second.destroy()
+      return {
+        firstSize: firstVideo.size,
+        secondSize: secondVideo.size,
+        firstHasWorker: Object.prototype.hasOwnProperty.call(first, 'worker'),
+        hasLegacyGlobal: Object.prototype.hasOwnProperty.call(window, 'SVGAParserMockWorker'),
+      }
+    },
+    { firstData: firstFile.toString('base64'), secondData: secondFile.toString('base64') },
+  )
 
   expect(evidence.firstHasWorker).toBe(false)
   expect(evidence.hasLegacyGlobal).toBe(false)
@@ -106,15 +114,15 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
     const NativeWorker = Worker
     let workerConstructions = 0
     window.Worker = new Proxy(NativeWorker, {
-      construct (target, argumentsList) {
+      construct(target, argumentsList) {
         workerConstructions++
         return Reflect.construct(target, argumentsList) as Worker
-      }
+      },
     })
     const player = new browserWindow.SVGA.Player({
       container: document.createElement('canvas'),
       isOpenNoExecutionDelay: true,
-      loop: false
+      loop: false,
     })
     await player.mount({
       version: '2.0',
@@ -124,20 +132,20 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
       images: Object.create(null),
       replaceElements: Object.create(null),
       dynamicElements: Object.create(null),
-      sprites: []
+      sprites: [],
     })
     const frames: number[] = []
     let schedulerWasNative = false
     player.onProcess = () => frames.push(player.currentFrame)
     const result = await Promise.race([
-      new Promise<{ ended: boolean, frame: number }>(resolve => {
+      new Promise<{ ended: boolean; frame: number }>((resolve) => {
         player.onEnd = () => resolve({ ended: true, frame: player.currentFrame })
         player.start()
         schedulerWasNative = workerConstructions === 1
       }),
-      new Promise<{ ended: boolean, frame: number }>(resolve => {
+      new Promise<{ ended: boolean; frame: number }>((resolve) => {
         setTimeout(() => resolve({ ended: false, frame: player.currentFrame }), 1000)
-      })
+      }),
     ])
     player.destroy()
     return { ...result, frames, schedulerWasNative }
@@ -149,9 +157,11 @@ test('built UMD timer Worker advances and ends a Player timeline', async ({ page
   expect(evidence.schedulerWasNative).toBe(true)
 })
 
-test('built UMD falls back after a real timer Worker error without a page error', async ({ page }) => {
+test('built UMD falls back after a real timer Worker error without a page error', async ({
+  page,
+}) => {
   const pageErrors: string[] = []
-  page.on('pageerror', error => pageErrors.push(error.message))
+  page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.goto('about:blank')
   await page.addScriptTag({ path: resolve('dist/index.min.js') })
 
@@ -167,20 +177,20 @@ test('built UMD falls back after a real timer Worker error without a page error'
       SVGA: { Player: new (options: unknown) => BrowserPlayer }
     }
     const NativeWorker = Worker
-    const failingUrl = URL.createObjectURL(new Blob([
-      'onmessage=function(){throw Error("timer worker failure")}'
-    ]))
+    const failingUrl = URL.createObjectURL(
+      new Blob(['onmessage=function(){throw Error("timer worker failure")}']),
+    )
     let workerConstructions = 0
     window.Worker = new Proxy(NativeWorker, {
-      construct () {
+      construct() {
         workerConstructions++
         return new NativeWorker(failingUrl)
-      }
+      },
     })
     const player = new browserWindow.SVGA.Player({
       container: document.createElement('canvas'),
       isOpenNoExecutionDelay: true,
-      loop: false
+      loop: false,
     })
     await player.mount({
       version: '2.0',
@@ -190,16 +200,16 @@ test('built UMD falls back after a real timer Worker error without a page error'
       images: Object.create(null),
       replaceElements: Object.create(null),
       dynamicElements: Object.create(null),
-      sprites: []
+      sprites: [],
     })
     const result = await Promise.race([
-      new Promise<{ ended: boolean, frame: number }>(resolve => {
+      new Promise<{ ended: boolean; frame: number }>((resolve) => {
         player.onEnd = () => resolve({ ended: true, frame: player.currentFrame })
         player.start()
       }),
-      new Promise<{ ended: boolean, frame: number }>(resolve => {
+      new Promise<{ ended: boolean; frame: number }>((resolve) => {
         setTimeout(() => resolve({ ended: false, frame: player.currentFrame }), 1000)
-      })
+      }),
     ])
     player.destroy()
     URL.revokeObjectURL(failingUrl)
@@ -227,7 +237,9 @@ test('built UMD rejects a real Parser Worker error without a page error', async 
     const NativeWorker = Worker
     const failingUrl = URL.createObjectURL(new Blob(['throw Error("parser worker failure")']))
     window.Worker = new Proxy(NativeWorker, {
-      construct () { return new NativeWorker(failingUrl) }
+      construct() {
+        return new NativeWorker(failingUrl)
+      },
     })
     const parser = new browserWindow.SVGA.Parser()
     let message = ''

@@ -19,8 +19,8 @@
 
 ## 差异
 
-* 不支持播放 SVGA 1.x 格式
-* 不支持声音播放
+- 不支持播放 SVGA 1.x 格式
+- 不支持声音播放
 
 ## 安装
 
@@ -63,7 +63,7 @@ player.onStart = () => console.log('onStart')
 player.onResume = () => console.log('onResume')
 player.onPause = () => console.log('onPause')
 player.onStop = () => console.log('onStop')
-player.onProcess = progress => console.log('onProcess', progress)
+player.onProcess = (progress) => console.log('onProcess', progress)
 player.onEnd = () => console.log('onEnd')
 
 // 开始播放动画
@@ -102,8 +102,8 @@ player.stepToFrame(0)
 区间内的整数。定位后调用 `resume()` 可从该位置继续；也可以传入 `true` 立即播放：
 
 ```js
-player.stepToFrame(12)       // 停在第 12 帧
-player.resume()              // 从第 12 帧继续
+player.stepToFrame(12) // 停在第 12 帧
+player.resume() // 从第 12 帧继续
 player.stepToFrame(24, true) // 定位到第 24 帧并立即继续
 ```
 
@@ -131,7 +131,7 @@ await player.mount(svga)
 ```ts
 new Parser({
   // 是否取消使用 WebWorker，默认值 false
-  isDisableWebWorker: false
+  isDisableWebWorker: false,
 })
 ```
 
@@ -211,7 +211,7 @@ new Player({
 ```js
 const player = new Player({
   container: document.getElementById('canvas'),
-  isDisableOffscreenCanvas: true
+  isDisableOffscreenCanvas: true,
 })
 
 player.setConfig({ isDisableOffscreenCanvas: false })
@@ -291,10 +291,10 @@ module.exports = {
     rules: [
       {
         test: /\.svga$/i,
-        use: 'url-loader'
-      }
-    ]
-  }
+        use: 'url-loader',
+      },
+    ],
+  },
 }
 
 // js
@@ -311,9 +311,7 @@ SVGA 文件可通过配置 Vite 作为 [静态资源](https://vitejs.dev/guide/a
 ```js
 // vite.config.ts
 export default defineConfig({
-  assetsInclude: [
-    'svga'
-  ]
+  assetsInclude: ['svga'],
 })
 
 // js

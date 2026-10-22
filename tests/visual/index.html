@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
-    <link rel="icon" href="data:,">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="data:," />
     <title>SVGA 动画检验台</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/styles.css" />
     <script src="/dist/index.min.js" defer></script>
     <script type="module" src="/app.js"></script>
   </head>
@@ -27,7 +27,9 @@
             <p class="section-kicker">runtime 对比</p>
             <h2 id="comparison-heading">本地与基线运行时</h2>
           </div>
-          <span data-testid="comparison-status" class="status-pill" data-state="idle">等待比较</span>
+          <span data-testid="comparison-status" class="status-pill" data-state="idle"
+            >等待比较</span
+          >
         </div>
         <div id="runtime-cards" class="runtime-cards" aria-live="polite"></div>
         <div id="comparison-warnings" class="warnings" aria-live="polite"></div>
@@ -51,31 +53,47 @@
           <div class="timeline-block" aria-label="帧节奏轨道">
             <div class="timeline-labels">
               <span>帧节奏轨道</span>
-              <span class="legend"><i class="tick-ok"></i>准时 <i class="tick-late"></i>慢帧 <i class="tick-skip"></i>跳帧</span>
+              <span class="legend"
+                ><i class="tick-ok"></i>准时 <i class="tick-late"></i>慢帧
+                <i class="tick-skip"></i>跳帧</span
+              >
             </div>
             <div id="frame-track" class="frame-track" aria-live="off"></div>
           </div>
 
           <div class="control-row" aria-label="播放控制">
-            <button type="button" class="button button-primary" data-testid="run-selected">运行完整测试</button>
-            <button type="button" class="button button-primary" data-testid="compare-selected" disabled>对比当前素材</button>
+            <button type="button" class="button button-primary" data-testid="run-selected">
+              运行完整测试
+            </button>
+            <button
+              type="button"
+              class="button button-primary"
+              data-testid="compare-selected"
+              disabled
+            >
+              对比当前素材
+            </button>
             <button type="button" class="button" data-testid="pause" disabled>暂停</button>
             <button type="button" class="button" data-testid="resume" disabled>继续</button>
             <button type="button" class="button" data-testid="replay" disabled>再次播放</button>
-            <button type="button" class="button button-danger" data-testid="stop" disabled>停止</button>
+            <button type="button" class="button button-danger" data-testid="stop" disabled>
+              停止
+            </button>
           </div>
 
           <fieldset class="config-row">
             <legend>播放器配置</legend>
-            <label><input type="checkbox" id="cache-frames"> 帧缓存</label>
-            <label><input type="checkbox" id="timer-worker"> 计时 Worker</label>
+            <label><input type="checkbox" id="cache-frames" /> 帧缓存</label>
+            <label><input type="checkbox" id="timer-worker" /> 计时 Worker</label>
             <span>解析始终使用默认 Worker</span>
           </fieldset>
           <fieldset class="config-row comparison-config">
             <legend>当前素材对比</legend>
-            <label><input type="radio" name="comparison-rounds" value="1" checked> 快速 1 轮</label>
-            <label><input type="radio" name="comparison-rounds" value="3"> 稳定 3 轮</label>
-            <label><input type="checkbox" id="compare-warm"> 同时比较热播放</label>
+            <label
+              ><input type="radio" name="comparison-rounds" value="1" checked /> 快速 1 轮</label
+            >
+            <label><input type="radio" name="comparison-rounds" value="3" /> 稳定 3 轮</label>
+            <label><input type="checkbox" id="compare-warm" /> 同时比较热播放</label>
           </fieldset>
         </section>
 
@@ -127,7 +145,9 @@
           <section class="metric-group" aria-labelledby="runtime-heading">
             <h3 id="runtime-heading">主线程与内存</h3>
             <dl id="runtime-metrics"></dl>
-            <button type="button" class="text-button" data-testid="memory-snapshot">采集高级内存快照</button>
+            <button type="button" class="text-button" data-testid="memory-snapshot">
+              采集高级内存快照
+            </button>
             <p id="memory-note" class="metric-note"></p>
           </section>
         </div>
@@ -144,19 +164,34 @@
         <div class="table-wrap comparison-table-wrap">
           <table class="comparison-metrics" aria-live="polite">
             <thead>
-              <tr><th scope="col">指标</th><th scope="col">基线</th><th scope="col">本地</th><th scope="col">结论</th></tr>
+              <tr>
+                <th scope="col">指标</th>
+                <th scope="col">基线</th>
+                <th scope="col">本地</th>
+                <th scope="col">结论</th>
+              </tr>
             </thead>
             <tbody id="comparison-metrics"></tbody>
           </table>
         </div>
-        <section id="warm-comparison" class="warm-comparison" aria-labelledby="warm-comparison-heading" hidden>
+        <section
+          id="warm-comparison"
+          class="warm-comparison"
+          aria-labelledby="warm-comparison-heading"
+          hidden
+        >
           <h3 id="warm-comparison-heading">热播放</h3>
           <span id="warm-comparison-note" class="technical-label">运行后显示</span>
           <p>单独汇总已挂载播放器的启动、播放与主线程指标；堆内存只显示趋势。</p>
           <div class="table-wrap comparison-table-wrap">
             <table class="comparison-metrics">
               <thead>
-                <tr><th scope="col">指标</th><th scope="col">基线</th><th scope="col">本地</th><th scope="col">结论</th></tr>
+                <tr>
+                  <th scope="col">指标</th>
+                  <th scope="col">基线</th>
+                  <th scope="col">本地</th>
+                  <th scope="col">结论</th>
+                </tr>
               </thead>
               <tbody id="warm-comparison-metrics"></tbody>
             </table>
@@ -173,15 +208,33 @@
           </div>
           <div class="batch-actions">
             <span data-testid="batch-status" data-state="idle">尚未运行</span>
-            <button type="button" class="button button-primary" data-testid="run-all" disabled>运行全量对比</button>
-            <button type="button" class="button button-danger" data-testid="cancel-all" disabled>取消</button>
-            <button type="button" class="button" data-testid="export-json" disabled>导出 JSON</button>
+            <button type="button" class="button button-primary" data-testid="run-all" disabled>
+              运行全量对比
+            </button>
+            <button type="button" class="button button-danger" data-testid="cancel-all" disabled>
+              取消
+            </button>
+            <button type="button" class="button" data-testid="export-json" disabled>
+              导出 JSON
+            </button>
           </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead class="batch-table-heading">
-              <tr><th>文件</th><th>正确性</th><th>基线解析</th><th>本地解析</th><th>基线挂载</th><th>本地挂载</th><th>基线实际 FPS</th><th>本地实际 FPS</th><th>基线跳帧</th><th>本地跳帧</th><th>主要差异/说明</th></tr>
+              <tr>
+                <th>文件</th>
+                <th>正确性</th>
+                <th>基线解析</th>
+                <th>本地解析</th>
+                <th>基线挂载</th>
+                <th>本地挂载</th>
+                <th>基线实际 FPS</th>
+                <th>本地实际 FPS</th>
+                <th>基线跳帧</th>
+                <th>本地跳帧</th>
+                <th>主要差异/说明</th>
+              </tr>
             </thead>
             <tbody id="batch-results"></tbody>
           </table>
@@ -194,7 +247,10 @@
           <h2 id="method-heading">这些数字代表什么</h2>
         </div>
         <div class="method-grid">
-          <p><strong>解析耗时</strong>包含 Blob 读取、解压、Protobuf 解码和 Worker 回传，不拆成无法可靠观测的内部阶段。</p>
+          <p>
+            <strong>解析耗时</strong>包含 Blob 读取、解压、Protobuf 解码和 Worker
+            回传，不拆成无法可靠观测的内部阶段。
+          </p>
           <p><strong>帧间隔</strong>衡量端到端播放节奏，不等同于渲染函数自身的纯执行时间。</p>
           <p><strong>内存</strong>只适合同一浏览器和设备的前后对比；不支持的接口明确显示不可用。</p>
         </div>

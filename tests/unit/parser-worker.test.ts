@@ -2,12 +2,20 @@ import { deflateSync } from 'node:zlib'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ParserWorkerRequest, ParserWorkerResponse, ParserWorkerResult, ParserWorkerScope } from '../../src/parser/protocol'
+import type {
+  ParserWorkerRequest,
+  ParserWorkerResponse,
+  ParserWorkerResult,
+  ParserWorkerScope,
+} from '../../src/parser/protocol'
 
 const concat = (...parts: Uint8Array[]): Uint8Array => {
   const result = new Uint8Array(parts.reduce((length, part) => length + part.length, 0))
   let offset = 0
-  for (const part of parts) { result.set(part, offset); offset += part.length }
+  for (const part of parts) {
+    result.set(part, offset)
+    offset += part.length
+  }
   return result
 }
 
@@ -28,8 +36,13 @@ const varint = (value: number): Uint8Array => {
 }
 
 const field = (id: number, wireType: number, value: Uint8Array): Uint8Array =>
-  concat(varint((id << 3) | wireType), wireType === 2 ? varint(value.length) : new Uint8Array(), value)
-const textField = (id: number, value: string): Uint8Array => field(id, 2, new TextEncoder().encode(value))
+  concat(
+    varint((id << 3) | wireType),
+    wireType === 2 ? varint(value.length) : new Uint8Array(),
+    value,
+  )
+const textField = (id: number, value: string): Uint8Array =>
+  field(id, 2, new TextEncoder().encode(value))
 const floatField = (id: number, value: number): Uint8Array => {
   const bytes = new Uint8Array(4)
   new DataView(bytes.buffer).setFloat32(0, value, true)
@@ -37,14 +50,20 @@ const floatField = (id: number, value: number): Uint8Array => {
 }
 const frameMessage = (): Uint8Array => floatField(1, 1)
 const spriteMessage = (): Uint8Array => concat(textField(1, 'image'), field(2, 2, frameMessage()))
-const paramsMessage = (): Uint8Array => concat(floatField(1, 100), floatField(2, 100), field(3, 0, varint(20)), field(4, 0, varint(1)))
+const paramsMessage = (): Uint8Array =>
+  concat(floatField(1, 100), floatField(2, 100), field(3, 0, varint(20)), field(4, 0, varint(1)))
 
-function movieBytes (images: Record<string, Uint8Array> = Object.create(null), targetLength?: number): Uint8Array {
+function movieBytes(
+  images: Record<string, Uint8Array> = Object.create(null),
+  targetLength?: number,
+): Uint8Array {
   const base = concat(
     textField(1, '2.0'),
     field(2, 2, paramsMessage()),
-    ...Object.keys(images).map(key => field(3, 2, concat(textField(1, key), field(2, 2, images[key])))),
-    field(4, 2, spriteMessage())
+    ...Object.keys(images).map((key) =>
+      field(3, 2, concat(textField(1, key), field(2, 2, images[key]))),
+    ),
+    field(4, 2, spriteMessage()),
   )
   if (targetLength === undefined) return base
   const tag = varint((99 << 3) | 2)
@@ -66,16 +85,25 @@ interface FetchResult {
 }
 
 let fetchResult: FetchResult
-let workerScope: ParserWorkerScope & { postMessage: ReturnType<typeof vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>> }
+let workerScope: ParserWorkerScope & {
+  postMessage: ReturnType<
+    typeof vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>
+  >
+}
 let fetchSignal: AbortSignal | undefined
 let cancelReader: ReturnType<typeof vi.fn<() => Promise<void>>>
 let releaseReader: ReturnType<typeof vi.fn<() => void>>
 
-function responseBody (bytes: Uint8Array, sizes: number[]): { getReader: () => {
-  read: () => Promise<{ done: boolean, value?: Uint8Array }>
-  cancel: () => Promise<void>
-  releaseLock: () => void
-} } {
+function responseBody(
+  bytes: Uint8Array,
+  sizes: number[],
+): {
+  getReader: () => {
+    read: () => Promise<{ done: boolean; value?: Uint8Array }>
+    cancel: () => Promise<void>
+    releaseLock: () => void
+  }
+} {
   let offset = 0
   let index = 0
   return {
@@ -88,12 +116,14 @@ function responseBody (bytes: Uint8Array, sizes: number[]): { getReader: () => {
         offset = end
         return { done: false, value }
       },
-      releaseLock: releaseReader
-    })
+      releaseLock: releaseReader,
+    }),
   }
 }
 
-async function runWorker (request: ParserWorkerRequest = { requestId: 7, url: 'https://example.test/file.svga' }): Promise<ParserWorkerResult> {
+async function runWorker(
+  request: ParserWorkerRequest = { requestId: 7, url: 'https://example.test/file.svga' },
+): Promise<ParserWorkerResult> {
   await import('../../src/parser/index')
   workerScope.postMessage.mockClear()
   await workerScope.onmessage?.({ data: request } as MessageEvent<ParserWorkerRequest>)
@@ -108,19 +138,30 @@ describe('parser worker', () => {
     fetchSignal = undefined
     cancelReader = vi.fn(async () => {})
     releaseReader = vi.fn()
-    workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
+    workerScope = {
+      postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>(),
+    }
     vi.stubGlobal('self', workerScope)
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, options: { signal: AbortSignal }) => {
-      fetchSignal = options.signal
-      const status = fetchResult.status ?? 200
-      return {
-        status,
-        statusText: String(status),
-        headers: { get: () => fetchResult.contentLength ?? null },
-        body: fetchResult.chunks ? responseBody(fetchResult.bytes, fetchResult.chunks) : undefined,
-        arrayBuffer: async () => fetchResult.bytes.buffer.slice(fetchResult.bytes.byteOffset, fetchResult.bytes.byteOffset + fetchResult.bytes.byteLength)
-      }
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, options: { signal: AbortSignal }) => {
+        fetchSignal = options.signal
+        const status = fetchResult.status ?? 200
+        return {
+          status,
+          statusText: String(status),
+          headers: { get: () => fetchResult.contentLength ?? null },
+          body: fetchResult.chunks
+            ? responseBody(fetchResult.bytes, fetchResult.chunks)
+            : undefined,
+          arrayBuffer: async () =>
+            fetchResult.bytes.buffer.slice(
+              fetchResult.bytes.byteOffset,
+              fetchResult.bytes.byteOffset + fetchResult.bytes.byteLength,
+            ),
+        }
+      }),
+    )
   })
 
   afterEach(() => vi.unstubAllGlobals())
@@ -138,8 +179,18 @@ describe('parser worker', () => {
     Object.defineProperty(images, 'constructor', { enumerable: true, value: Uint8Array.from([2]) })
     images.audio0 = Uint8Array.from([3])
     fetchResult.bytes = compressedMovie(images)
-    vi.stubGlobal('createImageBitmap', vi.fn(() => { throw Error('must not run') }))
-    vi.stubGlobal('btoa', vi.fn(() => { throw Error('must not run') }))
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(() => {
+        throw Error('must not run')
+      }),
+    )
+    vi.stubGlobal(
+      'btoa',
+      vi.fn(() => {
+        throw Error('must not run')
+      }),
+    )
 
     const response = await runWorker()
     const parsed = response.video?.images
@@ -152,10 +203,15 @@ describe('parser worker', () => {
   })
 
   it('transfers every unique image ArrayBuffer in real Worker responses', async () => {
-    fetchResult.bytes = compressedMovie({ first: Uint8Array.from([1]), second: Uint8Array.from([2]) })
+    fetchResult.bytes = compressedMovie({
+      first: Uint8Array.from([1]),
+      second: Uint8Array.from([2]),
+    })
     const response = await runWorker()
     const transfers = workerScope.postMessage.mock.calls[0][1] as ArrayBuffer[]
-    const buffers = new Set(Object.values(response.video?.images ?? {}).map(image => image.buffer))
+    const buffers = new Set(
+      Object.values(response.video?.images ?? {}).map((image) => image.buffer),
+    )
     expect(new Set(transfers)).toEqual(buffers)
     expect(transfers).toHaveLength(buffers.size)
   })
@@ -182,8 +238,16 @@ describe('parser worker', () => {
   })
 
   it('normalizes non-Error download failures', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw 'network failed' }))
-    expect((await runWorker()).error).toMatchObject({ name: 'Error', message: expect.stringContaining('network failed') })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw 'network failed'
+      }),
+    )
+    expect((await runWorker()).error).toMatchObject({
+      name: 'Error',
+      message: expect.stringContaining('network failed'),
+    })
   })
 
   it('rejects an empty compressed payload', async () => {
@@ -197,7 +261,9 @@ describe('parser worker', () => {
     expect((await runWorker()).video).toBeDefined()
 
     vi.resetModules()
-    workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
+    workerScope = {
+      postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>(),
+    }
     vi.stubGlobal('self', workerScope)
     fetchResult.bytes = concat(fetchResult.bytes, Uint8Array.of(0))
     expect((await runWorker()).error?.message).toContain('8 MiB')
@@ -208,13 +274,15 @@ describe('parser worker', () => {
     expect((await runWorker()).video).toBeDefined()
 
     vi.resetModules()
-    workerScope = { postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>() }
+    workerScope = {
+      postMessage: vi.fn<(response: ParserWorkerResponse, transfer?: Transferable[]) => void>(),
+    }
     vi.stubGlobal('self', workerScope)
     fetchResult.bytes = compressedMovie(undefined, 16 * 1024 * 1024 + 1)
     expect((await runWorker()).error?.message).toContain('16 MiB')
   })
 
-  it.each([199, 300, 304, 400, 500])('rejects non-2xx HTTP status %s', async status => {
+  it.each([199, 300, 304, 400, 500])('rejects non-2xx HTTP status %s', async (status) => {
     fetchResult.status = status
     expect((await runWorker()).error?.message).toContain(String(status))
   })
@@ -231,7 +299,10 @@ describe('parser worker', () => {
     ['shapes', field(4, 2, field(2, 2, repeat(field(5, 2, new Uint8Array()), 100_001)))],
     ['images', repeat(field(3, 2, new Uint8Array()), 513)],
     ['audio entries', repeat(field(5, 2, new Uint8Array()), 513)],
-    ['path bytes', field(4, 2, field(2, 2, field(5, 2, field(2, 2, textField(1, 'M'.repeat(1_048_577))))))]
+    [
+      'path bytes',
+      field(4, 2, field(2, 2, field(5, 2, field(2, 2, textField(1, 'M'.repeat(1_048_577)))))),
+    ],
   ])('rejects over-limit %s before the full generated decoder', async (_name, bytes) => {
     fetchResult.bytes = compressedWire(bytes)
     const { com } = await import('../../src/parser/svga.generated')
@@ -245,7 +316,7 @@ describe('parser worker', () => {
     ['a group wire type', Uint8Array.of((4 << 3) | 3)],
     ['a truncated length-delimited field', Uint8Array.of((4 << 3) | 2, 2, 0)],
     ['an unterminated varint', Uint8Array.of(0x80)],
-    ['field number zero', Uint8Array.of(0)]
+    ['field number zero', Uint8Array.of(0)],
   ])('rejects malformed wire data containing %s before decode', async (_name, bytes) => {
     fetchResult.bytes = compressedWire(bytes)
     const { com } = await import('../../src/parser/svga.generated')
@@ -256,46 +327,70 @@ describe('parser worker', () => {
   })
 
   it.each([
-    ['an overflowing varint', Uint8Array.of(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f)],
-    ['a ten-byte continuation varint', Uint8Array.of(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80)],
+    [
+      'an overflowing varint',
+      Uint8Array.of(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f),
+    ],
+    [
+      'a ten-byte continuation varint',
+      Uint8Array.of(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80),
+    ],
     ['a truncated fixed64 field', Uint8Array.of((99 << 3) | 1, 0)],
-    ['a truncated fixed32 field', Uint8Array.of((99 << 3) | 5, 0)]
+    ['a truncated fixed32 field', Uint8Array.of((99 << 3) | 5, 0)],
   ])('rejects malformed wire data containing %s', async (_name, bytes) => {
     fetchResult.bytes = compressedWire(bytes)
     expect((await runWorker()).error?.message).toContain('wire')
   })
 
   it('accepts unknown fixed-width wire fields before decoding the remaining movie', async () => {
-    fetchResult.bytes = compressedWire(concat(
-      field(99, 1, new Uint8Array(8)),
-      field(100, 5, new Uint8Array(4)),
-      movieBytes()
-    ))
+    fetchResult.bytes = compressedWire(
+      concat(field(99, 1, new Uint8Array(8)), field(100, 5, new Uint8Array(4)), movieBytes()),
+    )
     expect((await runWorker()).video?.size).toEqual({ width: 100, height: 100 })
   })
 
   it('aborts one direct in-flight request by ID', async () => {
     let signal: AbortSignal | undefined
-    vi.stubGlobal('fetch', vi.fn((_url: string, options: { signal: AbortSignal }) => {
-      signal = options.signal
-      return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, options: { signal: AbortSignal }) => {
+        signal = options.signal
+        return new Promise((_resolve, reject) =>
+          options.signal.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          ),
+        )
+      }),
+    )
     await import('../../src/parser/index')
-    const parsing = workerScope.onmessage?.({ data: { requestId: 12, url: 'https://example.test/file.svga' } } as MessageEvent<ParserWorkerRequest>)
+    const parsing = workerScope.onmessage?.({
+      data: { requestId: 12, url: 'https://example.test/file.svga' },
+    } as MessageEvent<ParserWorkerRequest>)
     await vi.waitFor(() => expect(signal).toBeDefined())
-    await workerScope.onmessage?.({ data: { requestId: 12, cancel: true } } as MessageEvent<ParserWorkerRequest>)
+    await workerScope.onmessage?.({
+      data: { requestId: 12, cancel: true },
+    } as MessageEvent<ParserWorkerRequest>)
     expect(signal?.aborted).toBe(true)
     await parsing
   })
 
   it('aborts direct in-flight work on the single cancel-all protocol message', async () => {
     let signal: AbortSignal | undefined
-    vi.stubGlobal('fetch', vi.fn((_url: string, options: { signal: AbortSignal }) => {
-      signal = options.signal
-      return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, options: { signal: AbortSignal }) => {
+        signal = options.signal
+        return new Promise((_resolve, reject) =>
+          options.signal.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          ),
+        )
+      }),
+    )
     await import('../../src/parser/index')
-    const parsing = workerScope.onmessage?.({ data: { requestId: 11, url: 'https://example.test/file.svga' } } as MessageEvent<ParserWorkerRequest>)
+    const parsing = workerScope.onmessage?.({
+      data: { requestId: 11, url: 'https://example.test/file.svga' },
+    } as MessageEvent<ParserWorkerRequest>)
     await vi.waitFor(() => expect(signal).toBeDefined())
     await workerScope.onmessage?.({ data: { cancel: true } } as MessageEvent<ParserWorkerRequest>)
     expect(signal?.aborted).toBe(true)

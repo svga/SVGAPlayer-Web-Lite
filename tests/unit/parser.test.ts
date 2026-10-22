@@ -4,12 +4,12 @@ import { Parser } from '../../src/parser'
 import type { Video } from '../../src/types'
 
 type Request =
-  | { requestId: number, url: string }
-  | { requestId: number, cancel: true }
+  | { requestId: number; url: string }
+  | { requestId: number; cancel: true }
   | { cancel: true }
 type Response =
   | { ready: true }
-  | { requestId: number, video?: Video, error?: { name: string, message: string } }
+  | { requestId: number; video?: Video; error?: { name: string; message: string } }
 
 class FakeWorker {
   static instances: FakeWorker[] = []
@@ -19,13 +19,21 @@ class FakeWorker {
   readonly requests: Request[] = []
   terminated = 0
 
-  constructor (public readonly blobUrl: string) { FakeWorker.instances.push(this) }
-  postMessage (request: Request): void { this.requests.push(request) }
-  terminate (): void { this.terminated++ }
-  respond (response: Response): void { this.onmessage?.({ data: response } as MessageEvent<Response>) }
+  constructor(public readonly blobUrl: string) {
+    FakeWorker.instances.push(this)
+  }
+  postMessage(request: Request): void {
+    this.requests.push(request)
+  }
+  terminate(): void {
+    this.terminated++
+  }
+  respond(response: Response): void {
+    this.onmessage?.({ data: response } as MessageEvent<Response>)
+  }
 }
 
-const nullMap = <T> (): Record<string, T> => Object.create(null) as Record<string, T>
+const nullMap = <T>(): Record<string, T> => Object.create(null) as Record<string, T>
 const video = (version: string): Video => ({
   version,
   size: { width: 1, height: 1 },
@@ -34,7 +42,7 @@ const video = (version: string): Video => ({
   images: nullMap(),
   replaceElements: nullMap(),
   dynamicElements: nullMap(),
-  sprites: []
+  sprites: [],
 })
 
 describe('Parser request lifecycle', () => {
@@ -45,7 +53,7 @@ describe('Parser request lifecycle', () => {
     revokeObjectURL.mockReset()
     vi.stubGlobal('Worker', FakeWorker)
     vi.stubGlobal('window', {
-      URL: { createObjectURL: vi.fn(() => 'blob:parser'), revokeObjectURL }
+      URL: { createObjectURL: vi.fn(() => 'blob:parser'), revokeObjectURL },
     })
     vi.stubGlobal('document', { baseURI: 'https://example.test/base/' })
   })
@@ -73,8 +81,17 @@ describe('Parser request lifecycle', () => {
 
   it('revokes the Blob URL and preserves a construction failure', async () => {
     const failure = Error('construction failed')
-    revokeObjectURL.mockImplementationOnce(() => { throw Error('cleanup failed') })
-    vi.stubGlobal('Worker', class { constructor () { throw failure } })
+    revokeObjectURL.mockImplementationOnce(() => {
+      throw Error('cleanup failed')
+    })
+    vi.stubGlobal(
+      'Worker',
+      class {
+        constructor() {
+          throw failure
+        }
+      },
+    )
     expect(() => new Parser()).toThrow(failure)
     expect(revokeObjectURL).toHaveBeenCalledOnce()
   })
@@ -82,29 +99,40 @@ describe('Parser request lifecycle', () => {
   it('continues teardown when Blob URL cleanup fails', () => {
     const parser = new Parser()
     const worker = FakeWorker.instances[0]
-    revokeObjectURL.mockImplementationOnce(() => { throw Error('cleanup failed') })
+    revokeObjectURL.mockImplementationOnce(() => {
+      throw Error('cleanup failed')
+    })
 
     expect(() => parser.destroy()).not.toThrow()
     expect(worker.terminated).toBe(1)
   })
 
-  it.each(['destroy', 'error', 'messageerror'] as const)('revokes an unready Worker URL on %s', eventName => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
+  it.each(['destroy', 'error', 'messageerror'] as const)(
+    'revokes an unready Worker URL on %s',
+    (eventName) => {
+      const parser = new Parser()
+      const worker = FakeWorker.instances[0]
 
-    if (eventName === 'destroy') parser.destroy()
-    else if (eventName === 'error') worker.onerror?.({ message: 'startup failed', preventDefault: vi.fn() } as unknown as ErrorEvent)
-    else worker.onmessageerror?.({} as MessageEvent)
+      if (eventName === 'destroy') parser.destroy()
+      else if (eventName === 'error')
+        worker.onerror?.({
+          message: 'startup failed',
+          preventDefault: vi.fn(),
+        } as unknown as ErrorEvent)
+      else worker.onmessageerror?.({} as MessageEvent)
 
-    expect(revokeObjectURL).toHaveBeenCalledOnce()
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:parser')
-    parser.destroy()
-    expect(revokeObjectURL).toHaveBeenCalledOnce()
-  })
+      expect(revokeObjectURL).toHaveBeenCalledOnce()
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:parser')
+      parser.destroy()
+      expect(revokeObjectURL).toHaveBeenCalledOnce()
+    },
+  )
 
   it('preserves a direct-mode construction failure without retaining state', async () => {
     const failure = Error('dynamic execution blocked')
-    vi.stubGlobal('Function', function () { throw failure })
+    vi.stubGlobal('Function', function () {
+      throw failure
+    })
     expect(() => new Parser({ isDisableWebWorker: true })).toThrow(failure)
   })
 
@@ -113,25 +141,29 @@ describe('Parser request lifecycle', () => {
     const worker = FakeWorker.instances[0]
     const pending = Array.from({ length: 6 }, (_, index) => parser.load(`/item-${index}.svga`))
 
-    expect(worker.requests.map(request => 'url' in request && request.url)).toEqual([
+    expect(worker.requests.map((request) => 'url' in request && request.url)).toEqual([
       'https://example.test/item-0.svga',
       'https://example.test/item-1.svga',
       'https://example.test/item-2.svga',
-      'https://example.test/item-3.svga'
+      'https://example.test/item-3.svga',
     ])
-    const posted = worker.requests as Array<{ requestId: number, url: string }>
+    const posted = worker.requests as Array<{ requestId: number; url: string }>
     worker.respond({ requestId: posted[2].requestId, video: video('2') })
     expect((worker.requests[4] as { url: string }).url).toBe('https://example.test/item-4.svga')
     worker.respond({ requestId: posted[0].requestId, video: video('0') })
     expect((worker.requests[5] as { url: string }).url).toBe('https://example.test/item-5.svga')
 
-    const active = worker.requests.filter(request => 'url' in request) as Array<{ requestId: number, url: string }>
+    const active = worker.requests.filter((request) => 'url' in request) as Array<{
+      requestId: number
+      url: string
+    }>
     for (const request of [...active].reverse()) {
       const index = Number(/item-(\d+)/.exec(request.url)?.[1])
-      if (index !== 0 && index !== 2) worker.respond({ requestId: request.requestId, video: video(String(index)) })
+      if (index !== 0 && index !== 2)
+        worker.respond({ requestId: request.requestId, video: video(String(index)) })
     }
     await expect(Promise.all(pending)).resolves.toEqual(
-      Array.from({ length: 6 }, (_, index) => expect.objectContaining({ version: String(index) }))
+      Array.from({ length: 6 }, (_, index) => expect.objectContaining({ version: String(index) })),
     )
   })
 
@@ -140,12 +172,17 @@ describe('Parser request lifecycle', () => {
     const parser = new Parser()
     const worker = FakeWorker.instances[0]
     const pending = Array.from({ length: 5 }, (_, index) => parser.load(`/item-${index}.svga`))
-    const observed = pending.map(promise => promise.catch(error => error as Error))
+    const observed = pending.map((promise) => promise.catch((error) => error as Error))
 
     await vi.advanceTimersByTimeAsync(30_000)
-    expect(worker.requests.filter(request => 'url' in request)).toHaveLength(5)
-    const fifth = worker.requests.filter(request => 'url' in request)[4] as { requestId: number, url: string }
-    expect(await Promise.all(observed.slice(0, 4))).toEqual(Array(4).fill(expect.objectContaining({ message: expect.stringContaining('timeout') })))
+    expect(worker.requests.filter((request) => 'url' in request)).toHaveLength(5)
+    const fifth = worker.requests.filter((request) => 'url' in request)[4] as {
+      requestId: number
+      url: string
+    }
+    expect(await Promise.all(observed.slice(0, 4))).toEqual(
+      Array(4).fill(expect.objectContaining({ message: expect.stringContaining('timeout') })),
+    )
 
     await vi.advanceTimersByTimeAsync(29_999)
     worker.respond({ requestId: fifth.requestId, video: video('last') })
@@ -159,24 +196,31 @@ describe('Parser request lifecycle', () => {
       parser.load('/relative.svga'),
       parser.load('http://example.test/a.svga'),
       parser.load('data:application/octet-stream;base64,AA=='),
-      parser.load('blob:https://example.test/id')
+      parser.load('blob:https://example.test/id'),
     ]
     const rejected = [
       parser.load('file:///tmp/a.svga'),
       parser.load('javascript:alert(1)'),
-      parser.load('ftp://example.test/a.svga')
+      parser.load('ftp://example.test/a.svga'),
     ]
-    await Promise.all(rejected.map(result => expect(result).rejects.toThrow('protocol')))
-    expect(worker.requests.filter(request => 'url' in request)).toHaveLength(4)
-    const first = worker.requests[0] as { requestId: number, url: string }
+    await Promise.all(rejected.map((result) => expect(result).rejects.toThrow('protocol')))
+    expect(worker.requests.filter((request) => 'url' in request)).toHaveLength(4)
+    const first = worker.requests[0] as { requestId: number; url: string }
     worker.respond({ requestId: first.requestId, video: video('first') })
     const duplicateOne = parser.load('/same.svga')
-    worker.respond({ requestId: (worker.requests[1] as { requestId: number }).requestId, video: video('http') })
+    worker.respond({
+      requestId: (worker.requests[1] as { requestId: number }).requestId,
+      video: video('http'),
+    })
     const duplicateTwo = parser.load('/same.svga')
 
-    const loads = worker.requests.filter(request => 'url' in request) as Array<{ requestId: number, url: string }>
-    expect(loads.filter(request => request.url.endsWith('/same.svga'))).toHaveLength(2)
-    for (const request of loads) worker.respond({ requestId: request.requestId, video: video(request.url) })
+    const loads = worker.requests.filter((request) => 'url' in request) as Array<{
+      requestId: number
+      url: string
+    }>
+    expect(loads.filter((request) => request.url.endsWith('/same.svga'))).toHaveLength(2)
+    for (const request of loads)
+      worker.respond({ requestId: request.requestId, video: video(request.url) })
     await Promise.all([...allowed, duplicateOne, duplicateTwo])
   })
 
@@ -184,7 +228,7 @@ describe('Parser request lifecycle', () => {
     const parser = new Parser()
     const worker = FakeWorker.instances[0]
     const pending = Array.from({ length: 6 }, (_, index) => parser.load(`/item-${index}.svga`))
-    const observed = pending.map(promise => expect(promise).rejects.toThrow('destroyed'))
+    const observed = pending.map((promise) => expect(promise).rejects.toThrow('destroyed'))
     parser.destroy()
     parser.destroy()
     await Promise.all(observed)
@@ -198,7 +242,10 @@ describe('Parser request lifecycle', () => {
 
     const failed = parser.load('/failed.svga')
     let request = worker.requests[worker.requests.length - 1] as { requestId: number }
-    worker.respond({ requestId: request.requestId, error: { name: 'DecodeError', message: 'broken' } })
+    worker.respond({
+      requestId: request.requestId,
+      error: { name: 'DecodeError', message: 'broken' },
+    })
     await expect(failed).rejects.toMatchObject({ name: 'DecodeError', message: 'broken' })
 
     const empty = parser.load('/empty.svga')
@@ -222,24 +269,32 @@ describe('Parser request lifecycle', () => {
 
   it('turns synchronous post failures into request rejections', async () => {
     const parser = new Parser()
-    const post = vi.spyOn(FakeWorker.prototype, 'postMessage').mockImplementationOnce(() => { throw 'post failed' })
+    const post = vi.spyOn(FakeWorker.prototype, 'postMessage').mockImplementationOnce(() => {
+      throw 'post failed'
+    })
     await expect(parser.load('/failed.svga')).rejects.toThrow('post failed')
     post.mockRestore()
   })
 
-  it.each(['error', 'messageerror'] as const)('releases pending work on Worker %s', async eventName => {
-    const parser = new Parser()
-    const worker = FakeWorker.instances[0]
-    const pending = parser.load('/pending.svga')
-    const preventDefault = vi.fn()
+  it.each(['error', 'messageerror'] as const)(
+    'releases pending work on Worker %s',
+    async (eventName) => {
+      const parser = new Parser()
+      const worker = FakeWorker.instances[0]
+      const pending = parser.load('/pending.svga')
+      const preventDefault = vi.fn()
 
-    if (eventName === 'error') worker.onerror?.({ message: '', preventDefault } as unknown as ErrorEvent)
-    else worker.onmessageerror?.({} as MessageEvent)
+      if (eventName === 'error')
+        worker.onerror?.({ message: '', preventDefault } as unknown as ErrorEvent)
+      else worker.onmessageerror?.({} as MessageEvent)
 
-    await expect(pending).rejects.toThrow(eventName === 'error' ? 'Worker failure' : 'Worker message failure')
-    expect(preventDefault).toHaveBeenCalledTimes(eventName === 'error' ? 1 : 0)
-    expect(worker.terminated).toBe(1)
-  })
+      await expect(pending).rejects.toThrow(
+        eventName === 'error' ? 'Worker failure' : 'Worker message failure',
+      )
+      expect(preventDefault).toHaveBeenCalledTimes(eventName === 'error' ? 1 : 0)
+      expect(worker.terminated).toBe(1)
+    },
+  )
 
   it('runs direct mode in a local self scope and cancels it exactly once on destroy', async () => {
     const ports: Array<{
@@ -248,9 +303,11 @@ describe('Parser request lifecycle', () => {
       requests: Request[]
     }> = []
     const FunctionMock = vi.fn(function () {
-      return (port: typeof ports[number]) => {
+      return (port: (typeof ports)[number]) => {
         port.requests = []
-        port.onmessage = event => { port.requests.push(event.data) }
+        port.onmessage = (event) => {
+          port.requests.push(event.data)
+        }
         ports.push(port)
       }
     })
@@ -258,7 +315,7 @@ describe('Parser request lifecycle', () => {
 
     const parser = new Parser({ isDisableWebWorker: true })
     const result = parser.load('/direct.svga')
-    const request = ports[0].requests[0] as { requestId: number, url: string }
+    const request = ports[0].requests[0] as { requestId: number; url: string }
     ports[0].postMessage({ requestId: request.requestId, video: video('direct') })
     await expect(result).resolves.toMatchObject({ version: 'direct' })
     const pending = parser.load('/pending.svga')
@@ -268,6 +325,8 @@ describe('Parser request lifecycle', () => {
     await observed
 
     expect(FunctionMock).toHaveBeenCalledWith('self', expect.any(String))
-    expect(ports[0].requests.filter(item => 'cancel' in item && !('requestId' in item))).toHaveLength(1)
+    expect(
+      ports[0].requests.filter((item) => 'cancel' in item && !('requestId' in item)),
+    ).toHaveLength(1)
   })
 })

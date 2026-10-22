@@ -6,7 +6,11 @@ export interface CommandOptions {
   cwd?: string
 }
 
-export type CommandRunner = (command: string, arguments_: string[], options?: CommandOptions) => Promise<string>
+export type CommandRunner = (
+  command: string,
+  arguments_: string[],
+  options?: CommandOptions,
+) => Promise<string>
 
 export interface RuntimeMetadata {
   version: string
@@ -30,6 +34,9 @@ export interface RuntimeDependencies {
   run?: CommandRunner
 }
 
-export function parseBaselineOptions (arguments_?: string[]): BaselineRequest
-export function prepareBaselineRuntime (request: BaselineRequest, dependencies?: RuntimeDependencies): Promise<RuntimeMetadata | null>
-export function createRuntimeMetadata (dependencies?: RuntimeDependencies): Promise<RuntimeMetadata>
+export function parseBaselineOptions(arguments_?: string[]): BaselineRequest
+export function prepareBaselineRuntime(
+  request: BaselineRequest,
+  dependencies?: RuntimeDependencies,
+): Promise<RuntimeMetadata | null>
+export function createRuntimeMetadata(dependencies?: RuntimeDependencies): Promise<RuntimeMetadata>

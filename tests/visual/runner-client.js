@@ -3,33 +3,57 @@ const cancelGraceMs = 250
 const startupTimeoutMs = 30_000
 const browserTimeoutMaxMs = 0x7fffffff
 
-function safeTimeout (value) {
+function safeTimeout(value) {
   return Math.min(browserTimeoutMaxMs, Math.max(1, Math.floor(value)))
 }
 
-function createRunId () {
+function createRunId() {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   const bytes = new Uint32Array(4)
   crypto.getRandomValues(bytes)
-  return Array.from(bytes, value => value.toString(16)).join('-')
+  return Array.from(bytes, (value) => value.toString(16)).join('-')
 }
 
-export function runnerTimeoutFor (options = {}) {
-  if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) return safeTimeout(options.timeoutMs)
+export function runnerTimeoutFor(options = {}) {
+  if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0)
+    return safeTimeout(options.timeoutMs)
   if (!Number.isFinite(options.maxPlaybackMs) || options.maxPlaybackMs < 0) return startupTimeoutMs
-  return safeTimeout(startupTimeoutMs + options.maxPlaybackMs * (options.includeWarm === true ? 2 : 1))
+  return safeTimeout(
+    startupTimeoutMs + options.maxPlaybackMs * (options.includeWarm === true ? 2 : 1),
+  )
 }
 
-export function createIsolatedRunner (runtime, { target = document.body, onEvent = () => {}, visible = false } = {}) {
+export function createIsolatedRunner(
+  runtime,
+  { target = document.body, onEvent = () => {}, visible = false } = {},
+) {
   if (runtime !== 'local' && runtime !== 'baseline') throw Error('runtime 必须是 local 或 baseline')
   const runId = createRunId()
   const origin = location.origin
   const frame = document.createElement('iframe')
   frame.title = `SVGA ${runtime} 隔离运行器`
   frame.setAttribute('aria-hidden', visible ? 'false' : 'true')
-  Object.assign(frame.style, visible
-    ? { border: '0', height: '100%', inset: '0', pointerEvents: 'none', position: 'absolute', width: '100%' }
-    : { border: '0', height: '1px', left: '0', pointerEvents: 'none', position: 'absolute', top: '0', width: '1px' })
+  Object.assign(
+    frame.style,
+    visible
+      ? {
+          border: '0',
+          height: '100%',
+          inset: '0',
+          pointerEvents: 'none',
+          position: 'absolute',
+          width: '100%',
+        }
+      : {
+          border: '0',
+          height: '1px',
+          left: '0',
+          pointerEvents: 'none',
+          position: 'absolute',
+          top: '0',
+          width: '1px',
+        },
+  )
   frame.src = `/runner.html?runtime=${encodeURIComponent(runtime)}&runId=${encodeURIComponent(runId)}`
   let disposed = false
   let readyState = false
@@ -65,7 +89,7 @@ export function createIsolatedRunner (runtime, { target = document.body, onEvent
     if (error) rejectReady(error)
     else resolveReady(value)
   }
-  const settleRun = message => {
+  const settleRun = (message) => {
     if (runSettled || !resolveRun) return
     runSettled = true
     clearTimers()
@@ -91,12 +115,16 @@ export function createIsolatedRunner (runtime, { target = document.body, onEvent
     cancelTimer = window.setTimeout(forceDisposeAfterCancel, cancelGraceMs)
     return completion
   }
-  const receive = event => {
+  const receive = (event) => {
     const message = event.data
     if (
-      disposed || event.origin !== origin || event.source !== frame.contentWindow ||
-      message?.protocol !== protocol || message.runId !== runId
-    ) return
+      disposed ||
+      event.origin !== origin ||
+      event.source !== frame.contentWindow ||
+      message?.protocol !== protocol ||
+      message.runId !== runId
+    )
+      return
     if (message.event === 'ready') {
       readyState = true
       settleReady(message)
@@ -119,23 +147,37 @@ export function createIsolatedRunner (runtime, { target = document.body, onEvent
   return {
     frame,
     ready,
-    run ({ buffer, fixture, options = {} }) {
+    run({ buffer, fixture, options = {} }) {
       if (disposed) throw Error('隔离运行器已释放')
       if (!readyState) throw Error('隔离运行器尚未就绪')
       if (!(buffer instanceof ArrayBuffer)) throw Error('buffer 必须是 ArrayBuffer')
       if (coldRunStarted) throw Error('每个隔离运行器只能执行一次冷启动测量')
       coldRunStarted = true
       const transferred = buffer.slice(0)
-      completion = new Promise(resolve => { resolveRun = resolve })
+      completion = new Promise((resolve) => {
+        resolveRun = resolve
+      })
       runTimer = window.setTimeout(cancel, runnerTimeoutFor(options))
       try {
-        frame.contentWindow?.postMessage({ protocol, event: 'run', runId, buffer: transferred, fixture, options }, origin, [transferred])
+        frame.contentWindow?.postMessage(
+          { protocol, event: 'run', runId, buffer: transferred, fixture, options },
+          origin,
+          [transferred],
+        )
       } catch (error) {
-        settleRun({ protocol, event: 'error', runId, error: { stage: 'protocol', message: error instanceof Error ? error.message : String(error) } })
+        settleRun({
+          protocol,
+          event: 'error',
+          runId,
+          error: {
+            stage: 'protocol',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })
       }
       return completion
     },
     cancel,
-    dispose
+    dispose,
   }
 }

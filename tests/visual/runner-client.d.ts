@@ -12,4 +12,7 @@ export interface IsolatedRunnerOptions {
   onEvent?: (event: unknown) => void
 }
 
-export function createIsolatedRunner(runtime: 'baseline' | 'local', options?: IsolatedRunnerOptions): unknown
+export function createIsolatedRunner(
+  runtime: 'baseline' | 'local',
+  options?: IsolatedRunnerOptions,
+): unknown

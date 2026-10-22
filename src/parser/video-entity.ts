@@ -9,7 +9,7 @@ import {
   LINE_JOIN_CODE,
   type RGBA,
   SHAPE_TYPE,
-  SHAPE_TYPE_CODE
+  SHAPE_TYPE_CODE,
 } from '../types'
 
 const rgb = (value: number): number => {
@@ -22,23 +22,36 @@ const alpha = (value: number): number => {
   return Math.min(1, Math.max(0, value))
 }
 
-const color = (value: { r: number, g: number, b: number, a: number }): RGBA<number, number, number, number> =>
-  (`rgba(${rgb(value.r)}, ${rgb(value.g)}, ${rgb(value.b)}, ${alpha(value.a)})`) as RGBA<number, number, number, number>
+const color = (value: {
+  r: number
+  g: number
+  b: number
+  a: number
+}): RGBA<number, number, number, number> =>
+  `rgba(${rgb(value.r)}, ${rgb(value.g)}, ${rgb(value.b)}, ${alpha(value.a)})` as RGBA<
+    number,
+    number,
+    number,
+    number
+  >
 
-export function createVideo (movie: Movie, images: RawImages = Object.create(null) as RawImages): Video {
+export function createVideo(
+  movie: Movie,
+  images: RawImages = Object.create(null) as RawImages,
+): Video {
   const sprites: VideoSprite[] = []
 
-  movie.sprites.forEach(movieSprite => {
+  movie.sprites.forEach((movieSprite) => {
     const frames: VideoFrame[] = []
     const sprite: VideoSprite = { imageKey: movieSprite.imageKey, frames }
     let lastShapes: VideoFrameShapes | undefined
 
-    movieSprite.frames.forEach(movieFrame => {
+    movieSprite.frames.forEach((movieFrame) => {
       const layout = {
         x: movieFrame.layout?.x ?? 0,
         y: movieFrame.layout?.y ?? 0,
         width: movieFrame.layout?.width ?? 0,
-        height: movieFrame.layout?.height ?? 0
+        height: movieFrame.layout?.height ?? 0,
       }
       const transform = {
         a: movieFrame.transform?.a ?? 1,
@@ -46,16 +59,17 @@ export function createVideo (movie: Movie, images: RawImages = Object.create(nul
         c: movieFrame.transform?.c ?? 0,
         d: movieFrame.transform?.d ?? 1,
         tx: movieFrame.transform?.tx ?? 0,
-        ty: movieFrame.transform?.ty ?? 0
+        ty: movieFrame.transform?.ty ?? 0,
       }
       let shapes: VideoFrameShapes = []
 
-      movieFrame.shapes.forEach(movieShape => {
+      movieFrame.shapes.forEach((movieShape) => {
         const movieStyles = movieShape.styles
         if (movieStyles === null || movieStyles === undefined) return
 
         const lineDash: number[] = []
-        if (movieStyles.lineDashI !== null && movieStyles.lineDashI > 0) lineDash.push(movieStyles.lineDashI)
+        if (movieStyles.lineDashI !== null && movieStyles.lineDashI > 0)
+          lineDash.push(movieStyles.lineDashI)
         if (movieStyles.lineDashII !== null && movieStyles.lineDashII > 0) {
           if (lineDash.length < 1) lineDash.push(0)
           lineDash.push(movieStyles.lineDashII)
@@ -77,12 +91,18 @@ export function createVideo (movie: Movie, images: RawImages = Object.create(nul
 
         const styles = {
           lineDash,
-          fill: movieStyles.fill === null || movieStyles.fill === undefined ? null : color(movieStyles.fill),
-          stroke: movieStyles.stroke === null || movieStyles.stroke === undefined ? null : color(movieStyles.stroke),
+          fill:
+            movieStyles.fill === null || movieStyles.fill === undefined
+              ? null
+              : color(movieStyles.fill),
+          stroke:
+            movieStyles.stroke === null || movieStyles.stroke === undefined
+              ? null
+              : color(movieStyles.stroke),
           lineCap,
           lineJoin,
           strokeWidth: movieStyles.strokeWidth,
-          miterLimit: movieStyles.miterLimit
+          miterLimit: movieStyles.miterLimit,
         }
         const shapeTransform = {
           a: movieShape.transform?.a ?? 1,
@@ -90,12 +110,25 @@ export function createVideo (movie: Movie, images: RawImages = Object.create(nul
           c: movieShape.transform?.c ?? 0,
           d: movieShape.transform?.d ?? 1,
           tx: movieShape.transform?.tx ?? 0,
-          ty: movieShape.transform?.ty ?? 0
+          ty: movieShape.transform?.ty ?? 0,
         }
 
-        if (movieShape.type === SHAPE_TYPE_CODE.SHAPE && movieShape.shape !== null && movieShape.shape !== undefined) {
-          shapes.push({ type: SHAPE_TYPE.SHAPE, path: { d: movieShape.shape.d }, styles, transform: shapeTransform })
-        } else if (movieShape.type === SHAPE_TYPE_CODE.RECT && movieShape.rect !== null && movieShape.rect !== undefined) {
+        if (
+          movieShape.type === SHAPE_TYPE_CODE.SHAPE &&
+          movieShape.shape !== null &&
+          movieShape.shape !== undefined
+        ) {
+          shapes.push({
+            type: SHAPE_TYPE.SHAPE,
+            path: { d: movieShape.shape.d },
+            styles,
+            transform: shapeTransform,
+          })
+        } else if (
+          movieShape.type === SHAPE_TYPE_CODE.RECT &&
+          movieShape.rect !== null &&
+          movieShape.rect !== undefined
+        ) {
           shapes.push({
             type: SHAPE_TYPE.RECT,
             path: {
@@ -103,27 +136,32 @@ export function createVideo (movie: Movie, images: RawImages = Object.create(nul
               y: movieShape.rect.y,
               width: movieShape.rect.width,
               height: movieShape.rect.height,
-              cornerRadius: movieShape.rect.cornerRadius
+              cornerRadius: movieShape.rect.cornerRadius,
             },
             styles,
-            transform: shapeTransform
+            transform: shapeTransform,
           })
-        } else if (movieShape.type === SHAPE_TYPE_CODE.ELLIPSE && movieShape.ellipse !== null && movieShape.ellipse !== undefined) {
+        } else if (
+          movieShape.type === SHAPE_TYPE_CODE.ELLIPSE &&
+          movieShape.ellipse !== null &&
+          movieShape.ellipse !== undefined
+        ) {
           shapes.push({
             type: SHAPE_TYPE.ELLIPSE,
             path: {
               x: movieShape.ellipse.x,
               y: movieShape.ellipse.y,
               radiusX: movieShape.ellipse.radiusX,
-              radiusY: movieShape.ellipse.radiusY
+              radiusY: movieShape.ellipse.radiusY,
             },
             styles,
-            transform: shapeTransform
+            transform: shapeTransform,
           })
         }
       })
 
-      if (movieFrame.shapes[0]?.type === SHAPE_TYPE_CODE.KEEP && lastShapes !== undefined) shapes = lastShapes
+      if (movieFrame.shapes[0]?.type === SHAPE_TYPE_CODE.KEEP && lastShapes !== undefined)
+        shapes = lastShapes
       else lastShapes = shapes
 
       frames.push({
@@ -131,7 +169,7 @@ export function createVideo (movie: Movie, images: RawImages = Object.create(nul
         layout,
         transform,
         clipPath: movieFrame.clipPath ?? '',
-        shapes
+        shapes,
       })
     })
     sprites.push(sprite)
@@ -145,6 +183,6 @@ export function createVideo (movie: Movie, images: RawImages = Object.create(nul
     images,
     replaceElements: Object.create(null) as Video['replaceElements'],
     dynamicElements: Object.create(null) as Video['dynamicElements'],
-    sprites
+    sprites,
   }
 }

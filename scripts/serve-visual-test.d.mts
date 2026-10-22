@@ -3,4 +3,7 @@ export interface RunnerRuntimeMetadata {
   source: 'local' | 'npm'
 }
 
-export function runnerSecurityHeadersFor(runtime: string | null, baseline: RunnerRuntimeMetadata | null | undefined): Record<string, string>
+export function runnerSecurityHeadersFor(
+  runtime: string | null,
+  baseline: RunnerRuntimeMetadata | null | undefined,
+): Record<string, string>

@@ -4,7 +4,11 @@ import { readFile, readdir } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Video } from '../../src/types'
-import type { ParserWorkerRequest, ParserWorkerResult, ParserWorkerScope } from '../../src/parser/protocol'
+import type {
+  ParserWorkerRequest,
+  ParserWorkerResult,
+  ParserWorkerScope,
+} from '../../src/parser/protocol'
 
 const fixtureDir = 'tests/fixtures/svga'
 const fixtureBlobs = new Map([
@@ -24,14 +28,11 @@ const fixtureBlobs = new Map([
   ['shape-path-undefined.svga', 'c389529031bb8f59bc01c05fe84992681153ce31'],
   ['show.svga', '5b4254ed16cb30a3744fad0b5e86bce53459b805'],
   ['soundwave.svga', '4f8e3e9600d3c90831204a4c274d3f2a0f78f1c5'],
-  ['story.svga', '22f71c2df00f06c4d60d418f57834268bf2c59ef']
+  ['story.svga', '22f71c2df00f06c4d60d418f57834268bf2c59ef'],
 ])
 
-function gitBlobHash (bytes: Buffer): string {
-  return createHash('sha1')
-    .update(`blob ${bytes.length}\0`)
-    .update(bytes)
-    .digest('hex')
+function gitBlobHash(bytes: Buffer): string {
+  return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')
 }
 
 describe('production SVGA fixtures', () => {
@@ -42,7 +43,7 @@ describe('production SVGA fixtures', () => {
 
   it('retains the exact business corpus and parses every file', async () => {
     const names = (await readdir(fixtureDir).catch(() => []))
-      .filter(name => name.endsWith('.svga'))
+      .filter((name) => name.endsWith('.svga'))
       .sort()
     const expectedNames = [...fixtureBlobs.keys()].sort()
 
@@ -63,12 +64,14 @@ describe('production SVGA fixtures', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
-        arrayBuffer: async () => buffer
+        arrayBuffer: async () => buffer,
       }
     })
     const responses: ParserWorkerResult[] = []
     const scope: ParserWorkerScope = {
-      postMessage: response => { if (!('ready' in response)) responses.push(response) }
+      postMessage: (response) => {
+        if (!('ready' in response)) responses.push(response)
+      },
     }
     vi.stubGlobal('self', scope)
 
@@ -77,7 +80,7 @@ describe('production SVGA fixtures', () => {
     for (const [index, name] of names.entries()) {
       responses.length = 0
       await scope.onmessage?.({
-        data: { requestId: index, url: `fixture:${name}` }
+        data: { requestId: index, url: `fixture:${name}` },
       } as MessageEvent<ParserWorkerRequest>)
       const response = responses[0]
       if (name === 'show.svga') {
@@ -86,7 +89,7 @@ describe('production SVGA fixtures', () => {
         expect(response.error, name).toBeUndefined()
         expect(response.video as Video, name).toMatchObject({
           size: { width: expect.any(Number), height: expect.any(Number) },
-          frames: expect.any(Number)
+          frames: expect.any(Number),
         })
       }
     }
