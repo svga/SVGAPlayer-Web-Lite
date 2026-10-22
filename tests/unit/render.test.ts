@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import render from '../../src/player/render'
+import render, { __svgaResetRenderSupport } from '../../src/player/render'
 import { SHAPE_TYPE } from '../../src/types'
 import type {
   BitmapsCache,
@@ -159,6 +159,7 @@ function pathForSource(source: string): RecordingPath2D {
 }
 
 beforeEach(() => {
+  __svgaResetRenderSupport()
   RecordingPath2D.instances.length = 0
   vi.stubGlobal('Path2D', RecordingPath2D)
   vi.stubGlobal('CSS', {
@@ -364,6 +365,17 @@ describe('default renderer lifecycle and preserved drawing behavior', () => {
       candidate.operations.some((operation) => operation.name === 'arcTo'),
     )
     expect(path?.operations[0]).toEqual({ name: 'moveTo', args: [2, 0] })
+  })
+
+  it('resets a previous dash pattern for a shape without one', () => {
+    const context = draw([
+      frame([
+        pathShape('M0 0 L1 1', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)', lineDash: [2, 3] }),
+        pathShape('M0 0 L2 2', { ...emptyStyles, fill: 'rgba(1, 2, 3, 1)' }),
+      ]),
+    ])
+
+    expect(argsFor(context, 'setLineDash')).toEqual([[2, 3], []])
   })
 
   it('ignores a sprite whose requested frame is missing', () => {

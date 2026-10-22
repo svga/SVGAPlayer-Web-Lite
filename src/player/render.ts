@@ -17,6 +17,13 @@ function ownValue<T>(values: { [key: string]: T }, key: string): T | undefined {
   return {}.hasOwnProperty.call(values, key) ? values[key] : undefined
 }
 
+let clipSupport: boolean | undefined
+
+/** Test seam: clears the cached CSS path capability. */
+export function __svgaResetRenderSupport(): void {
+  clipSupport = undefined
+}
+
 function numberOrZero(value: number | null | undefined): number {
   return value == null ? 0 : value
 }
@@ -133,7 +140,7 @@ function resetShapeStyles(
   if (styles.lineCap) context.lineCap = styles.lineCap
   if (styles.lineJoin) context.lineJoin = styles.lineJoin
   context.fillStyle = styles.fill || 'transparent'
-  if (styles.lineDash) context.setLineDash(styles.lineDash)
+  context.setLineDash(styles.lineDash || [])
 }
 
 function drawStyled(
@@ -184,13 +191,11 @@ function clipPath(
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   d: string,
 ): boolean {
+  if (clipSupport === undefined)
+    clipSupport = typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+  if (!clipSupport) return false
   const normalized = d.replace(/[ \t\r\n]+/g, ' ')
-  if (
-    typeof CSS === 'undefined' ||
-    typeof CSS.supports !== 'function' ||
-    !CSS.supports('offset-path', 'path(' + JSON.stringify(normalized) + ')')
-  )
-    return false
+  if (!CSS.supports('offset-path', 'path(' + JSON.stringify(normalized) + ')')) return false
   const path = svgPath(normalized)
   if (!path) return false
   context.clip(path)
