@@ -1,3 +1,9 @@
+import {
+  MAX_DECODED_IMAGE_PIXELS,
+  MAX_FRAME_CACHE_BYTES,
+  MAX_TOTAL_DECODED_PIXELS,
+} from '../internal/limits'
+import { createNullMap } from '../internal/maps'
 import { PlayerConfigOptions, Video, BitmapsCache, PlayerConfig, Drawable } from '../types'
 import { Animator } from './animator'
 import render from './render'
@@ -25,7 +31,6 @@ interface PlayerRuntime {
 }
 
 const playerRuntimes = new WeakMap<Player, PlayerRuntime>()
-const cacheLimit = 67108864
 
 function activeRuntime(player: Player): PlayerRuntime {
   const runtime = playerRuntimes.get(player)
@@ -56,11 +61,11 @@ function storeFrameCache(
   bitmap: ImageBitmap,
 ): void {
   const bytes = bitmap.width * bitmap.height * 4
-  if (bytes > cacheLimit) {
+  if (bytes > MAX_FRAME_CACHE_BYTES) {
     closeBitmap(bitmap)
     return
   }
-  while (runtime.__svgaBytes + bytes > cacheLimit) {
+  while (runtime.__svgaBytes + bytes > MAX_FRAME_CACHE_BYTES) {
     const oldestKey = runtime.__svgaOrder.keys().next().value as number
     const oldest = cache[oldestKey] as ImageBitmap
     runtime.__svgaBytes -= oldest.width * oldest.height * 4
@@ -94,7 +99,7 @@ function validateBitmap(bitmap: { width: number; height: number }, key: string):
     !Number.isFinite(bitmap.height) ||
     bitmap.width <= 0 ||
     bitmap.height <= 0 ||
-    bitmap.width * bitmap.height > 16_777_216
+    bitmap.width * bitmap.height > MAX_DECODED_IMAGE_PIXELS
   )
     throw Error('image:' + key)
 }
@@ -243,7 +248,7 @@ function releasePlayer(player: Player): void {
   internal.__svgaVisible = true
   clearFrameCache(runtime, internal.__svgaFrames)
   releaseImages(internal.__svgaOwned)
-  internal.__svgaImages = Object.create(null) as BitmapsCache
+  internal.__svgaImages = createNullMap<Drawable>()
   player.videoEntity = undefined
   player.currentFrame = 0
   player.totalFrames = 0
@@ -289,9 +294,9 @@ export class Player {
 
   private __svgaVisible = true
   private __svgaObserver: IntersectionObserver | null = null
-  private __svgaImages: BitmapsCache = Object.create(null) as BitmapsCache
+  private __svgaImages: BitmapsCache = createNullMap<Drawable>()
   private __svgaOwned: ImageRelease[] = []
-  private readonly __svgaFrames: FrameCache = Object.create(null) as FrameCache
+  private readonly __svgaFrames: FrameCache = createNullMap<ImageBitmap | undefined>()
 
   public get config(): Readonly<PlayerConfig> {
     return Object.freeze({ ...this.__svgaConfig })
@@ -409,7 +414,7 @@ export class Player {
     runtime.__svgaTimeline = 0
     clearFrameCache(runtime, this.__svgaFrames)
     releaseImages(this.__svgaOwned)
-    const bitmapsCache = (this.__svgaImages = Object.create(null) as BitmapsCache)
+    const bitmapsCache = (this.__svgaImages = createNullMap<Drawable>())
     const imageReleases: ImageRelease[] = []
     this.__svgaOwned = imageReleases
     this.videoEntity = undefined
@@ -438,12 +443,14 @@ export class Player {
         }
         bitmapsCache[key] = resource
         pixels += resource.width * resource.height
-        if (pixels > 33_554_432 || (pixels === 33_554_432 && index < images.length - 1))
+        if (
+          pixels > MAX_TOTAL_DECODED_PIXELS ||
+          (pixels === MAX_TOTAL_DECODED_PIXELS && index < images.length - 1)
+        )
           throw Error('image pixels')
       } catch (error) {
         releaseImages(imageReleases)
-        if (this.__svgaImages === bitmapsCache)
-          this.__svgaImages = Object.create(null) as BitmapsCache
+        if (this.__svgaImages === bitmapsCache) this.__svgaImages = createNullMap<Drawable>()
         throw error
       }
     }
@@ -462,7 +469,7 @@ export class Player {
       validateConfig(this.__svgaConfig, totalFrames)
     } catch (error) {
       releaseImages(imageReleases)
-      this.__svgaImages = Object.create(null) as BitmapsCache
+      this.__svgaImages = createNullMap<Drawable>()
       throw error
     }
     this.videoEntity = videoEntity

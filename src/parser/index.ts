@@ -1,14 +1,17 @@
 import { Unzlib } from 'fflate'
 
+import {
+  DOWNLOAD_CHUNK_BYTES,
+  MAX_COMPRESSED_BYTES,
+  MAX_DECOMPRESSED_BYTES,
+} from '../internal/limits'
+import { createNullMap } from '../internal/maps'
 import type { Movie, RawImages, Video } from '../types'
 import { validateVideo } from '../validate-video'
 import { com } from './svga.generated'
 import type { ParserWorkerRequest, ParserWorkerResult, ParserWorkerScope } from './protocol'
 import { createVideo } from './video-entity'
 import { scanMovieWire } from './wire-scan'
-
-const maxCompressedBytes = 8 * 1024 * 1024
-const maxDecompressedBytes = 16 * 1024 * 1024
 
 async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(url, { signal })
@@ -25,7 +28,7 @@ async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
         if (result.done) break
         const chunk = result.value
         length += chunk.byteLength
-        if (length > maxCompressedBytes) throw Error('Compressed SVGA exceeds 8 MiB')
+        if (length > MAX_COMPRESSED_BYTES) throw Error('Compressed SVGA exceeds 8 MiB')
         chunks.push(chunk)
       }
     } catch (error) {
@@ -39,7 +42,7 @@ async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
   } else {
     const chunk = new Uint8Array(await response.arrayBuffer())
     length = chunk.byteLength
-    if (length > maxCompressedBytes) throw Error('Compressed SVGA exceeds 8 MiB')
+    if (length > MAX_COMPRESSED_BYTES) throw Error('Compressed SVGA exceeds 8 MiB')
     chunks.push(chunk)
   }
 
@@ -57,10 +60,10 @@ function inflate(source: Uint8Array): Uint8Array {
   let length = 0
   const stream = new Unzlib((chunk) => {
     length += chunk.byteLength
-    if (length > maxDecompressedBytes) throw Error('Decompressed SVGA exceeds 16 MiB')
+    if (length > MAX_DECOMPRESSED_BYTES) throw Error('Decompressed SVGA exceeds 16 MiB')
     chunks.push(chunk.slice())
   })
-  const chunkSize = 64 * 1024
+  const chunkSize = DOWNLOAD_CHUNK_BYTES
   if (source.length === 0) stream.push(source, true)
   for (let offset = 0; offset < source.length; offset += chunkSize) {
     const end = Math.min(source.length, offset + chunkSize)
@@ -80,7 +83,7 @@ function imageEntries(images: Movie['images']): Array<[string, Uint8Array]> {
 }
 
 function imageMap(movie: Movie): RawImages {
-  const images = Object.create(null) as RawImages
+  const images = createNullMap<Uint8Array>()
   for (const [key, value] of imageEntries(movie.images)) {
     if (!key.startsWith('audio')) images[key] = value
   }

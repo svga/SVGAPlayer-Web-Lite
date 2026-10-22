@@ -1,3 +1,12 @@
+import {
+  MAX_AUDIOS,
+  MAX_IMAGES,
+  MAX_PATH_CHARACTERS,
+  MAX_SHAPES,
+  MAX_SPRITES,
+  MAX_SPRITE_FRAMES,
+} from '../internal/limits'
+
 const invalid = (): never => {
   throw Error('Invalid SVGA protobuf wire data')
 }
@@ -53,22 +62,22 @@ export function scanMovieWire(source: Uint8Array): void {
         const next = offset + length
         let nested = -1
         if (kind === 0) {
-          if (field === 3) bounded(++images, 512)
+          if (field === 3) bounded(++images, MAX_IMAGES)
           else if (field === 4) {
-            bounded(++sprites, 2_000)
+            bounded(++sprites, MAX_SPRITES)
             nested = 1
-          } else if (field === 5) bounded(++audios, 512)
+          } else if (field === 5) bounded(++audios, MAX_AUDIOS)
         } else if (kind === 1 && field === 2) {
-          bounded(++frames, 500_000)
+          bounded(++frames, MAX_SPRITE_FRAMES)
           nested = 2
         } else if (kind === 2) {
-          if (field === 4) bounded((paths += length), 1_048_576)
+          if (field === 4) bounded((paths += length), MAX_PATH_CHARACTERS)
           else if (field === 5) {
-            bounded(++shapes, 100_000)
+            bounded(++shapes, MAX_SHAPES)
             nested = 3
           }
         } else if (kind === 3 && field === 2) nested = 4
-        else if (kind === 4 && field === 1) bounded((paths += length), 1_048_576)
+        else if (kind === 4 && field === 1) bounded((paths += length), MAX_PATH_CHARACTERS)
         if (nested < 0) offset = next
         else {
           scan(next, nested)

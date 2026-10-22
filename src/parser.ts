@@ -1,3 +1,5 @@
+import { MAX_IN_FLIGHT, REQUEST_TIMEOUT_MILLISECONDS } from './internal/limits'
+import { copyNullMap } from './internal/maps'
 import type { ParserConfigOptions, Video } from './types'
 import type {
   ParserWorkerRequest,
@@ -7,8 +9,6 @@ import type {
 import { validateVideo } from './validate-video'
 
 const INLINE_WORKER_FLAG = '#PARSER_V2_INLINE_WROKER#'
-const maxInFlight = 4
-const timeoutMilliseconds = 30_000
 
 interface PendingLoad {
   requestId: number
@@ -43,12 +43,6 @@ function send(state: ParserState, request: ParserWorkerRequest): void {
   }
 }
 
-function copyNullMap<T>(source: Record<string, T>): Record<string, T> {
-  const target = Object.create(null) as Record<string, T>
-  for (const key of Object.keys(source)) target[key] = source[key]
-  return target
-}
-
 function normalizeVideo(video: Video): Video {
   video.images = copyNullMap(video.images)
   video.replaceElements = copyNullMap(video.replaceElements)
@@ -67,7 +61,7 @@ function revokeWorkerUrl(state: ParserState): void {
 
 function drain(parser: Parser, state: ParserState): void {
   if (states.get(parser) !== state) return
-  while (state.inFlight < maxInFlight && state.queue.length > 0) {
+  while (state.inFlight < MAX_IN_FLIGHT && state.queue.length > 0) {
     const request = state.queue.shift() as PendingLoad
     state.pending.set(request.requestId, request)
     state.inFlight++
@@ -80,7 +74,7 @@ function drain(parser: Parser, state: ParserState): void {
         send(state, { requestId: request.requestId, cancel: true })
       } catch {}
       drain(parser, state)
-    }, timeoutMilliseconds)
+    }, REQUEST_TIMEOUT_MILLISECONDS)
     try {
       send(state, { requestId: request.requestId, url: request.url })
     } catch (error) {

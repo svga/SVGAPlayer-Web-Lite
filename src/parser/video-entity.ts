@@ -1,5 +1,7 @@
+import { createNullMap } from '../internal/maps'
 import {
   type Movie,
+  type PlayerElement,
   type RawImages,
   type Video,
   type VideoFrame,
@@ -35,10 +37,7 @@ const color = (value: {
     number
   >
 
-export function createVideo(
-  movie: Movie,
-  images: RawImages = Object.create(null) as RawImages,
-): Video {
+export function createVideo(movie: Movie, images: RawImages = createNullMap<Uint8Array>()): Video {
   const sprites: VideoSprite[] = []
 
   movie.sprites.forEach((movieSprite) => {
@@ -181,8 +180,8 @@ export function createVideo(
     fps: movie.params.fps,
     frames: movie.params.frames,
     images,
-    replaceElements: Object.create(null) as Video['replaceElements'],
-    dynamicElements: Object.create(null) as Video['dynamicElements'],
+    replaceElements: createNullMap<PlayerElement>(),
+    dynamicElements: createNullMap<PlayerElement>(),
     sprites,
   }
 }

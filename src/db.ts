@@ -1,4 +1,5 @@
-import type { Video } from './types'
+import { createNullMap } from './internal/maps'
+import type { PlayerElement, Video } from './types'
 import { validateVideo } from './validate-video'
 
 export interface DBOptions {
@@ -118,15 +119,11 @@ async function transact<T, R = T>(
   })
 }
 
-function nullMap<T>(): Record<string, T> {
-  return Object.create(null) as Record<string, T>
-}
-
 function copyImages(value: unknown): Video['images'] {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw dbError()
   const prototype = Object.getPrototypeOf(value)
   if (prototype !== null && prototype !== Object.prototype) throw dbError()
-  const images = nullMap<Uint8Array>()
+  const images = createNullMap<Uint8Array>()
   for (const key of Object.keys(value)) images[key] = (value as Record<string, Uint8Array>)[key]
   return images
 }
@@ -139,8 +136,8 @@ function stableRecord(video: Video): Video {
     fps: video.fps,
     frames: video.frames,
     images: copyImages(video.images),
-    replaceElements: nullMap(),
-    dynamicElements: nullMap(),
+    replaceElements: createNullMap<PlayerElement>(),
+    dynamicElements: createNullMap<PlayerElement>(),
     sprites: video.sprites,
   })
   return restoreRecord(record)
@@ -155,8 +152,8 @@ function restoreRecord(value: unknown): Video {
     fps: source.fps,
     frames: source.frames,
     images: copyImages(source.images),
-    replaceElements: nullMap(),
-    dynamicElements: nullMap(),
+    replaceElements: createNullMap<PlayerElement>(),
+    dynamicElements: createNullMap<PlayerElement>(),
     sprites: source.sprites,
   }
   return validateVideo(record)

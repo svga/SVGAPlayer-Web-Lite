@@ -1,4 +1,15 @@
 import {
+  MAX_CANVAS_EDGE,
+  MAX_CANVAS_PIXELS,
+  MAX_FPS,
+  MAX_FRAMES,
+  MAX_IMAGES,
+  MAX_PATH_CHARACTERS,
+  MAX_SHAPES,
+  MAX_SPRITES,
+  MAX_SPRITE_FRAMES,
+} from './internal/limits'
+import {
   SHAPE_TYPE,
   type Transform,
   type Video,
@@ -106,26 +117,29 @@ export function validateVideo(value: unknown): Video {
     !finiteRecord(video.size, ['width', 'height']) ||
     video.size.width <= 0 ||
     video.size.height <= 0 ||
-    video.size.width > 4096 ||
-    video.size.height > 4096 ||
-    video.size.width * video.size.height > 16_777_216 ||
+    video.size.width > MAX_CANVAS_EDGE ||
+    video.size.height > MAX_CANVAS_EDGE ||
+    video.size.width * video.size.height > MAX_CANVAS_PIXELS ||
     !finite(video.fps) ||
     video.fps <= 0 ||
-    video.fps > 120 ||
+    video.fps > MAX_FPS ||
     !finite(video.frames) ||
     !Number.isInteger(video.frames) ||
     video.frames <= 0 ||
-    video.frames > 10_000 ||
+    video.frames > MAX_FRAMES ||
     !record(video.images, true) ||
     !record(video.replaceElements, true) ||
     !record(video.dynamicElements, true) ||
     !array(video.sprites) ||
-    video.sprites.length > 2_000
+    video.sprites.length > MAX_SPRITES
   )
     error('header')
 
   const imageKeys = Object.keys(video.images)
-  if (imageKeys.length > 512 || imageKeys.some((key) => !(video.images[key] instanceof Uint8Array)))
+  if (
+    imageKeys.length > MAX_IMAGES ||
+    imageKeys.some((key) => !(video.images[key] instanceof Uint8Array))
+  )
     error('images')
 
   let spriteFrames = 0
@@ -142,7 +156,7 @@ export function validateVideo(value: unknown): Video {
     )
       error('sprite')
     spriteFrames += sprite.frames.length
-    if (spriteFrames > 500_000) error('sprite frames')
+    if (spriteFrames > MAX_SPRITE_FRAMES) error('sprite frames')
 
     for (const frame of sprite.frames) {
       if (
@@ -156,17 +170,17 @@ export function validateVideo(value: unknown): Video {
       )
         error('frame')
       pathCharacters += frame.clipPath.length
-      if (pathCharacters > 1_048_576) error('frame budgets')
+      if (pathCharacters > MAX_PATH_CHARACTERS) error('frame budgets')
 
       if (!seenShapeArrays.has(frame.shapes)) {
         seenShapeArrays.add(frame.shapes)
         for (const item of frame.shapes) {
           if (!shape(item)) error('shape')
           shapes++
-          if (shapes > 100_000) error('frame budgets')
+          if (shapes > MAX_SHAPES) error('frame budgets')
           if (item.type === SHAPE_TYPE.SHAPE) {
             pathCharacters += item.path.d.length
-            if (pathCharacters > 1_048_576) error('path characters')
+            if (pathCharacters > MAX_PATH_CHARACTERS) error('path characters')
           }
         }
       }
