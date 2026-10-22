@@ -60,6 +60,28 @@ describe('Animator lifecycle', () => {
     expect(updates.every((value) => value === 2)).toBe(true)
   })
 
+  it('reports whether a scheduler is active', () => {
+    const animator = new Animator()
+    animator.__svgaEnd = 10
+    animator.__svgaDuration = 100
+
+    expect(animator.__svgaIsRunning).toBe(false)
+    animator.__svgaRun()
+    expect(animator.__svgaIsRunning).toBe(true)
+    animator.__svgaStop()
+    expect(animator.__svgaIsRunning).toBe(false)
+  })
+
+  it('resumes at an origin for exactly one clock sample', () => {
+    const animator = new Animator()
+    animator.__svgaClock = () => 100
+
+    animator.__svgaResumeAt(42)
+
+    expect(animator.__svgaClock()).toBe(42)
+    expect(animator.__svgaClock()).toBe(100)
+  })
+
   it('ignores an already queued callback from an older run', () => {
     const raf = installRaf()
     const animator = new Animator()

@@ -2,8 +2,6 @@ const WORKER = 'onmessage=function(){setTimeout(postMessage,50/3,0)}'
 
 type Scheduler = Worker | number | null
 
-let runId = 0
-
 function requestFrame(animator: Animator): number {
   let rafId: number
   rafId = window.requestAnimationFrame(() => {
@@ -13,6 +11,7 @@ function requestFrame(animator: Animator): number {
 }
 
 export class Animator {
+  private __svgaRunId: number = 0
   private __svgaStartTime!: number
   private __svgaFraction: number = 0.0
   private __svgaScheduler: Scheduler = null
@@ -33,7 +32,7 @@ export class Animator {
 
   public __svgaRun(): void {
     this.__svgaStop()
-    const marker = -++runId
+    const marker = -++this.__svgaRunId
     this.__svgaScheduler = marker
     this.__svgaStartTime = this.__svgaClock()
     this.__svgaFraction = 0.0
@@ -71,6 +70,22 @@ export class Animator {
         scheduler.terminate()
       } catch {}
     }
+  }
+
+  /**
+   * Runs the clock at `origin` for the first sample only, then restores the
+   * real clock. Used to resume a paused timeline without shifting progress.
+   */
+  public __svgaResumeAt(origin: number): void {
+    const clock = this.__svgaClock
+    this.__svgaClock = () => {
+      this.__svgaClock = clock
+      return origin
+    }
+  }
+
+  public get __svgaIsRunning(): boolean {
+    return this.__svgaScheduler !== null
   }
 
   public get __svgaValue(): number {

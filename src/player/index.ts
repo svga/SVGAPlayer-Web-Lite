@@ -539,13 +539,9 @@ export class Player {
       return
     }
     const animator = this.__svgaAnimator
-    const clock = animator.__svgaClock
-    const origin = clock() - runtime.__svgaTimeline
+    const origin = animator.__svgaClock() - runtime.__svgaTimeline
     runtime.__svgaTimeline = -origin - 1
-    animator.__svgaClock = () => {
-      animator.__svgaClock = clock
-      return origin
-    }
+    animator.__svgaResumeAt(origin)
     animator.__svgaOnStart = () => {
       if (this.onResume) this.onResume()
     }
