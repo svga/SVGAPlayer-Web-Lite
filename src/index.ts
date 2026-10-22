@@ -6,4 +6,10 @@ export { Player } from './player'
 export { DB } from './db'
 
 export type { DBOptions } from './db'
-export type { ParserConfigOptions, PlayerConfig, PlayerConfigOptions, Video } from './types'
+export type {
+  ParserConfigOptions,
+  PlayerConfig,
+  PlayerConfigOptions,
+  PlayerState,
+  Video,
+} from './types'

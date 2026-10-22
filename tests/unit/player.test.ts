@@ -126,10 +126,24 @@ vi.stubGlobal('window', {
 })
 
 let Player: (typeof import('../../src/player/index'))['Player']
+let getPlayerContext: (typeof import('../../src/player/context'))['getPlayerContext']
 
 beforeAll(async () => {
   Player = (await import('../../src/player/index')).Player
+  getPlayerContext = (await import('../../src/player/context')).getPlayerContext
 })
+
+type TestInternals = {
+  __svgaFrames: Record<string, FakeImageBitmap>
+  __svgaCanvas: FakeCanvas
+  __svgaVisible: boolean
+  __svgaAnimator: Animator
+  __svgaState: string
+}
+
+function internal(player: object): TestInternals {
+  return getPlayerContext(player) as unknown as TestInternals
+}
 
 function makeVideo(overrides: Partial<Video> = {}): Video {
   return {
@@ -222,7 +236,7 @@ describe('Player configuration and visibility observer', () => {
 
     expect(error).toMatchObject({ message: 'frame' })
     expect(stop).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
+    expect(internal(capture.player as object).__svgaState).toBe('destroyed')
     stop.mockRestore()
   })
 
@@ -232,8 +246,7 @@ describe('Player configuration and visibility observer', () => {
     const capture: RuntimeCapture = {}
     const owned = new FakeImageBitmap(1, 1)
     observeImplementation = () => {
-      const cache = (capture.player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> })
-        .__svgaFrames
+      const cache = internal(capture.player as object).__svgaFrames
       cache.owned = owned
       throw expected
     }
@@ -247,7 +260,7 @@ describe('Player configuration and visibility observer', () => {
     expect(stop).toHaveBeenCalledOnce()
     expect(observers[0].disconnect).toHaveBeenCalledOnce()
     expect(owned.close).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
+    expect(internal(capture.player as object).__svgaState).toBe('destroyed')
     stop.mockRestore()
   })
 
@@ -262,7 +275,7 @@ describe('Player configuration and visibility observer', () => {
     })
 
     const player = new Player({ isUseIntersectionObserver: true })
-    expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeCanvas)
+    expect(internal(player).__svgaCanvas).toBeInstanceOf(FakeCanvas)
     expect(observers[0].disconnect).not.toHaveBeenCalled()
   })
 
@@ -279,7 +292,7 @@ describe('Player configuration and visibility observer', () => {
 
     expect(error).toMatchObject({ message: 'frame' })
     expect(stop).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
+    expect(internal(capture.player as object).__svgaState).toBe('destroyed')
     stop.mockRestore()
   })
 
@@ -303,7 +316,7 @@ describe('Player configuration and visibility observer', () => {
 
     expect(error).toBe(expected)
     expect(stop).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
+    expect(internal(capture.player as object).__svgaState).toBe('destroyed')
     stop.mockRestore()
   })
 
@@ -319,8 +332,7 @@ describe('Player configuration and visibility observer', () => {
     const capture: RuntimeCapture = {}
     const owned = new FakeImageBitmap(1, 1)
     observeImplementation = () => {
-      const cache = (capture.player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> })
-        .__svgaFrames
+      const cache = internal(capture.player as object).__svgaFrames
       cache.owned = owned
       throw expected
     }
@@ -334,7 +346,7 @@ describe('Player configuration and visibility observer', () => {
     expect(stop).toHaveBeenCalledOnce()
     expect(observers[0].disconnect).toHaveBeenCalledOnce()
     expect(owned.close).toHaveBeenCalledOnce()
-    expect(capture.map?.has(capture.player as object)).toBe(false)
+    expect(internal(capture.player as object).__svgaState).toBe('destroyed')
     stop.mockRestore()
   })
 
@@ -351,7 +363,7 @@ describe('Player configuration and visibility observer', () => {
     })
 
     const player = new Player({})
-    expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(FakeCanvas)
+    expect(internal(player).__svgaCanvas).toBeInstanceOf(FakeCanvas)
   })
 
   it('uses OffscreenCanvas by default and an HTML canvas when explicitly disabled', () => {
@@ -367,15 +379,9 @@ describe('Player configuration and visibility observer', () => {
     const defaultPlayer = new Player({})
     const disabledPlayer = new Player({ isDisableOffscreenCanvas: true })
 
-    expect((defaultPlayer as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(
-      FakeOffscreenCanvas,
-    )
-    expect((disabledPlayer as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(
-      FakeCanvas,
-    )
-    expect(
-      (disabledPlayer as unknown as { __svgaCanvas: unknown }).__svgaCanvas,
-    ).not.toBeInstanceOf(FakeOffscreenCanvas)
+    expect(internal(defaultPlayer).__svgaCanvas).toBeInstanceOf(FakeOffscreenCanvas)
+    expect(internal(disabledPlayer).__svgaCanvas).toBeInstanceOf(FakeCanvas)
+    expect(internal(disabledPlayer).__svgaCanvas).not.toBeInstanceOf(FakeOffscreenCanvas)
     expect(defaultPlayer.config.isDisableOffscreenCanvas).toBe(false)
     expect(disabledPlayer.config.isDisableOffscreenCanvas).toBe(true)
   })
@@ -536,7 +542,7 @@ describe('Player configuration and visibility observer', () => {
     player.setConfig({ isUseIntersectionObserver: false })
 
     expect(observer.disconnect).toHaveBeenCalledOnce()
-    expect((player as unknown as { __svgaVisible: boolean }).__svgaVisible).toBe(true)
+    expect(internal(player).__svgaVisible).toBe(true)
     expect(player.config.isUseIntersectionObserver).toBe(false)
   })
 
@@ -555,7 +561,7 @@ describe('Player configuration and visibility observer', () => {
 
     expect(observers).toHaveLength(1)
     expect(observer.disconnect).not.toHaveBeenCalled()
-    expect((player as unknown as { __svgaVisible: boolean }).__svgaVisible).toBe(false)
+    expect(internal(player).__svgaVisible).toBe(false)
   })
 
   it('recreates the render canvas and closes cached frames when OffscreenCanvas use changes', async () => {
@@ -578,23 +584,21 @@ describe('Player configuration and visibility observer', () => {
     })
     await player.mount(makeVideo({ size: { width: 10, height: 10 }, frames: 1 }))
     player.start()
-    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toEqual(['0'])
-    const original = (player as unknown as { __svgaCanvas: unknown }).__svgaCanvas
+    expect(Object.keys(internal(player).__svgaFrames)).toEqual(['0'])
+    const original = internal(player).__svgaCanvas
 
     player.setConfig({ isDisableOffscreenCanvas: true })
 
-    const disabled = (player as unknown as { __svgaCanvas: unknown }).__svgaCanvas
+    const disabled = internal(player).__svgaCanvas
     expect(disabled).toBeInstanceOf(FakeCanvas)
     expect(disabled).not.toBeInstanceOf(FakeOffscreenCanvas)
     expect(disabled).not.toBe(original)
     expect(cached.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toEqual([])
+    expect(Object.keys(internal(player).__svgaFrames)).toEqual([])
 
     player.setConfig({ isDisableOffscreenCanvas: false })
 
-    expect((player as unknown as { __svgaCanvas: unknown }).__svgaCanvas).toBeInstanceOf(
-      FakeOffscreenCanvas,
-    )
+    expect(internal(player).__svgaCanvas).toBeInstanceOf(FakeOffscreenCanvas)
     expect(created).toHaveLength(2)
   })
 
@@ -1115,7 +1119,7 @@ describe('Player mount and playback lifecycle', () => {
     const player = new Player(canvas as unknown as HTMLCanvasElement)
 
     await player.mount(makeVideo({ size: { width: 300, height: 150 } }))
-    const offscreen = (player as unknown as { __svgaCanvas: FakeCanvas }).__svgaCanvas
+    const offscreen = internal(player).__svgaCanvas
     player.start()
 
     expect(canvas.context.clearRect).toHaveBeenCalled()
@@ -1329,7 +1333,7 @@ describe('Player mount and playback lifecycle', () => {
     runRaf(rafRequests[rafRequests.length - 1], 100)
     player.pause()
     player.resume()
-    const animator = (player as unknown as { __svgaAnimator: Animator }).__svgaAnimator
+    const animator = internal(player).__svgaAnimator
 
     expect(animator.__svgaStart).toBe(0)
     expect(animator.__svgaEnd).toBe(4)
@@ -1352,7 +1356,7 @@ describe('Player mount and playback lifecycle', () => {
     })
     await player.mount(makeVideo({ frames: 7, fps: 10 }))
     player.start()
-    const animator = (player as unknown as { __svgaAnimator: Animator }).__svgaAnimator
+    const animator = internal(player).__svgaAnimator
 
     expect(animator.__svgaStart).toBe(6)
     expect(animator.__svgaEnd).toBe(1)
@@ -1416,7 +1420,7 @@ describe('Player mount and playback lifecycle', () => {
 
     player.start()
 
-    expect((player as unknown as { __svgaAnimator: Animator }).__svgaAnimator.__svgaLoop).toBe(1)
+    expect(internal(player).__svgaAnimator.__svgaLoop).toBe(1)
   })
 
   it('stop returns to the configured start frame and the next start redraws it', async () => {
@@ -1491,7 +1495,7 @@ describe('Player frame cache and destruction', () => {
       loop: 1,
     })
     await player.mount(makeVideo({ size: { width: 3000, height: 3000 }, frames: 2, fps: 1 }))
-    const offscreen = (player as unknown as { __svgaCanvas: FakeCanvas }).__svgaCanvas
+    const offscreen = internal(player).__svgaCanvas
 
     player.start()
     await Promise.resolve()
@@ -1504,7 +1508,7 @@ describe('Player frame cache and destruction', () => {
     expect(created[0].close).toHaveBeenCalledOnce()
     expect(created[1].close).not.toHaveBeenCalled()
     canvas.context.drawImage.mockClear()
-    ;(player as unknown as { __svgaDraw: (frame: number) => void }).__svgaDraw(1)
+    player.stepToFrame(1)
     expect(canvas.context.drawImage).toHaveBeenCalledWith(created[1], 0, 0)
     expect(offscreen.toDataURL).not.toHaveBeenCalled()
   })
@@ -1530,8 +1534,7 @@ describe('Player frame cache and destruction', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> })
-      .__svgaFrames
+    const cache = internal(player).__svgaFrames
     expect(Object.getPrototypeOf(cache)).toBeNull()
     expect(Object.keys(cache)).toEqual(['1'])
     expect(cache[1]).toBe(tiny)
@@ -1563,8 +1566,7 @@ describe('Player frame cache and destruction', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> })
-      .__svgaFrames
+    const cache = internal(player).__svgaFrames
     expect(Object.keys(cache)).toEqual(['1'])
     expect(cache[1]).toBe(second)
     expect(first.close).toHaveBeenCalledOnce()
@@ -1581,8 +1583,7 @@ describe('Player frame cache and destruction', () => {
       isCacheFrames: true,
     })
     await player.mount(makeVideo({ size: { width: 10, height: 10 }, frames: 1 }))
-    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> })
-      .__svgaFrames
+    const cache = internal(player).__svgaFrames
     Object.preventExtensions(cache)
 
     player.start()
@@ -1671,13 +1672,11 @@ describe('Player frame cache and destruction', () => {
       isCacheFrames: true,
     })
     await player.mount(makeVideo({ frames: 1 }))
-    const offscreen = (player as unknown as { __svgaCanvas: FakeCanvas }).__svgaCanvas
+    const offscreen = internal(player).__svgaCanvas
 
     player.start()
 
-    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(
-      0,
-    )
+    expect(Object.keys(internal(player).__svgaFrames)).toHaveLength(0)
     expect(offscreen.toDataURL).not.toHaveBeenCalled()
   })
 
@@ -1767,9 +1766,7 @@ describe('Player frame cache and destruction', () => {
 
     expect(existing.close).toHaveBeenCalledOnce()
     expect(pending.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(
-      0,
-    )
+    expect(Object.keys(internal(player).__svgaFrames)).toHaveLength(0)
   })
 
   it('continues cached-frame cleanup when one close operation throws', () => {
@@ -1779,8 +1776,7 @@ describe('Player frame cache and destruction', () => {
       throw new Error('close failed')
     })
     const player = new Player({ isCacheFrames: true })
-    const cache = (player as unknown as { __svgaFrames: Record<string, FakeImageBitmap> })
-      .__svgaFrames
+    const cache = internal(player).__svgaFrames
     cache.first = first
     cache.second = second
 
@@ -1812,9 +1808,7 @@ describe('Player frame cache and destruction', () => {
     })
 
     expect(owned.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(
-      0,
-    )
+    expect(Object.keys(internal(player).__svgaFrames)).toHaveLength(0)
     expect([replacement.width, replacement.height]).toEqual([20, 20])
     expect(observers[0].observe).toHaveBeenCalledWith(replacement)
     expect(observers[0].observedSizes).toEqual([[20, 20]])
@@ -1845,6 +1839,51 @@ describe('Player frame cache and destruction', () => {
     await mounting
 
     expect(player.videoEntity).toBe(video)
+  })
+
+  it('exposes lifecycle state and playback status', async () => {
+    let resolveBitmap: ((bitmap: FakeImageBitmap) => void) | undefined
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(
+        () =>
+          new Promise<FakeImageBitmap>((resolve) => {
+            resolveBitmap = resolve
+          }),
+      ),
+    )
+    const player = new Player(new FakeCanvas() as unknown as HTMLCanvasElement)
+    expect(player.state).toBe('idle')
+    expect(player.isPlaying).toBe(false)
+
+    const mounting = player.mount(
+      makeVideo({
+        images: Object.assign(Object.create(null), { image: Uint8Array.of(1) }),
+      }),
+    )
+    expect(player.state).toBe('loading')
+    resolveBitmap?.(new FakeImageBitmap(1, 1))
+    await mounting
+    expect(player.state).toBe('ready')
+
+    player.start()
+    expect(player.state).toBe('playing')
+    expect(player.isPlaying).toBe(true)
+
+    player.pause()
+    expect(player.state).toBe('paused')
+    expect(player.isPlaying).toBe(false)
+
+    player.stepToFrame(1)
+    expect(player.state).toBe('paused')
+
+    player.stop()
+    expect(player.state).toBe('ready')
+    expect(player.isPlaying).toBe(false)
+
+    player.destroy()
+    expect(player.state).toBe('destroyed')
+    expect(player.isPlaying).toBe(false)
   })
 
   it('is idempotently destroyed, releases resources, and rejects later playback calls', async () => {
@@ -1879,6 +1918,7 @@ describe('Player frame cache and destruction', () => {
     expect(cached.close).toHaveBeenCalledOnce()
     expect(observer.disconnect).toHaveBeenCalledOnce()
     expect(player.config.isUseIntersectionObserver).toBe(false)
+    expect(player.state).toBe('destroyed')
     expect(player.videoEntity).toBeUndefined()
     expect(rafCallbacks).toHaveLength(0)
     expect(canvas.context.clearRect).toHaveBeenCalled()
@@ -1886,6 +1926,7 @@ describe('Player frame cache and destruction', () => {
     expect(() => player.resume()).toThrow(/destroyed/)
     expect(() => player.pause()).toThrow(/destroyed/)
     expect(() => player.stop()).toThrow(/destroyed/)
+    await expect(player.mount(makeVideo())).rejects.toThrow(/destroyed/)
   })
 
   it('closes an async cached bitmap that resolves after destroy', async () => {
@@ -1913,8 +1954,6 @@ describe('Player frame cache and destruction', () => {
     await Promise.resolve()
 
     expect(lateBitmap.close).toHaveBeenCalledOnce()
-    expect(Object.keys((player as unknown as { __svgaFrames: object }).__svgaFrames)).toHaveLength(
-      0,
-    )
+    expect(Object.keys(internal(player).__svgaFrames)).toHaveLength(0)
   })
 })

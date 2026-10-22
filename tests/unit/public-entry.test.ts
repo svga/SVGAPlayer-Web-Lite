@@ -6,6 +6,7 @@ import type {
   ParserConfigOptions,
   PlayerConfig,
   PlayerConfigOptions,
+  PlayerState,
   Video,
 } from '../../src/index'
 
@@ -44,6 +45,12 @@ describe('public entry', () => {
     expect(typeof Object.getOwnPropertyDescriptor(root.Player.prototype, 'progress')?.get).toBe(
       'function',
     )
+    expect(typeof Object.getOwnPropertyDescriptor(root.Player.prototype, 'state')?.get).toBe(
+      'function',
+    )
+    expect(typeof Object.getOwnPropertyDescriptor(root.Player.prototype, 'isPlaying')?.get).toBe(
+      'function',
+    )
   })
 
   it('keeps the documented public types', () => {
@@ -52,5 +59,8 @@ describe('public entry', () => {
     expectTypeOf<DBOptions>().toEqualTypeOf<{ name: string; version: number; storeName: string }>()
     expectTypeOf<Video['images']>().toMatchTypeOf<Record<string, Uint8Array>>()
     expectTypeOf<Video['size']>().toEqualTypeOf<{ width: number; height: number }>()
+    expectTypeOf<PlayerState>().toEqualTypeOf<
+      'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'destroyed'
+    >()
   })
 })

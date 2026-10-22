@@ -256,3 +256,8 @@ export interface PlayerConfig {
 }
 
 export type PlayerConfigOptions = Partial<PlayerConfig>
+
+/**
+ * 播放器生命周期状态
+ */
+export type PlayerState = 'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'destroyed'
