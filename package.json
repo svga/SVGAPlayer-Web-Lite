@@ -44,7 +44,19 @@
     "LICENSE",
     "THIRD_PARTY_NOTICES"
   ],
-  "packageManager": "npm@12.0.2",
+  "packageManager": "npm@12.2.1",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^24.22.1",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "^12.2.1",
+      "onFail": "error"
+    }
+  },
   "author": "SVGA",
   "license": "Apache-2.0",
   "devDependencies": {
