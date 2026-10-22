@@ -1,3 +1,4 @@
+import { PlayerError } from '../internal/errors'
 import {
   DynamicElements,
   Video,
@@ -30,7 +31,8 @@ function render(
 ): void {
   const context = canvas.getContext('2d')
 
-  if (context === null || !('save' in context)) throw Error('Invalid render context')
+  if (context === null || !('save' in context))
+    throw new PlayerError('player/render', 'Invalid render context')
 
   videoEntity.sprites.forEach((sprite) => {
     const key = sprite.imageKey

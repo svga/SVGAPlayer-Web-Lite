@@ -1,3 +1,4 @@
+import type { ParserErrorCode } from '../internal/errors'
 import type { Video } from '../types'
 
 export type ParserWorkerRequest =
@@ -8,7 +9,7 @@ export type ParserWorkerRequest =
 export interface ParserWorkerResult {
   requestId: number
   video?: Video
-  error?: { name: string; message: string }
+  error?: { name: string; message: string; code?: ParserErrorCode }
 }
 
 export type ParserWorkerResponse = { ready: true } | ParserWorkerResult

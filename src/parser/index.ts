@@ -1,5 +1,6 @@
 import { Unzlib } from 'fflate'
 
+import { ParserError, type ParserErrorCode } from '../internal/errors'
 import {
   DOWNLOAD_CHUNK_BYTES,
   MAX_COMPRESSED_BYTES,
@@ -16,7 +17,7 @@ import { scanMovieWire } from './wire-scan'
 async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(url, { signal })
   if (response.status < 200 || response.status >= 300)
-    throw Error(`Fetch, ${response.statusText || response.status}`)
+    throw new ParserError('parser/fetch', `Fetch, ${response.statusText || response.status}`)
 
   const chunks: Uint8Array[] = []
   let length = 0
@@ -28,7 +29,8 @@ async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
         if (result.done) break
         const chunk = result.value
         length += chunk.byteLength
-        if (length > MAX_COMPRESSED_BYTES) throw Error('Compressed SVGA exceeds 8 MiB')
+        if (length > MAX_COMPRESSED_BYTES)
+          throw new ParserError('parser/limit', 'Compressed SVGA exceeds 8 MiB')
         chunks.push(chunk)
       }
     } catch (error) {
@@ -42,7 +44,8 @@ async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
   } else {
     const chunk = new Uint8Array(await response.arrayBuffer())
     length = chunk.byteLength
-    if (length > MAX_COMPRESSED_BYTES) throw Error('Compressed SVGA exceeds 8 MiB')
+    if (length > MAX_COMPRESSED_BYTES)
+      throw new ParserError('parser/limit', 'Compressed SVGA exceeds 8 MiB')
     chunks.push(chunk)
   }
 
@@ -60,7 +63,8 @@ function inflate(source: Uint8Array): Uint8Array {
   let length = 0
   const stream = new Unzlib((chunk) => {
     length += chunk.byteLength
-    if (length > MAX_DECOMPRESSED_BYTES) throw Error('Decompressed SVGA exceeds 16 MiB')
+    if (length > MAX_DECOMPRESSED_BYTES)
+      throw new ParserError('parser/limit', 'Decompressed SVGA exceeds 16 MiB')
     chunks.push(chunk.slice())
   })
   const chunkSize = DOWNLOAD_CHUNK_BYTES
@@ -121,7 +125,7 @@ function installParserWorker(scope: ParserWorkerScope): void {
         compressed[2] === 3 &&
         compressed[3] === 4
       ) {
-        throw Error('this parser only support version@2 of SVGA.')
+        throw new ParserError('parser/version', 'this parser only support version@2 of SVGA.')
       }
       const inflated = inflate(compressed)
       scanMovieWire(inflated)
@@ -133,9 +137,10 @@ function installParserWorker(scope: ParserWorkerScope): void {
       return
     } catch (error) {
       const source = error instanceof Error ? error : Error(String(error))
+      const code = 'code' in source ? (source.code as ParserErrorCode) : undefined
       response = {
         requestId: request.requestId,
-        error: { name: source.name, message: `[SVGA Parser Error] ${source.message}` },
+        error: { name: source.name, message: `[SVGA Parser Error] ${source.message}`, code },
       }
       scope.postMessage(response)
     } finally {

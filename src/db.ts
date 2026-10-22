@@ -1,3 +1,4 @@
+import { DBError } from './internal/errors'
 import { createNullMap } from './internal/maps'
 import type { PlayerElement, Video } from './types'
 import { validateVideo } from './validate-video'
@@ -14,7 +15,7 @@ interface DBState extends DBOptions {
 }
 
 const states = new WeakMap<DB, DBState>()
-const dbError = (): Error => Error('IndexedDB operation failed')
+const dbError = (): DBError => new DBError('db/failure', 'IndexedDB operation failed')
 const clone = <T>(value: T): T => structuredClone(value)
 
 function close(state: DBState, database: IDBDatabase): void {

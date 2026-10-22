@@ -1,3 +1,4 @@
+import { VideoError } from './internal/errors'
 import {
   MAX_CANVAS_EDGE,
   MAX_CANVAS_PIXELS,
@@ -18,7 +19,7 @@ import {
 } from './types'
 
 const error = (reason = 'structure'): never => {
-  throw Error(`Invalid SVGA video: ${reason}`)
+  throw new VideoError(`video/${reason.split(' ').join('-')}`, `Invalid SVGA video: ${reason}`)
 }
 const owns = (value: object, key: PropertyKey): boolean =>
   Object.prototype.hasOwnProperty.call(value, key)

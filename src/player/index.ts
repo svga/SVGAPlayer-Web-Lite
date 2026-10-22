@@ -1,3 +1,4 @@
+import { PlayerError } from '../internal/errors'
 import {
   MAX_DECODED_IMAGE_PIXELS,
   MAX_FRAME_CACHE_BYTES,
@@ -34,7 +35,7 @@ const playerRuntimes = new WeakMap<Player, PlayerRuntime>()
 
 function activeRuntime(player: Player): PlayerRuntime {
   const runtime = playerRuntimes.get(player)
-  if (!runtime) throw Error('destroyed')
+  if (!runtime) throw new PlayerError('player/destroyed', 'destroyed')
   return runtime
 }
 
@@ -101,7 +102,7 @@ function validateBitmap(bitmap: { width: number; height: number }, key: string):
     bitmap.height <= 0 ||
     bitmap.width * bitmap.height > MAX_DECODED_IMAGE_PIXELS
   )
-    throw Error('image:' + key)
+    throw new PlayerError('player/image', 'image:' + key)
 }
 
 async function decodeBitmap(
@@ -162,7 +163,7 @@ async function decodeBitmap(
     image.onerror = () => {
       settle = () => {}
       cleanup()
-      reject(Error('image:' + key))
+      reject(new PlayerError('player/image', 'image:' + key))
     }
     image.src = url
   })
@@ -170,11 +171,14 @@ async function decodeBitmap(
 
 function validateConfig(config: PlayerConfig, totalFrames?: number): void {
   const { startFrame, endFrame, loopStartFrame } = config
-  if (!(config.container instanceof HTMLCanvasElement)) throw Error('container')
+  if (!(config.container instanceof HTMLCanvasElement))
+    throw new PlayerError('player/config', 'container')
   if (!(typeof config.loop === 'boolean' || (Number.isInteger(config.loop) && config.loop >= 0)))
-    throw Error('loop')
-  if (config.fillMode !== 'forwards' && config.fillMode !== 'backwards') throw Error('fillMode')
-  if (config.playMode !== 'forwards' && config.playMode !== 'fallbacks') throw Error('playMode')
+    throw new PlayerError('player/config', 'loop')
+  if (config.fillMode !== 'forwards' && config.fillMode !== 'backwards')
+    throw new PlayerError('player/config', 'fillMode')
+  if (config.playMode !== 'forwards' && config.playMode !== 'fallbacks')
+    throw new PlayerError('player/config', 'playMode')
   if (
     ![
       config.isCacheFrames,
@@ -183,14 +187,14 @@ function validateConfig(config: PlayerConfig, totalFrames?: number): void {
       config.isDisableOffscreenCanvas,
     ].every((value) => typeof value === 'boolean')
   )
-    throw Error('flag')
+    throw new PlayerError('player/config', 'flag')
   if (
     ![startFrame, endFrame, loopStartFrame].every(Number.isInteger) ||
     Math.min(startFrame, endFrame, loopStartFrame) < 0
   )
-    throw Error('frame')
+    throw new PlayerError('player/config', 'frame')
 
-  if (endFrame && startFrame > endFrame) throw Error('start>end')
+  if (endFrame && startFrame > endFrame) throw new PlayerError('player/config', 'start>end')
 
   if (
     (loopStartFrame && (loopStartFrame < startFrame || (endFrame && loopStartFrame > endFrame))) ||
@@ -199,13 +203,14 @@ function validateConfig(config: PlayerConfig, totalFrames?: number): void {
         endFrame > totalFrames ||
         loopStartFrame > (endFrame || totalFrames)))
   )
-    throw Error('frame')
+    throw new PlayerError('player/config', 'frame')
   const effectiveEnd = endFrame || totalFrames
   const looping =
     config.loop === true ||
     config.loop === 0 ||
     (typeof config.loop === 'number' && config.loop > 1)
-  if (looping && effectiveEnd !== 0 && loopStartFrame === effectiveEnd) throw Error('loop segment')
+  if (looping && effectiveEnd !== 0 && loopStartFrame === effectiveEnd)
+    throw new PlayerError('player/config', 'loop segment')
 }
 
 function createOffscreen(
@@ -447,7 +452,7 @@ export class Player {
           pixels > MAX_TOTAL_DECODED_PIXELS ||
           (pixels === MAX_TOTAL_DECODED_PIXELS && index < images.length - 1)
         )
-          throw Error('image pixels')
+          throw new PlayerError('player/image', 'image pixels')
       } catch (error) {
         releaseImages(imageReleases)
         if (this.__svgaImages === bitmapsCache) this.__svgaImages = createNullMap<Drawable>()
@@ -465,7 +470,7 @@ export class Player {
         images.length !== Object.keys(videoEntity.images).length ||
         images.some(([key, bytes]) => videoEntity.images[key] !== bytes)
       )
-        throw Error('video')
+        throw new PlayerError('player/video', 'video')
       validateConfig(this.__svgaConfig, totalFrames)
     } catch (error) {
       releaseImages(imageReleases)
@@ -511,7 +516,7 @@ export class Player {
    */
   public start(): void {
     const runtime = activeRuntime(this)
-    if (!this.videoEntity) throw Error('video')
+    if (!this.videoEntity) throw new PlayerError('player/video', 'video')
     runtime.__svgaTimeline = -this.__svgaAnimator.__svgaClock() - 1
     const config = this.__svgaConfig
     const endFrame = config.endFrame || this.totalFrames
@@ -528,7 +533,7 @@ export class Player {
    */
   public resume(): void {
     const runtime = activeRuntime(this)
-    if (!this.videoEntity) throw Error('video')
+    if (!this.videoEntity) throw new PlayerError('player/video', 'video')
     if (runtime.__svgaTimeline < 0) {
       if (this.onResume) this.onResume()
       return
@@ -555,12 +560,12 @@ export class Player {
   public stepToFrame(frame: number, andPlay = false): void {
     const runtime = activeRuntime(this)
     const videoEntity = this.videoEntity
-    if (!videoEntity) throw Error('video')
-    if (typeof andPlay !== 'boolean') throw Error('andPlay')
+    if (!videoEntity) throw new PlayerError('player/video', 'video')
+    if (typeof andPlay !== 'boolean') throw new PlayerError('player/config', 'andPlay')
     const config = this.__svgaConfig
     const effectiveEndFrame = config.endFrame || this.totalFrames
     if (!Number.isInteger(frame) || frame < config.startFrame || frame > effectiveEndFrame)
-      throw Error('frame')
+      throw new PlayerError('player/config', 'frame')
 
     this.__svgaAnimator.__svgaStop()
     const frameDuration = 1000 / videoEntity.fps
@@ -663,7 +668,7 @@ export class Player {
 
     const { container } = this.__svgaConfig
     const context = this.__svgaClear()
-    if (!context) throw Error()
+    if (!context) throw new PlayerError('player/render', '')
 
     const cache = this.__svgaFrames
     const isCacheFrames = this.__svgaConfig.isCacheFrames

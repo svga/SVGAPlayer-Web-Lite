@@ -1,3 +1,4 @@
+import { ParserError, type ParserErrorCode } from './internal/errors'
 import { MAX_IN_FLIGHT, REQUEST_TIMEOUT_MILLISECONDS } from './internal/limits'
 import { copyNullMap } from './internal/maps'
 import type { ParserConfigOptions, Video } from './types'
@@ -30,8 +31,8 @@ interface ParserState {
 const states = new WeakMap<Parser, ParserState>()
 let nextRequestId = 0
 
-function parserError(message: string): Error {
-  return Error(`[SVGA Parser Error] ${message}`)
+function parserError(message: string, code: ParserErrorCode = 'parser/worker'): ParserError {
+  return new ParserError(code, `[SVGA Parser Error] ${message}`)
 }
 
 function send(state: ParserState, request: ParserWorkerRequest): void {
@@ -69,7 +70,7 @@ function drain(parser: Parser, state: ParserState): void {
       if (state.pending.get(request.requestId) !== request) return
       state.pending.delete(request.requestId)
       state.inFlight--
-      request.reject(parserError('Request timeout'))
+      request.reject(parserError('Request timeout', 'parser/timeout'))
       try {
         send(state, { requestId: request.requestId, cancel: true })
       } catch {}
@@ -100,7 +101,7 @@ function handleResponse(parser: Parser, response: ParserWorkerResponse): void {
   clearTimeout(request.timer)
 
   if (response.error !== undefined) {
-    const error = Error(response.error.message)
+    const error = new ParserError(response.error.code ?? 'parser/decode', response.error.message)
     error.name = response.error.name
     request.reject(error)
   } else if (response.video !== undefined) {
@@ -110,7 +111,7 @@ function handleResponse(parser: Parser, response: ParserWorkerResponse): void {
       request.reject(error as Error)
     }
   } else {
-    request.reject(parserError('Invalid worker response'))
+    request.reject(parserError('Invalid worker response', 'parser/response'))
   }
   drain(parser, state)
 }
@@ -182,20 +183,20 @@ export class Parser {
       }
       worker.onerror = (event) => {
         event.preventDefault()
-        release(this, parserError(event.message || 'Worker failure'))
+        release(this, parserError(event.message || 'Worker failure', 'parser/worker'))
       }
       worker.onmessageerror = () => {
-        release(this, parserError('Worker message failure'))
+        release(this, parserError('Worker message failure', 'parser/worker'))
       }
     }
   }
 
   async load(source: string): Promise<Video> {
     const state = states.get(this)
-    if (state === undefined) throw parserError('Parser destroyed')
+    if (state === undefined) throw parserError('Parser destroyed', 'parser/destroyed')
     const url = new URL(source, document.baseURI)
     if (!['http:', 'https:', 'data:', 'blob:'].includes(url.protocol))
-      throw parserError('Unsupported URL protocol')
+      throw parserError('Unsupported URL protocol', 'parser/protocol')
 
     return await new Promise<Video>((resolve, reject) => {
       state.queue.push({ requestId: nextRequestId++, url: url.href, resolve, reject })
@@ -204,6 +205,6 @@ export class Parser {
   }
 
   public destroy(): void {
-    release(this, parserError('Parser destroyed'))
+    release(this, parserError('Parser destroyed', 'parser/destroyed'))
   }
 }

@@ -1,3 +1,4 @@
+import { ParserError } from '../internal/errors'
 import {
   MAX_AUDIOS,
   MAX_IMAGES,
@@ -8,7 +9,7 @@ import {
 } from '../internal/limits'
 
 const invalid = (): never => {
-  throw Error('Invalid SVGA protobuf wire data')
+  throw new ParserError('parser/wire', 'Invalid SVGA protobuf wire data')
 }
 
 export function scanMovieWire(source: Uint8Array): void {
