@@ -3,6 +3,48 @@ export interface ParserConfigOptions {
    * 是否取消使用 WebWorker，默认值 false
    */
   isDisableWebWorker?: boolean
+  /**
+   * 最大并发解析数，默认值 4，取值范围 1 到 8
+   */
+  maxInFlight?: number
+  /**
+   * 每个请求附带的 HTTP 请求头
+   */
+  headers?: Record<string, string>
+}
+
+export interface ParserProgress {
+  /**
+   * 已处理的字节数
+   */
+  loaded: number
+  /**
+   * 总字节数，服务器未声明时为 undefined
+   */
+  total?: number
+  /**
+   * 当前阶段
+   */
+  stage: 'download' | 'decode'
+}
+
+export interface ParserLoadOptions {
+  /**
+   * 取消本次加载
+   */
+  signal?: AbortSignal
+  /**
+   * 进度回调，异常不会影响解析
+   */
+  onProgress?: (progress: ParserProgress) => void
+  /**
+   * 超时毫秒数，0 表示禁用超时，默认值 30000
+   */
+  timeout?: number
+  /**
+   * 覆盖实例级别的请求头
+   */
+  headers?: Record<string, string>
 }
 
 export interface RawImages {

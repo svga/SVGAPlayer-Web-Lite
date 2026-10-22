@@ -64,13 +64,15 @@ describe('production SVGA fixtures', () => {
         ok: true,
         status: 200,
         statusText: 'OK',
+        headers: { get: () => null },
         arrayBuffer: async () => buffer,
       }
     })
     const responses: ParserWorkerResult[] = []
     const scope: ParserWorkerScope = {
       postMessage: (response) => {
-        if (!('ready' in response)) responses.push(response)
+        if ('video' in response || 'error' in response)
+          responses.push(response as ParserWorkerResult)
       },
     }
     vi.stubGlobal('self', scope)

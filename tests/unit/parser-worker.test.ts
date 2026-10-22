@@ -3,6 +3,7 @@ import { deflateSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
+  ParserWorkerProgress,
   ParserWorkerRequest,
   ParserWorkerResponse,
   ParserWorkerResult,
@@ -128,7 +129,10 @@ async function runWorker(
   workerScope.postMessage.mockClear()
   await workerScope.onmessage?.({ data: request } as MessageEvent<ParserWorkerRequest>)
   await vi.waitFor(() => expect(workerScope.postMessage).toHaveBeenCalled())
-  return workerScope.postMessage.mock.calls[0][0] as ParserWorkerResult
+  const settled = workerScope.postMessage.mock.calls
+    .map(([response]) => response as ParserWorkerResponse)
+    .filter((response) => !('ready' in response) && !('progress' in response))
+  return settled[settled.length - 1] as ParserWorkerResult
 }
 
 describe('parser worker', () => {
@@ -208,7 +212,9 @@ describe('parser worker', () => {
       second: Uint8Array.from([2]),
     })
     const response = await runWorker()
-    const transfers = workerScope.postMessage.mock.calls[0][1] as ArrayBuffer[]
+    const transfers = workerScope.postMessage.mock.calls.find(
+      (call) => call[1] !== undefined,
+    )?.[1] as ArrayBuffer[]
     const buffers = new Set(
       Object.values(response.video?.images ?? {}).map((image) => image.buffer),
     )
@@ -221,6 +227,59 @@ describe('parser worker', () => {
     fetchResult.contentLength = String(100 * 1024 * 1024)
     const response = await runWorker()
     expect(response.video?.size).toEqual({ width: 100, height: 100 })
+  })
+
+  it('reports throttled download progress plus a decode stage', async () => {
+    fetchResult.bytes = new Uint8Array(200 * 1024)
+    fetchResult.chunks = [70_000, 70_000, 64_800]
+    fetchResult.contentLength = '204800'
+
+    const response = await runWorker()
+    expect(response.error).toBeDefined()
+    const progress = workerScope.postMessage.mock.calls
+      .map(([item]) => item)
+      .filter((item): item is ParserWorkerProgress => 'progress' in item)
+      .map((item) => item.progress)
+    expect(progress).toEqual([
+      { loaded: 70_000, total: 204_800, stage: 'download' },
+      { loaded: 140_000, total: 204_800, stage: 'download' },
+      { loaded: 204_800, total: 204_800, stage: 'download' },
+      { loaded: 204_800, total: 204_800, stage: 'decode' },
+    ])
+  })
+
+  it('parses byte input without fetch and never mutates the buffer', async () => {
+    const bytes = compressedMovie({ image: Uint8Array.of(1) })
+    const before = bytes.slice()
+    const response = await runWorker({ requestId: 9, bytes: bytes.buffer as ArrayBuffer })
+
+    expect(response.video).toBeDefined()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(bytes).toEqual(before)
+    const progress = workerScope.postMessage.mock.calls
+      .map(([item]) => item)
+      .filter((item): item is ParserWorkerProgress => 'progress' in item)
+      .map((item) => item.progress)
+    expect(progress[0]).toEqual({
+      loaded: bytes.length,
+      total: bytes.length,
+      stage: 'download',
+    })
+    expect(progress[1]).toEqual({ loaded: bytes.length, total: bytes.length, stage: 'decode' })
+  })
+
+  it('forwards request headers to fetch', async () => {
+    const response = await runWorker({
+      requestId: 10,
+      url: 'https://example.test/file.svga',
+      headers: { 'x-test': '1' },
+    })
+
+    expect(response.video).toBeDefined()
+    expect(fetch).toHaveBeenCalledWith(
+      'https://example.test/file.svga',
+      expect.objectContaining({ headers: { 'x-test': '1' } }),
+    )
   })
 
   it('does not abort a completed HTTP response after returning the video', async () => {

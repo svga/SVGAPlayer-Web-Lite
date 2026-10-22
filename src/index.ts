@@ -8,6 +8,8 @@ export { DB } from './db'
 export type { DBOptions } from './db'
 export type {
   ParserConfigOptions,
+  ParserLoadOptions,
+  ParserProgress,
   PlayerConfig,
   PlayerConfigOptions,
   PlayerState,

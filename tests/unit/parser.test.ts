@@ -1,15 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Parser } from '../../src/parser'
-import type { Video } from '../../src/types'
+import type { ParserProgress, Video } from '../../src/types'
 
 type Request =
-  | { requestId: number; url: string }
+  | {
+      requestId: number
+      url?: string
+      bytes?: ArrayBuffer
+      headers?: Record<string, string>
+    }
   | { requestId: number; cancel: true }
   | { cancel: true }
 type Response =
   | { ready: true }
-  | { requestId: number; video?: Video; error?: { name: string; message: string } }
+  | {
+      requestId: number
+      video?: Video
+      error?: { name: string; message: string; code?: string }
+    }
+  | { requestId: number; progress: ParserProgress }
 
 class FakeWorker {
   static instances: FakeWorker[] = []
@@ -328,5 +338,152 @@ describe('Parser request lifecycle', () => {
     expect(
       ports[0].requests.filter((item) => 'cancel' in item && !('requestId' in item)),
     ).toHaveLength(1)
+  })
+
+  it('validates and applies maxInFlight', async () => {
+    expect(() => new Parser({ maxInFlight: 0 })).toThrow('Invalid maxInFlight')
+    expect(() => new Parser({ maxInFlight: 9 })).toThrow('Invalid maxInFlight')
+    expect(() => new Parser({ maxInFlight: 2.5 })).toThrow('Invalid maxInFlight')
+
+    const parser = new Parser({ maxInFlight: 2 })
+    const worker = FakeWorker.instances[0]
+    await expect(parser.load('/bad.svga', { timeout: -1 })).rejects.toThrow('Invalid timeout')
+
+    const pending = Array.from({ length: 3 }, (_, index) => parser.load(`/slot-${index}.svga`))
+    expect(worker.requests).toHaveLength(2)
+    const first = worker.requests[0] as { requestId: number }
+    const second = worker.requests[1] as { requestId: number }
+    worker.respond({ requestId: first.requestId, video: video('0') })
+    expect(worker.requests).toHaveLength(3)
+    const third = worker.requests[2] as { requestId: number }
+    worker.respond({ requestId: second.requestId, video: video('done') })
+    worker.respond({ requestId: third.requestId, video: video('done') })
+    await expect(Promise.all(pending)).resolves.toHaveLength(3)
+  })
+
+  it('merges parser and per-load headers', async () => {
+    const parser = new Parser({ headers: { 'x-base': '1', 'x-shared': 'base' } })
+    const worker = FakeWorker.instances[0]
+    const first = parser.load('/first.svga', { headers: { 'x-shared': 'load' } })
+    const second = parser.load('/second.svga')
+    const [a, b] = worker.requests as Array<{
+      requestId: number
+      headers: Record<string, string>
+    }>
+
+    expect(a.headers).toEqual({ 'x-base': '1', 'x-shared': 'load' })
+    expect(b.headers).toEqual({ 'x-base': '1', 'x-shared': 'base' })
+    worker.respond({ requestId: a.requestId, video: video('a') })
+    worker.respond({ requestId: b.requestId, video: video('b') })
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2)
+  })
+
+  it('forwards progress and ignores callback failures', async () => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const seen: ParserProgress[] = []
+    let shouldThrow = true
+    const result = parser.load('/progress.svga', {
+      onProgress: (progress) => {
+        seen.push(progress)
+        if (shouldThrow) {
+          shouldThrow = false
+          throw Error('callback failed')
+        }
+      },
+    })
+    const request = worker.requests[0] as { requestId: number }
+    worker.respond({
+      requestId: request.requestId,
+      progress: { loaded: 64, total: 128, stage: 'download' },
+    })
+    worker.respond({
+      requestId: request.requestId,
+      progress: { loaded: 128, total: 128, stage: 'decode' },
+    })
+    worker.respond({ requestId: request.requestId, video: video('progress') })
+
+    await expect(result).resolves.toMatchObject({ version: 'progress' })
+    expect(seen).toEqual([
+      { loaded: 64, total: 128, stage: 'download' },
+      { loaded: 128, total: 128, stage: 'decode' },
+    ])
+  })
+
+  it('aborts pre-aborted, queued, and in-flight loads and frees the slot', async () => {
+    const parser = new Parser({ maxInFlight: 1 })
+    const worker = FakeWorker.instances[0]
+    const pre = new AbortController()
+    pre.abort()
+    await expect(parser.load('/pre.svga', { signal: pre.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(worker.requests).toHaveLength(0)
+
+    const first = new AbortController()
+    const inFlight = parser.load('/first.svga', { signal: first.signal })
+    const second = new AbortController()
+    const queued = parser.load('/second.svga', { signal: second.signal })
+    expect(worker.requests).toHaveLength(1)
+
+    second.abort()
+    await expect(queued).rejects.toMatchObject({ name: 'AbortError' })
+    expect(worker.requests).toHaveLength(1)
+
+    first.abort()
+    await expect(inFlight).rejects.toMatchObject({ name: 'AbortError' })
+    expect(
+      worker.requests.filter((request) => 'cancel' in request && 'requestId' in request),
+    ).toHaveLength(1)
+    expect(worker.requests).toHaveLength(2)
+
+    const next = parser.load('/next.svga')
+    expect(worker.requests).toHaveLength(3)
+    const nextRequest = worker.requests[2] as { requestId: number }
+    worker.respond({ requestId: nextRequest.requestId, video: video('next') })
+    await expect(next).resolves.toMatchObject({ version: 'next' })
+  })
+
+  it('copies byte input and never detaches the caller buffer', async () => {
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const bytes = Uint8Array.of(1, 2, 3)
+    const pending = parser.load(bytes)
+    const request = worker.requests[0] as {
+      requestId: number
+      url?: string
+      bytes?: ArrayBuffer
+    }
+    expect(request.url).toBeUndefined()
+    bytes[0] = 9
+    expect(new Uint8Array(request.bytes as ArrayBuffer)).toEqual(Uint8Array.of(1, 2, 3))
+    expect(bytes.byteLength).toBe(3)
+    worker.respond({ requestId: request.requestId, video: video('bytes') })
+    await expect(pending).resolves.toMatchObject({ version: 'bytes' })
+
+    const buffer = Uint8Array.of(4, 5).buffer
+    const fromBuffer = parser.load(buffer)
+    const next = worker.requests[1] as { requestId: number; bytes?: ArrayBuffer }
+    new Uint8Array(buffer)[0] = 8
+    expect(new Uint8Array(next.bytes as ArrayBuffer)).toEqual(Uint8Array.of(4, 5))
+    worker.respond({ requestId: next.requestId, video: video('buffer') })
+    await expect(fromBuffer).resolves.toMatchObject({ version: 'buffer' })
+  })
+
+  it('honours a per-request timeout and disables it with zero', async () => {
+    vi.useFakeTimers()
+    const parser = new Parser()
+    const worker = FakeWorker.instances[0]
+    const fast = parser.load('/fast.svga', { timeout: 1000 })
+    const observed = expect(fast).rejects.toThrow('timeout')
+    await vi.advanceTimersByTimeAsync(1000)
+    await observed
+
+    const never = parser.load('/never.svga', { timeout: 0 })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(worker.requests).toHaveLength(3)
+    const last = worker.requests[2] as { requestId: number }
+    worker.respond({ requestId: last.requestId, video: video('never') })
+    await expect(never).resolves.toMatchObject({ version: 'never' })
   })
 })

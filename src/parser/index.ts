@@ -7,20 +7,34 @@ import {
   MAX_DECOMPRESSED_BYTES,
 } from '../internal/limits'
 import { createNullMap } from '../internal/maps'
-import type { Movie, RawImages, Video } from '../types'
+import type { Movie, ParserProgress, RawImages, Video } from '../types'
 import { validateVideo } from '../validate-video'
 import { com } from './svga.generated'
 import type { ParserWorkerRequest, ParserWorkerResult, ParserWorkerScope } from './protocol'
 import { createVideo } from './video-entity'
 import { scanMovieWire } from './wire-scan'
 
-async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
-  const response = await fetch(url, { signal })
+async function download(
+  url: string,
+  signal: AbortSignal,
+  headers: Record<string, string> | undefined,
+  report: (loaded: number, stage: ParserProgress['stage'], total?: number) => void,
+): Promise<Uint8Array> {
+  const response = await fetch(url, { signal, headers })
   if (response.status < 200 || response.status >= 300)
     throw new ParserError('parser/fetch', `Fetch, ${response.statusText || response.status}`)
 
+  const declared = response.headers.get('content-length')
+  const parsed = Number(declared)
+  const total = declared === null || !Number.isFinite(parsed) || parsed < 0 ? undefined : parsed
   const chunks: Uint8Array[] = []
   let length = 0
+  let reported = 0
+  const progress = (loaded: number): void => {
+    if (loaded - reported < DOWNLOAD_CHUNK_BYTES) return
+    reported = loaded
+    report(loaded, 'download', total)
+  }
   const reader = response.body?.getReader()
   if (reader !== undefined) {
     try {
@@ -32,6 +46,7 @@ async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
         if (length > MAX_COMPRESSED_BYTES)
           throw new ParserError('parser/limit', 'Compressed SVGA exceeds 8 MiB')
         chunks.push(chunk)
+        progress(length)
       }
     } catch (error) {
       try {
@@ -49,6 +64,7 @@ async function download(url: string, signal: AbortSignal): Promise<Uint8Array> {
     chunks.push(chunk)
   }
 
+  if (reported !== length) report(length, 'download', total)
   const bytes = new Uint8Array(length)
   let offset = 0
   for (const chunk of chunks) {
@@ -115,10 +131,17 @@ function installParserWorker(scope: ParserWorkerScope): void {
 
     const controller = new AbortController()
     controllers.set(request.requestId, controller)
+    const report = (loaded: number, stage: ParserProgress['stage'], total?: number): void => {
+      scope.postMessage({ requestId: request.requestId, progress: { loaded, stage, total } })
+    }
     let response: ParserWorkerResult
     let completed = false
     try {
-      const compressed = await download(request.url, controller.signal)
+      const compressed =
+        request.bytes === undefined
+          ? await download(request.url as string, controller.signal, request.headers, report)
+          : new Uint8Array(request.bytes)
+      if (request.bytes !== undefined) report(compressed.length, 'download', compressed.length)
       if (
         compressed[0] === 80 &&
         compressed[1] === 75 &&
@@ -127,6 +150,7 @@ function installParserWorker(scope: ParserWorkerScope): void {
       ) {
         throw new ParserError('parser/version', 'this parser only support version@2 of SVGA.')
       }
+      report(compressed.length, 'decode', compressed.length)
       const inflated = inflate(compressed)
       scanMovieWire(inflated)
       const decoded = (com as any).opensource.svga.MovieEntity.decode(inflated) as Movie

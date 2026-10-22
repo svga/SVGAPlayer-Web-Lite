@@ -2,6 +2,7 @@ export type ParserErrorCode =
   | 'parser/destroyed'
   | 'parser/timeout'
   | 'parser/protocol'
+  | 'parser/config'
   | 'parser/response'
   | 'parser/worker'
   | 'parser/fetch'

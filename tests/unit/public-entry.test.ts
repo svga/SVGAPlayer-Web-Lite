@@ -4,6 +4,8 @@ import * as root from '../../src/index'
 import type {
   DBOptions,
   ParserConfigOptions,
+  ParserLoadOptions,
+  ParserProgress,
   PlayerConfig,
   PlayerConfigOptions,
   PlayerState,
@@ -54,7 +56,17 @@ describe('public entry', () => {
   })
 
   it('keeps the documented public types', () => {
-    expectTypeOf<ParserConfigOptions>().toEqualTypeOf<{ isDisableWebWorker?: boolean }>()
+    expectTypeOf<ParserConfigOptions>().toEqualTypeOf<{
+      isDisableWebWorker?: boolean
+      maxInFlight?: number
+      headers?: Record<string, string>
+    }>()
+    expectTypeOf<ParserLoadOptions>().toEqualTypeOf<{
+      signal?: AbortSignal
+      onProgress?: (progress: ParserProgress) => void
+      timeout?: number
+      headers?: Record<string, string>
+    }>()
     expectTypeOf<PlayerConfigOptions>().toEqualTypeOf<Partial<PlayerConfig>>()
     expectTypeOf<DBOptions>().toEqualTypeOf<{ name: string; version: number; storeName: string }>()
     expectTypeOf<Video['images']>().toMatchTypeOf<Record<string, Uint8Array>>()

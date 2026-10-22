@@ -1,8 +1,15 @@
 import type { ParserErrorCode } from '../internal/errors'
-import type { Video } from '../types'
+import type { ParserProgress, Video } from '../types'
+
+export interface ParserWorkerLoad {
+  requestId: number
+  url?: string
+  bytes?: ArrayBuffer
+  headers?: Record<string, string>
+}
 
 export type ParserWorkerRequest =
-  | { requestId: number; url: string }
+  | ParserWorkerLoad
   | { requestId: number; cancel: true }
   | { cancel: true }
 
@@ -12,7 +19,12 @@ export interface ParserWorkerResult {
   error?: { name: string; message: string; code?: ParserErrorCode }
 }
 
-export type ParserWorkerResponse = { ready: true } | ParserWorkerResult
+export interface ParserWorkerProgress {
+  requestId: number
+  progress: ParserProgress
+}
+
+export type ParserWorkerResponse = { ready: true } | ParserWorkerResult | ParserWorkerProgress
 
 export interface ParserWorkerScope {
   onmessage?: (event: MessageEvent<ParserWorkerRequest>) => void | Promise<void>

@@ -1,8 +1,9 @@
 import { ParserError, type ParserErrorCode } from './internal/errors'
 import { MAX_IN_FLIGHT, REQUEST_TIMEOUT_MILLISECONDS } from './internal/limits'
 import { copyNullMap } from './internal/maps'
-import type { ParserConfigOptions, Video } from './types'
+import type { ParserConfigOptions, ParserLoadOptions, ParserProgress, Video } from './types'
 import type {
+  ParserWorkerLoad,
   ParserWorkerRequest,
   ParserWorkerResponse,
   ParserWorkerScope,
@@ -13,7 +14,13 @@ const INLINE_WORKER_FLAG = '#PARSER_V2_INLINE_WROKER#'
 
 interface PendingLoad {
   requestId: number
-  url: string
+  url?: string
+  bytes?: ArrayBuffer
+  headers?: Record<string, string>
+  timeout: number
+  signal?: AbortSignal
+  onProgress?: (progress: ParserProgress) => void
+  onAbort?: () => void
   resolve: (video: Video) => void
   reject: (error: Error) => void
   timer?: ReturnType<typeof setTimeout>
@@ -26,6 +33,8 @@ interface ParserState {
   pending: Map<number, PendingLoad>
   queue: PendingLoad[]
   inFlight: number
+  maxInFlight: number
+  headers?: Record<string, string>
 }
 
 const states = new WeakMap<Parser, ParserState>()
@@ -35,12 +44,24 @@ function parserError(message: string, code: ParserErrorCode = 'parser/worker'): 
   return new ParserError(code, `[SVGA Parser Error] ${message}`)
 }
 
-function send(state: ParserState, request: ParserWorkerRequest): void {
+function abortError(): Error {
+  const error = Error('Aborted')
+  error.name = 'AbortError'
+  return error
+}
+
+function detach(request: PendingLoad): void {
+  clearTimeout(request.timer)
+  if (request.signal !== undefined && request.onAbort !== undefined)
+    request.signal.removeEventListener('abort', request.onAbort)
+}
+
+function send(state: ParserState, request: ParserWorkerRequest, transfer?: Transferable[]): void {
   if (state.direct) {
     const port = state.port as ParserWorkerScope
     void port.onmessage?.({ data: request } as MessageEvent<ParserWorkerRequest>)
   } else {
-    ;(state.port as Worker).postMessage(request)
+    ;(state.port as Worker).postMessage(request, transfer as Transferable[])
   }
 }
 
@@ -60,26 +81,52 @@ function revokeWorkerUrl(state: ParserState): void {
   } catch {}
 }
 
+function abortRequest(parser: Parser, state: ParserState, request: PendingLoad): void {
+  if (states.get(parser) !== state) return
+  detach(request)
+  const queued = state.queue.indexOf(request)
+  if (queued >= 0) {
+    state.queue.splice(queued, 1)
+  } else if (state.pending.get(request.requestId) === request) {
+    state.pending.delete(request.requestId)
+    state.inFlight--
+    try {
+      send(state, { requestId: request.requestId, cancel: true })
+    } catch {}
+  } else return
+  request.reject(abortError())
+  drain(parser, state)
+}
+
 function drain(parser: Parser, state: ParserState): void {
   if (states.get(parser) !== state) return
-  while (state.inFlight < MAX_IN_FLIGHT && state.queue.length > 0) {
+  while (state.inFlight < state.maxInFlight && state.queue.length > 0) {
     const request = state.queue.shift() as PendingLoad
     state.pending.set(request.requestId, request)
     state.inFlight++
-    request.timer = setTimeout(() => {
-      if (state.pending.get(request.requestId) !== request) return
-      state.pending.delete(request.requestId)
-      state.inFlight--
-      request.reject(parserError('Request timeout', 'parser/timeout'))
-      try {
-        send(state, { requestId: request.requestId, cancel: true })
-      } catch {}
-      drain(parser, state)
-    }, REQUEST_TIMEOUT_MILLISECONDS)
+    if (request.timeout > 0) {
+      request.timer = setTimeout(() => {
+        if (state.pending.get(request.requestId) !== request) return
+        state.pending.delete(request.requestId)
+        state.inFlight--
+        detach(request)
+        request.reject(parserError('Request timeout', 'parser/timeout'))
+        try {
+          send(state, { requestId: request.requestId, cancel: true })
+        } catch {}
+        drain(parser, state)
+      }, request.timeout)
+    }
+    const message: ParserWorkerLoad = {
+      requestId: request.requestId,
+      url: request.url,
+      bytes: request.bytes,
+      headers: request.headers,
+    }
     try {
-      send(state, { requestId: request.requestId, url: request.url })
+      send(state, message, request.bytes === undefined ? undefined : [request.bytes])
     } catch (error) {
-      clearTimeout(request.timer)
+      detach(request)
       state.pending.delete(request.requestId)
       state.inFlight--
       request.reject(error instanceof Error ? error : Error(String(error)))
@@ -94,11 +141,20 @@ function handleResponse(parser: Parser, response: ParserWorkerResponse): void {
     revokeWorkerUrl(state)
     return
   }
+  if ('progress' in response) {
+    const request = state.pending.get(response.requestId)
+    if (request?.onProgress !== undefined) {
+      try {
+        request.onProgress(response.progress)
+      } catch {}
+    }
+    return
+  }
   const request = state.pending.get(response.requestId)
   if (request === undefined) return
   state.pending.delete(response.requestId)
   state.inFlight--
-  clearTimeout(request.timer)
+  detach(request)
 
   if (response.error !== undefined) {
     const error = new ParserError(response.error.code ?? 'parser/decode', response.error.message)
@@ -120,10 +176,13 @@ function release(parser: Parser, error: Error): void {
   const state = states.get(parser)
   if (state === undefined) return
   states.delete(parser)
-  for (const request of state.queue) request.reject(error)
+  for (const request of state.queue) {
+    detach(request)
+    request.reject(error)
+  }
   state.queue.length = 0
   for (const request of state.pending.values()) {
-    clearTimeout(request.timer)
+    detach(request)
     request.reject(error)
   }
   state.pending.clear()
@@ -140,8 +199,31 @@ function release(parser: Parser, error: Error): void {
   }
 }
 
+function mergeHeaders(
+  base: Record<string, string> | undefined,
+  override: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (base === undefined && override === undefined) return undefined
+  return { ...base, ...override }
+}
+
+function copyBytes(source: ArrayBuffer | Uint8Array): ArrayBuffer {
+  return source instanceof Uint8Array ? source.slice().buffer : source.slice(0)
+}
+
 export class Parser {
   constructor(options: ParserConfigOptions = {}) {
+    const maxInFlight = options.maxInFlight ?? MAX_IN_FLIGHT
+    if (!Number.isInteger(maxInFlight) || maxInFlight < 1 || maxInFlight > 8)
+      throw parserError('Invalid maxInFlight', 'parser/config')
+    const headers = options.headers
+    const common = {
+      pending: new Map<number, PendingLoad>(),
+      queue: [],
+      inFlight: 0,
+      maxInFlight,
+      headers,
+    }
     let state: ParserState
     if (options.isDisableWebWorker === true) {
       const port: ParserWorkerScope = {
@@ -149,7 +231,7 @@ export class Parser {
           handleResponse(this, response)
         },
       }
-      state = { port, direct: true, pending: new Map(), queue: [], inFlight: 0 }
+      state = { ...common, port, direct: true }
       states.set(this, state)
       try {
         // oxlint-disable-next-line no-new-func
@@ -169,14 +251,7 @@ export class Parser {
         } catch {}
         throw error
       }
-      state = {
-        port: worker,
-        direct: false,
-        workerUrl: blobUrl,
-        pending: new Map(),
-        queue: [],
-        inFlight: 0,
-      }
+      state = { ...common, port: worker, direct: false, workerUrl: blobUrl }
       states.set(this, state)
       worker.onmessage = ({ data }: MessageEvent<ParserWorkerResponse>) => {
         handleResponse(this, data)
@@ -191,15 +266,47 @@ export class Parser {
     }
   }
 
-  async load(source: string): Promise<Video> {
+  async load(
+    source: string | URL | ArrayBuffer | Uint8Array,
+    options: ParserLoadOptions = {},
+  ): Promise<Video> {
     const state = states.get(this)
     if (state === undefined) throw parserError('Parser destroyed', 'parser/destroyed')
-    const url = new URL(source, document.baseURI)
-    if (!['http:', 'https:', 'data:', 'blob:'].includes(url.protocol))
-      throw parserError('Unsupported URL protocol', 'parser/protocol')
+    const signal = options.signal
+    if (signal?.aborted === true) throw abortError()
+    const timeout = options.timeout ?? REQUEST_TIMEOUT_MILLISECONDS
+    if (!Number.isFinite(timeout) || timeout < 0)
+      throw parserError('Invalid timeout', 'parser/config')
+
+    let url: string | undefined
+    let bytes: ArrayBuffer | undefined
+    if (typeof source === 'string' || source instanceof URL) {
+      const resolved = new URL(source, document.baseURI)
+      if (!['http:', 'https:', 'data:', 'blob:'].includes(resolved.protocol))
+        throw parserError('Unsupported URL protocol', 'parser/protocol')
+      url = resolved.href
+    } else {
+      bytes = copyBytes(source)
+    }
+    const headers = mergeHeaders(state.headers, options.headers)
 
     return await new Promise<Video>((resolve, reject) => {
-      state.queue.push({ requestId: nextRequestId++, url: url.href, resolve, reject })
+      const request: PendingLoad = {
+        requestId: nextRequestId++,
+        url,
+        bytes,
+        headers,
+        timeout,
+        signal,
+        onProgress: options.onProgress,
+        resolve,
+        reject,
+      }
+      if (signal !== undefined) {
+        request.onAbort = () => abortRequest(this, state, request)
+        signal.addEventListener('abort', request.onAbort, { once: true })
+      }
+      state.queue.push(request)
       drain(this, state)
     })
   }
