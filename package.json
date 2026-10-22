@@ -71,7 +71,7 @@
     "fflate": "^0.8.3",
     "oxlint": "^1.79.0",
     "protobufjs": "^8.8.1",
-    "rollup": "^4.62.4",
+    "rollup": "^4.65.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }
