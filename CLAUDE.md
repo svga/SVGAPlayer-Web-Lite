@@ -73,7 +73,7 @@ CI（`.github/workflows/verify.yml`）在 PR 和 push 上按 `.nvmrc` 安装 Nod
 
 ## 依赖与边界
 
-- `fflate` 用于解压；`protobufjs` 使用 8.7.2 minimal runtime，生成器与 schema 溯源见 `src/parser/PROTOBUF_PROVENANCE.md`。
+- `fflate` 用于解压；`protobufjs` 使用 8.8.1 minimal runtime，生成器与 schema 溯源见 `src/parser/PROTOBUF_PROVENANCE.md`。
 - 支持 OffscreenCanvas 的环境优先走离屏渲染；不支持或显式禁用时使用 HTMLCanvas 降级。该开关属于人工兼容回退，不是 iOS 真机修复声明。
 - 禁用 Worker 的主线程路径包含明确的动态代码执行边界，不应为了绕过宿主安全策略而扩大使用范围。
 - 不要把本地测试结果表述为真机、发布、部署、平台采用或 SEO 结果。
