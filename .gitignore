@@ -7,3 +7,4 @@ test-results
 .impeccable/
 .superpowers/
 docs/
+.playwright-cli/
