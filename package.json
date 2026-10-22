@@ -2,6 +2,26 @@
   "name": "svga",
   "version": "2.2.0",
   "description": "Lightweight SVGA Web Player",
+  "keywords": [
+    "svga"
+  ],
+  "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
+  "bugs": {
+    "url": "https://github.com/svga/SVGAPlayer-Web-Lite/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "SVGA",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/svga/SVGAPlayer-Web-Lite"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
+  ],
+  "sideEffects": false,
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -13,52 +33,27 @@
       "require": "./dist/index.cjs"
     }
   },
-  "sideEffects": false,
-  "keywords": [
-    "svga"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/svga/SVGAPlayer-Web-Lite"
-  },
-  "bugs": {
-    "url": "https://github.com/svga/SVGAPlayer-Web-Lite/issues"
-  },
-  "homepage": "https://github.com/svga/SVGAPlayer-Web-Lite/#readme",
   "scripts": {
     "dev": "vitest --watch",
-    "lint": "oxlint --deny-warnings --ignore-pattern src/parser/svga.generated.ts src tests scripts playwright.config.ts vitest.config.mts",
+    "clean": "node scripts/clean.mjs",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings src tests scripts playwright.config.ts vitest.config.mts",
     "type:check": "tsc --noEmit",
     "test": "vitest run",
+    "test:unit": "vitest run",
     "coverage": "vitest run --coverage",
     "test:browser": "npm run build && playwright test",
+    "test:browser:chromium": "npm run build && playwright test --project=chromium",
     "test:package": "node scripts/verify-package.mjs",
     "build": "node scripts/build.mjs",
+    "size": "node scripts/check-size.mjs",
     "visual": "npm run build && node scripts/serve-visual-test.mjs",
-    "verify": "npm run lint && npm run type:check && npm run coverage && npm run test:browser && npm run test:package",
-    "prepack": "npm run build"
+    "verify:fast": "npm run lint && npm run format:check && npm run type:check && npm run coverage",
+    "verify": "npm run verify:fast && npm run test:browser && npm run test:package && npm run size",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run verify"
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
-    "THIRD_PARTY_NOTICES"
-  ],
-  "packageManager": "npm@12.2.1",
-  "devEngines": {
-    "runtime": {
-      "name": "node",
-      "version": "^24.22.1",
-      "onFail": "error"
-    },
-    "packageManager": {
-      "name": "npm",
-      "version": "^12.2.1",
-      "onFail": "error"
-    }
-  },
-  "author": "SVGA",
-  "license": "Apache-2.0",
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@rollup/plugin-commonjs": "^29.0.3",
@@ -69,11 +64,25 @@
     "acorn": "^8.19.0",
     "fake-indexeddb": "^6.2.6",
     "fflate": "^0.8.3",
+    "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
     "protobufjs": "^8.8.1",
     "rollup": "^4.65.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
-  }
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": "^12.2.1",
+      "onFail": "error"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "^24.22.1",
+      "onFail": "error"
+    }
+  },
+  "packageManager": "npm@12.2.1"
 }

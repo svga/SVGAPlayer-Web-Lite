@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "semi": false,
+  "singleQuote": true,
+  "ignorePatterns": [
+    "src/parser/svga.generated.ts",
+    "package-lock.json",
+    "dist/**",
+    "coverage/**",
+    "test-results/**",
+    "playwright-report/**"
+  ]
+}
