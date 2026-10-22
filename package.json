@@ -69,7 +69,7 @@
     "acorn": "^8.19.0",
     "fake-indexeddb": "^6.2.6",
     "fflate": "^0.8.3",
-    "oxlint": "^1.79.0",
+    "oxlint": "^1.89.0",
     "protobufjs": "^8.8.1",
     "rollup": "^4.65.0",
     "typescript": "^7.0.2",
