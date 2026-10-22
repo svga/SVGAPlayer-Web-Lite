@@ -1,6 +1,5 @@
-import { expect, test } from './browser-test'
+import { expect, test, visualTestUrl } from './browser-test'
 
-const visualTestUrl = 'http://127.0.0.1:4174/'
 const isolatedRuntime = process.env.SVGA_VISUAL_RUNTIME === 'baseline' ? 'baseline' : 'local'
 
 async function forceAndTrackPlaybackTimeout(

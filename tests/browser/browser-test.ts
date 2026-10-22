@@ -2,6 +2,9 @@ import { expect, test as base } from '@playwright/test'
 
 export { expect }
 
+export const visualTestPort = Number(process.env.SVGA_VISUAL_PORT ?? 4174)
+export const visualTestUrl = `http://127.0.0.1:${visualTestPort}/`
+
 interface BrowserDiagnostics {
   expectRequestCancellation: (urlFragment: string) => void
 }

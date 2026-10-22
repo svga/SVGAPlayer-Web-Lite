@@ -3,21 +3,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     coverage: {
-      include: [
-        'src/index.ts',
-        'src/db.ts',
-        'src/parser.ts',
-        'src/parser/index.ts',
-        'src/parser/wire-scan.ts',
-        'src/parser/video-entity.ts',
-        'src/validate-video.ts',
-        'src/player/animator.ts',
-        'src/player/index.ts',
-        'src/player/render.ts',
-      ],
-      exclude: ['src/parser/svga.generated.ts'],
+      include: ['src/**/*.ts'],
+      exclude: ['src/parser/svga.generated.ts', 'src/parser/protocol.ts', 'src/types.ts'],
       provider: 'v8',
-      reporter: ['text'],
+      reporter: ['text', 'lcov', 'json-summary'],
       thresholds: {
         branches: 90,
         functions: 95,
