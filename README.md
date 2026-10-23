@@ -378,6 +378,12 @@ npm run dev
 
 以下测试命令都会在完成后退出；`npm run dev` 才是持续监听模式。
 
+- `npm run lint`：oxlint，警告即失败。
+- `npm run format:check`：oxfmt 格式检查；`npm run format` 直接改写。
+- `npm run type:check`：TypeScript 类型检查。
+- `npm run build` / `npm run size`：构建产物并检查体积、占位符、`new Function` 与声明闭包。
+- `npm run clean`：清理 `dist/`、覆盖率和测试输出。
+
 - `npm test`：运行一次完整单元测试。
 - `npm run coverage`：运行一次单元测试并单独报告语句、分支、函数和行覆盖率。
 - `npm run test:browser`：先构建，再在 Chromium、Firefox、WebKit 中运行真实浏览器流程。
