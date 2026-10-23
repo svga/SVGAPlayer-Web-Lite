@@ -110,6 +110,11 @@ player.stepToFrame(24, true) // 定位到第 24 帧并立即继续
 播放器不绑定鼠标或触摸事件。拖动条、点击和手势应由业务界面处理，再将计算出的帧号
 传给 `stepToFrame()`。
 
+### 生命周期状态
+
+`player.state` 返回当前状态：`'idle' | 'loading' | 'ready' | 'playing' | 'paused' |
+'destroyed'`。`player.isPlaying` 等价于 `state === 'playing'`。二者均为只读属性。
+
 ### 保持素材宽高比
 
 Player 会把 Canvas 的内部尺寸设置为素材原始尺寸。响应式布局只缩放显示宽度，并让
@@ -132,6 +137,31 @@ await player.mount(svga)
 new Parser({
   // 是否取消使用 WebWorker，默认值 false
   isDisableWebWorker: false,
+
+  // 主线程最多同时处理的请求数，1–8，默认值 4
+  maxInFlight: 4,
+
+  // 所有请求默认携带的请求头，可在单次 load 中覆盖
+  headers: { Authorization: 'Bearer ...' },
+})
+```
+
+`load()` 的第一个参数可以是 URL 字符串、`URL`、`ArrayBuffer` 或 `Uint8Array`。
+传入字节时不会发起网络请求，调用方的 buffer 也不会被 detach。第二个参数支持：
+
+```ts
+await parser.load('xx.svga', {
+  // 取消排队中或进行中的请求；以 AbortError 拒绝
+  signal: controller.signal,
+
+  // 单次请求超时，毫秒，默认 30000
+  timeout: 10_000,
+
+  // 覆盖构造函数的默认请求头
+  headers: { 'Accept-Encoding': 'gzip' },
+
+  // 下载和解码进度；同一阶段最多每 64 KiB 上报一次
+  onProgress: ({ loaded, total, stage }) => console.log(stage, loaded, total),
 })
 ```
 
@@ -331,7 +361,7 @@ const svga = await parser.load(xx)
 
 ### 环境要求
 
-项目开发基线为 Node.js 24.18.1、npm 12.0.2 和 TypeScript 7。构建只调用
+项目开发基线为 Node.js 24.22.1、npm 12.2.1 和 TypeScript 7。构建只调用
 TypeScript 7 命令行，不依赖已删除的 TypeScript 编程接口。
 
 ```sh
@@ -352,8 +382,8 @@ npm run dev
 - `npm test`：运行一次完整单元测试。
 - `npm run coverage`：运行一次单元测试并单独报告语句、分支、函数和行覆盖率。
 - `npm run test:browser`：先构建，再在 Chromium、Firefox、WebKit 中运行真实浏览器流程。
-- `npm run test:package`：先构建，再生成并安装真实 npm 压缩包，检查确定性构建、精确文件清单、ES2017 语法、CommonJS、ESM、UMD、TypeScript、Rollup，以及 Vite 4.4.5 production build 消费方式。
-- `npm run verify`：依次运行代码规范、类型、覆盖率、三种浏览器和真实包消费检查；不会在覆盖率之外重复运行单元测试。
+- `npm run test:package`：先构建，再生成并安装真实 npm 压缩包，检查确定性构建、精确文件清单、ES2017 语法、CommonJS、ESM、UMD，以及 bundler/node16/nodenext/CJS 类型消费、深层导入拒绝、Rollup、Vite 8、Vite 4.4.5、Webpack 5、publint 和 attw；消费者步骤不再联网安装构建工具。
+- `npm run verify`：依次运行代码规范、格式化、类型、覆盖率、三种浏览器和真实包消费检查；不会在覆盖率之外重复运行单元测试。
 
 ### 可视化性能测试
 

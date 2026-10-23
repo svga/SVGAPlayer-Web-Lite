@@ -38,6 +38,10 @@
       }
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "dev": "vitest --watch",
     "clean": "node scripts/clean.mjs",
@@ -56,11 +60,14 @@
     "visual": "npm run build && node scripts/serve-visual-test.mjs",
     "verify:fast": "npm run lint && npm run format:check && npm run type:check && npm run coverage",
     "verify": "npm run verify:fast && npm run test:browser && npm run test:package && npm run size",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
     "prepack": "npm run build",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/cli": "^3.0.3",
     "@playwright/test": "^1.64.1",
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",

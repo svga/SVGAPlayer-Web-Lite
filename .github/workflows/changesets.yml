@@ -1,0 +1,47 @@
+name: Changesets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: changesets
+  cancel-in-progress: true
+
+env:
+  NPM_VERSION: 12.2.1
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Ensure npm
+        run: |
+          npm install --global npm@$NPM_VERSION
+          test "$(npm --version)" = "$NPM_VERSION"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Opens or updates the Version Packages pull request only. Publishing is
+      # a separate, manually approved workflow and is never triggered here.
+      - name: Open or update the version pull request
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          version: npm run changeset:version
+          commit: 'chore: version packages'
+          title: 'chore: version packages'

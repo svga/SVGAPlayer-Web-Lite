@@ -16,6 +16,8 @@
 - `onProcess(progress)` 现在接收与 `player.progress` 一致的进度值，已有无参数回调仍可继续使用。
 - 新增 `stepToFrame(frame, andPlay = false)`，可定位并立即绘制有效播放区间内的指定帧；默认停留在目标帧，传入 `true` 时从该帧继续播放。
 - 新增 `isDisableOffscreenCanvas` 配置，可通过 `setConfig()` 动态切换到普通 HTML Canvas 渲染路径，作为兼容性回退选项。
+- Parser 新增 `maxInFlight` 与默认 `headers` 配置；`load()` 支持 `ArrayBuffer`/`Uint8Array` 字节输入、`AbortSignal`、单请求 `timeout` 与 `onProgress` 进度回调。
+- Player 新增只读属性 `state` 与 `isPlaying`，用于读取 `idle`/`loading`/`ready`/`playing`/`paused`/`destroyed` 生命周期状态。
 
 ### 变更
 
@@ -23,6 +25,7 @@
 - 补充保持素材宽高比的响应式 Canvas 用法，避免容器尺寸变化导致动画变形。
 - 补充 Parser 和 Player 实例复用、重复挂载与销毁说明，明确资源生命周期。
 - 完善发布包消费支持：新增配置与播放器 API 的类型可从根入口直接使用，并支持 Rollup 和 Vite 4.4.5 生产构建。
+- 为 ESM 条件提供 `index.d.mts` 声明别名，消除双格式包的类型歧义；包消费检查扩展到 node16/nodenext/CJS、Vite 8、Webpack 5、publint 与 attw。
 
 ### 修复
 
