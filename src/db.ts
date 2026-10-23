@@ -42,7 +42,12 @@ function connect(state: DBState): Promise<IDBDatabase> {
       reject(request.error || dbError())
     }
     request.onerror = fail
-    request.onblocked = fail
+    request.onblocked = () => {
+      if (settled) return
+      settled = true
+      state.connection = undefined
+      reject(dbError())
+    }
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(state.storeName))
         request.result.createObjectStore(state.storeName)

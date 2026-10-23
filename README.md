@@ -112,8 +112,7 @@ player.stepToFrame(24, true) // 定位到第 24 帧并立即继续
 
 ### 生命周期状态
 
-`player.state` 返回当前状态：`'idle' | 'loading' | 'ready' | 'playing' | 'paused' |
-'destroyed'`。`player.isPlaying` 等价于 `state === 'playing'`。二者均为只读属性。
+`player.state` 返回当前状态：`'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'destroyed'`。`player.isPlaying` 等价于 `state === 'playing'`。二者均为只读属性。
 
 ### 保持素材宽高比
 
