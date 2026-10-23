@@ -428,6 +428,20 @@ npm run visual -- --baseline 2.1.1
 检验台不会启用直接解析模式。本地运行页及其他基线页保持不含 `unsafe-eval` 的 CSP。
 所有结果只用于同一机器、同一浏览器下的趋势诊断和版本比较，不是持续集成的耗时门槛。
 
+### API 实验室
+
+启动检验台后打开 `http://127.0.0.1:4173/api-lab.html`，或在首页点击“API 实验室”。
+该页逐个调用 2.2.0 的公共 API，并在本地版本与同一基线之间比较行为、错误和计时：
+
+- **共享 API** 在两侧各执行一次，检查项与归一化观测值必须一致；不一致标记为“行为不一致”，按失败处理。
+- **仅 2.2.0 的 API**（Parser 配置与字节输入、`onProgress`、`AbortSignal`、`timeout`、直接模式、`state`/`progress`/`isPlaying`、`stepToFrame`、冻结的 `config`、Offscreen 切换、懒打开 DB 等）只在本地执行，标记“仅 2.2.0”，不算失败。
+- **计时**与性能检验台同一口径：`performance.now()`、3 轮以上丢弃预热样本、中位数与 MAD、5% / 2×MAD 带宽；1 轮只作方向性参考，观察项不跨版本判优劣。低于 1 ms 的中位数按计时分辨率噪声归入波动带内。
+- 基线版本与本地相同时，计时结果强制落在波动带内，避免把同版本噪声当成回退。
+- 默认跑当前选中素材，也可勾选“全量可播放素材”对解析/播放相关用例巡检 16 个可播放文件；`show.svga` 只用于 SVGA 1.x 拒绝用例。
+- 页面支持按分组、支持状态、本地状态和关键字筛选；结果可导出为 `svga-api-lab-<baseline>-vs-<local>-<timestamp>.json`。
+
+隔离 runner（仅 `/api-runner.html`）放宽 `script-src 'unsafe-eval'` 以测试 2.2.0 的直接解析模式，并允许 `connect-src data:` 以覆盖 `data:` URL；`/api-lab.html`、动画检验台与性能 runner 继续保持严格 CSP。浏览器自动化在 Chromium 运行完整 API 套件与素材巡检，三种浏览器都会检查页面清单、移动端布局与 CSP 边界。所有结论同样只代表当前机器与浏览器，不是真机、发布或 CI 性能门槛。
+
 浏览器自动化会在 Chromium 完成全量巡检并断言 16 个匹配、1 个预期拒绝、0 个失败、
 0 个需复核；Chromium、Firefox、WebKit 都会运行代表性的真实素材和操作流程。
 

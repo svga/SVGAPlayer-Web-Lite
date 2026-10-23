@@ -1,0 +1,32 @@
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+#api-stage {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.5rem;
+}
+
+.api-case-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid rgb(216 224 235 / 70%);
+  border-radius: 0.4rem;
+  background: repeating-conic-gradient(rgb(23 32 51 / 5%) 0% 25%, transparent 0% 50%) 0 0 / 1rem
+    1rem;
+}

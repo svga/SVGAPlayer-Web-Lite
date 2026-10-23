@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="data:," />
+    <title>SVGA API 实验室</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/api-lab.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">SVGAPlayer-Web-Lite · Local diagnostics</p>
+        <h1>API 实验室</h1>
+        <p class="lede">
+          逐个调用公共 API，在本地 2.2.0
+          与正式版基线之间比较行为与计时。只用于同机同浏览器的升级排查。
+        </p>
+        <nav class="page-nav" aria-label="检验台导航">
+          <a href="/">← 返回动画检验台</a>
+        </nav>
+      </div>
+      <div class="environment-badge" id="environment-badge">正在识别浏览器能力…</div>
+    </header>
+
+    <main class="page-shell">
+      <section class="panel comparison-overview" aria-labelledby="runtime-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">runtime 对比</p>
+            <h2 id="runtime-heading">本地与基线运行时</h2>
+          </div>
+          <span data-testid="api-status" class="status-pill" data-state="idle">等待运行</span>
+        </div>
+        <div id="api-runtime-cards" class="runtime-cards" aria-live="polite"></div>
+        <div id="api-runtime-warnings" class="warnings" aria-live="polite"></div>
+        <p class="api-csp-note" data-testid="api-csp-warning">
+          只有本页的 API 隔离 runner 页面放宽
+          <code>script-src 'unsafe-eval'</code>，用于测试
+          <code>isDisableWebWorker</code> 直接模式，并允许 <code>connect-src data:</code> 测试
+          <code>data:</code> URL 解析；主页面与性能检验台保持严格 CSP。
+        </p>
+      </section>
+
+      <section class="panel api-controls" aria-labelledby="controls-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">执行计划</p>
+            <h2 id="controls-heading">选择范围与用例分组</h2>
+          </div>
+          <span id="api-plan-size" class="count-badge">读取中</span>
+        </div>
+
+        <div class="api-control-grid">
+          <label class="api-field">
+            <span>测试素材</span>
+            <select id="api-fixture" data-testid="api-fixture-select" disabled></select>
+          </label>
+          <fieldset class="api-field api-fieldset">
+            <legend>范围</legend>
+            <label><input type="radio" name="api-scope" value="selected" checked /> 当前素材</label>
+            <label><input type="radio" name="api-scope" value="all" /> 全量可播放素材</label>
+          </fieldset>
+          <label class="api-field">
+            <span>计时轮次</span>
+            <select id="api-rounds" data-testid="api-rounds">
+              <option value="1">1 轮（方向性）</option>
+              <option value="3" selected>3 轮</option>
+              <option value="5">5 轮</option>
+            </select>
+          </label>
+        </div>
+
+        <fieldset class="api-groups" aria-label="用例分组">
+          <legend>用例分组</legend>
+          <div id="api-group-list" class="api-group-list"></div>
+        </fieldset>
+
+        <div class="control-row api-actions">
+          <button type="button" class="button button-primary" data-testid="api-run" disabled>
+            运行 API 套件
+          </button>
+          <button type="button" class="button button-danger" data-testid="api-cancel" disabled>
+            取消
+          </button>
+          <button type="button" class="button" data-testid="api-export" disabled>导出 JSON</button>
+          <span id="api-progress" class="technical-label" data-testid="api-progress">尚未运行</span>
+        </div>
+      </section>
+
+      <section class="panel stage-panel api-stage-panel" aria-labelledby="stage-heading">
+        <div class="panel-heading stage-heading">
+          <div>
+            <p class="section-kicker">隔离舞台</p>
+            <h2 id="stage-heading">当前运行时与用例</h2>
+          </div>
+          <span id="api-stage-label" class="technical-label">等待运行</span>
+        </div>
+        <div id="api-stage" class="api-stage" data-testid="api-stage" aria-live="polite">
+          <p id="api-stage-message" class="api-stage-message">
+            运行后，本地与基线的隔离运行器会在这里显示测试画布。
+          </p>
+        </div>
+      </section>
+
+      <section class="panel api-summary-panel" aria-labelledby="summary-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">本次运行</p>
+            <h2 id="summary-heading">结果摘要</h2>
+          </div>
+          <span class="status-pill" data-testid="api-verdict" data-state="idle">等待运行</span>
+        </div>
+        <div id="api-summary-cards" class="summary-cards" data-testid="api-summary"></div>
+        <div id="api-warnings" class="warnings" aria-live="polite"></div>
+      </section>
+
+      <section class="panel api-results-panel" aria-labelledby="results-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">逐项结果</p>
+            <h2 id="results-heading">API 用例与基线对比</h2>
+          </div>
+          <span id="api-filter-count" class="technical-label" data-testid="api-filter-count"
+            >0 / 0</span
+          >
+        </div>
+
+        <div class="api-filters">
+          <label class="api-field">
+            <span>分组</span>
+            <select id="api-filter-group" data-testid="api-filter-group">
+              <option value="all">全部分组</option>
+            </select>
+          </label>
+          <label class="api-field">
+            <span>支持状态</span>
+            <select id="api-filter-support" data-testid="api-filter-support">
+              <option value="all">全部</option>
+              <option value="both">双版本</option>
+              <option value="local-only">仅 2.2.0</option>
+              <option value="baseline-unsupported">基线不支持</option>
+            </select>
+          </label>
+          <label class="api-field">
+            <span>本地状态</span>
+            <select id="api-filter-status" data-testid="api-filter-status">
+              <option value="all">全部</option>
+              <option value="passed">通过</option>
+              <option value="failed">失败</option>
+              <option value="timeout">超时</option>
+              <option value="skipped">已跳过</option>
+            </select>
+          </label>
+          <label class="api-field api-search">
+            <span>搜索</span>
+            <input
+              type="search"
+              id="api-search"
+              data-testid="api-search"
+              placeholder="用例 id、名称或 API"
+            />
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table class="api-results-table">
+            <thead>
+              <tr>
+                <th scope="col">用例</th>
+                <th scope="col">支持</th>
+                <th scope="col">2.2.0</th>
+                <th scope="col">基线</th>
+                <th scope="col">计时（本地 · 基线 · 差异）</th>
+                <th scope="col">判定</th>
+              </tr>
+            </thead>
+            <tbody id="api-results-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel method-panel" aria-labelledby="method-heading">
+        <div>
+          <p class="section-kicker">口径说明</p>
+          <h2 id="method-heading">这些结论如何产生</h2>
+        </div>
+        <div class="method-grid">
+          <p>
+            <strong>共享 API</strong
+            >在本地与基线各执行一次，行为结果（观测值与检查项）必须一致；仅在 2.2.0 存在的 API
+            只运行本地，并标记“仅 2.2.0”，不计失败。
+          </p>
+          <p>
+            <strong>计时</strong>使用 <code>performance.now()</code>；3
+            轮以上会先丢弃一个预热样本，再以中位数、MAD 和 5% / 2×MAD 带宽判断改善或回退。基线与本地
+            版本相同时，计时结果强制落在波动带内；低于 1 ms 的中位数按计时分辨率噪声处理。
+          </p>
+          <p>
+            <strong>隔离</strong>：所有用例在独立 iframe 中顺序执行，每个用例使用新的
+            Canvas、Parser、Player 和唯一命名的 IndexedDB；用例结束会逆序清理。
+          </p>
+          <p>
+            <strong>边界</strong>：结果只代表当前机器与浏览器，不是真机、发布或持续集成性能门槛。
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -67,10 +67,16 @@ Playwright 配置只包含 Chromium、Firefox、WebKit 三个项目；`webServer
 ## 测试与可视化
 
 - `tests/unit/`：Vitest，默认 Node 环境，使用 `fake-indexeddb` 和全局 stub 模拟浏览器 API。
-- `tests/browser/`：Playwright，加载真实 UMD 产物；`visual-performance.spec.ts` 在 Chromium 全量巡检 17 个素材。
+- `tests/browser/`：Playwright，加载真实 UMD 产物；`visual-performance.spec.ts` 在 Chromium 全量巡检 17 个素材，`api-lab.spec.ts` 在 Chromium 跑完整 API 套件。
 - `tests/visual/`：本地检验台页面，由 `scripts/serve-visual-test.mjs` 提供，本身不是测试文件。
 
 `npm run visual` 在 `127.0.0.1:4173` 启动检验台；Playwright 的 `webServer` 固定使用 4174 和 `--baseline local`。检验台默认基线是 npm `latest`（解析并缓存确切版本），也可用 `--baseline <semver>` 固定。比较结果只用于同机同浏览器的趋势诊断，不是 CI 性能门槛；基线不可用时双版本比较和导出会显式禁用。
+
+### API 实验室
+
+`/api-lab.html` 是检验台的子页面，按 `tests/visual/api-cases.js` 的注册表逐项调用公共 API，并在本地与基线之间比较行为、错误与计时。共享用例在两侧各跑一次并要求归一化观测值一致；仅 2.2.0 存在的用例只跑本地并标记“仅 2.2.0”；基线缺少能力时标记“基线不支持”，不算失败。计时复用 `comparison.js` 的 median/MAD/带宽口径，基线为同版本时强制落在波动带内。
+
+隔离 iframe 使用 `/api-runner.html` 与独立的多用例协议（`api-runner.js`、`api-runner-client.js`），不要扩展现有的单次 `runner.js`。只有 `/api-runner.html` 获得 `apiRunnerSecurityHeaders()`：`script-src 'unsafe-eval'` 用于直接解析模式，`connect-src data:` 用于 `data:` URL；`/api-lab.html`、`/` 与 `/runner.html` 保持严格 CSP。测试支持端点 `/api/lab/echo`、`/api/lab/delay`、`/api/lab/status` 仅存在于本地检验服务，用于请求头、取消/超时与非 2xx 行为。`tests/fixtures/svga/show.svga` 只用于 1.x 拒绝用例，全量巡检排除它。
 
 CI（`.github/workflows/verify.yml`）在 PR 和 push 上按 `.nvmrc` 安装 Node 24、强制 npm 12.2.1、安装 Chromium/Firefox/WebKit，然后运行 `npm run verify`。`changesets.yml` 仅在手动触发时开或更新 Version Packages PR，不发布；`release-verify.yml` 需 `release` environment 人工审批，只做校验、打包和 artifact 上传，不执行 `npm publish`、打 tag 或推送。
 

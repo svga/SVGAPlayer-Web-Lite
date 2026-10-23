@@ -32,7 +32,7 @@ export function compareMetric(
   name: string,
   baseline: MetricAggregate | number[],
   local: MetricAggregate | number[],
-  options?: { targetFps?: number },
+  options?: { targetFps?: number; direction?: MetricComparison['direction'] },
 ): MetricComparison
 export function compareCorrectness(input: { baseline: unknown; local: unknown }): {
   state: string

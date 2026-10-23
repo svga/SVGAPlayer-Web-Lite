@@ -21,6 +21,16 @@ const lowerBetterMetrics = new Set([
   'longTaskTotalMs',
   'longTaskMaxMs',
   'blockingMs',
+  'parserConstructMs',
+  'parserUrlMs',
+  'parserBytesMs',
+  'playerConstructMs',
+  'controlsMs',
+  'stepToFrameMs',
+  'setConfigMs',
+  'dbInsertMs',
+  'dbFindMs',
+  'dbDeleteMs',
 ])
 const observationalMetrics = new Set([
   'activeDurationMs',
@@ -87,7 +97,7 @@ export function metricDirection(name) {
 export function compareMetric(name, baselineInput, localInput, options = {}) {
   const baseline = aggregateValue(baselineInput)
   const local = aggregateValue(localInput)
-  const direction = metricDirection(name)
+  const direction = options.direction || metricDirection(name)
   const targetFps = options.targetFps
   const baselineMedian = baseline.median
   const localMedian = local.median
