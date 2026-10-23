@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,6 +18,7 @@ import {
   OUTPUTS,
   projectDir,
   PUBLIC_DECLARATIONS,
+  PUBLIC_DECLARATION_SHIMS,
   WORKER_PLACEHOLDER,
 } from './lib/contract.mjs'
 
@@ -139,6 +140,13 @@ async function copyPublicDeclarations(declarationDir) {
       const destination = resolve(distDir, file)
       await mkdir(dirname(destination), { recursive: true })
       await copyFile(resolve(declarationDir, file), destination)
+    }),
+  )
+  await Promise.all(
+    PUBLIC_DECLARATION_SHIMS.map(async (file) => {
+      const destination = resolve(distDir, file)
+      await mkdir(dirname(destination), { recursive: true })
+      await writeFile(destination, "export * from './index.js'\n")
     }),
   )
 }

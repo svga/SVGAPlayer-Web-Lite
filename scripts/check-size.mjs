@@ -8,11 +8,11 @@ import {
   MAX_BUNDLE_GZIP_BYTES,
   MAX_BUNDLE_RAW_BYTES,
   OUTPUTS,
-  PUBLIC_DECLARATIONS,
+  PUBLIC_DECLARATION_FILES,
   WORKER_PLACEHOLDER,
 } from './lib/contract.mjs'
 
-const publicDeclarationSet = new Set(PUBLIC_DECLARATIONS)
+const publicDeclarationSet = new Set(PUBLIC_DECLARATION_FILES)
 const importPattern = /(?:from\s*|import\s*\()\s*['"]([^'"]+)['"]/g
 
 async function listFiles(directory) {
@@ -32,8 +32,13 @@ function toDeclarationPath(file) {
 
 async function resolveDeclaration(from, specifier) {
   if (!specifier.startsWith('.')) return null
-  const base = resolve(dirname(from), specifier)
-  for (const candidate of [`${base}.d.ts`, join(base, 'index.d.ts')]) {
+  const base = resolve(dirname(from), specifier.replace(/\.[cm]?js$/, ''))
+  for (const candidate of [
+    `${base}.d.ts`,
+    `${base}.d.mts`,
+    join(base, 'index.d.ts'),
+    join(base, 'index.d.mts'),
+  ]) {
     try {
       await readFile(candidate)
       return toDeclarationPath(candidate)
@@ -44,15 +49,15 @@ async function resolveDeclaration(from, specifier) {
 
 async function verifyDeclarations() {
   const declarations = (await listFiles(distDir))
-    .filter((path) => path.endsWith('.d.ts'))
+    .filter((path) => path.endsWith('.d.ts') || path.endsWith('.d.mts'))
     .map(toDeclarationPath)
   assert.deepEqual(
     declarations,
-    [...PUBLIC_DECLARATIONS].sort(),
+    [...PUBLIC_DECLARATION_FILES].sort(),
     'dist declarations do not match the public allowlist',
   )
 
-  for (const declaration of PUBLIC_DECLARATIONS) {
+  for (const declaration of PUBLIC_DECLARATION_FILES) {
     const source = await readFile(join(distDir, declaration), 'utf8')
     for (const match of source.matchAll(importPattern)) {
       const target = await resolveDeclaration(join(distDir, declaration), match[1])

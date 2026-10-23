@@ -17,6 +17,12 @@ export const PUBLIC_DECLARATIONS = [
   'types.d.ts',
 ]
 
+// ESM-flavored alias for the declarations, so the "import" condition resolves
+// to a .d.mts instead of an ambiguous CommonJS-flavored .d.ts.
+export const PUBLIC_DECLARATION_SHIMS = ['index.d.mts']
+
+export const PUBLIC_DECLARATION_FILES = [...PUBLIC_DECLARATIONS, ...PUBLIC_DECLARATION_SHIMS]
+
 export const OUTPUTS = [
   { file: 'index.min.js', format: 'umd', name: 'SVGA' },
   { file: 'index.cjs', format: 'cjs' },
@@ -31,6 +37,7 @@ export const EXPECTED_PACK_FILES = [
   'THIRD_PARTY_NOTICES',
   'dist/db.d.ts',
   'dist/index.cjs',
+  'dist/index.d.mts',
   'dist/index.d.ts',
   'dist/index.min.js',
   'dist/index.mjs',

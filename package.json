@@ -28,9 +28,14 @@
   "jsdelivr": "dist/index.min.js",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "scripts": {
@@ -55,6 +60,7 @@
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@playwright/test": "^1.64.1",
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
@@ -67,10 +73,14 @@
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
     "protobufjs": "^8.8.1",
+    "publint": "^0.3.25",
     "rollup": "^4.65.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vite4": "npm:vite@^4.4.5",
+    "vitest": "^5.0.5",
+    "webpack": "^5.112.0",
+    "webpack-cli": "^6.0.1"
   },
   "devEngines": {
     "packageManager": {

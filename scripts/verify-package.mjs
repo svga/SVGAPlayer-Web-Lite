@@ -140,45 +140,71 @@ async function verifyUmdConsumer(installedPackageDir) {
   assertExports(context.SVGA, 'UMD global')
 }
 
+const consumerSource = [
+  "import { DB, Parser, Player, type DBOptions, type ParserConfigOptions, type ParserLoadOptions, type ParserProgress, type PlayerConfig, type PlayerConfigOptions, type PlayerState, type Video } from 'svga'",
+  'const publicApi: [typeof DB, typeof Parser, typeof Player] = [DB, Parser, Player]',
+  'declare const publicTypes: [DBOptions, ParserConfigOptions, ParserLoadOptions, ParserProgress, PlayerConfig, PlayerConfigOptions, PlayerState, Video]',
+  "const options: PlayerConfigOptions = { container: document.createElement('canvas'), fillMode: 'backwards', playMode: 'fallbacks', isDisableOffscreenCanvas: true }",
+  'const player = new Player(options)',
+  'const progress: number = player.progress',
+  'const state: PlayerState = player.state',
+  'const playing: boolean = player.isPlaying',
+  'player.onProcess = value => { const current: number = value; void current }',
+  'player.onProcess = () => {}',
+  'player.stepToFrame(0)',
+  'player.setConfig({ isDisableOffscreenCanvas: false })',
+  'void progress',
+  'void state',
+  'void playing',
+  'void publicApi',
+  'void publicTypes',
+  '',
+].join('\n')
+
 async function verifyTypeScriptConsumer(consumerDir) {
+  await writeFile(join(consumerDir, 'consumer.ts'), consumerSource)
+  await writeFile(join(consumerDir, 'consumer.mts'), consumerSource)
   await writeFile(
-    join(consumerDir, 'consumer.ts'),
+    join(consumerDir, 'consumer-deep-import.ts'),
     [
-      "import { DB, Parser, Player, type DBOptions, type ParserConfigOptions, type PlayerConfig, type PlayerConfigOptions, type Video } from 'svga'",
-      'const publicApi: [typeof DB, typeof Parser, typeof Player] = [DB, Parser, Player]',
-      'declare const publicTypes: [DBOptions, ParserConfigOptions, PlayerConfig, PlayerConfigOptions, Video]',
-      "const options: PlayerConfigOptions = { container: document.createElement('canvas'), fillMode: 'backwards', playMode: 'fallbacks', isDisableOffscreenCanvas: true }",
-      'const player = new Player(options)',
-      'const progress: number = player.progress',
-      'player.onProcess = value => { const current: number = value; void current }',
-      'player.onProcess = () => {}',
-      'player.stepToFrame(0)',
-      'player.setConfig({ isDisableOffscreenCanvas: false })',
-      'void progress',
-      'void publicApi',
-      'void publicTypes',
+      '// @ts-expect-error svga exposes only its root entry point',
+      "import 'svga/dist/index.mjs'",
       '',
     ].join('\n'),
   )
-  await writeFile(
-    join(consumerDir, 'tsconfig.json'),
-    JSON.stringify(
-      {
-        compilerOptions: {
-          lib: ['ES2017', 'DOM'],
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          noEmit: true,
-          strict: true,
-          target: 'ES2017',
+  const matrix = [
+    { name: 'bundler', entry: 'consumer.ts', module: 'ESNext', moduleResolution: 'bundler' },
+    { name: 'node16', entry: 'consumer.ts', module: 'Node16', moduleResolution: 'Node16' },
+    { name: 'node16-esm', entry: 'consumer.mts', module: 'Node16', moduleResolution: 'Node16' },
+    { name: 'nodenext', entry: 'consumer.mts', module: 'NodeNext', moduleResolution: 'NodeNext' },
+    {
+      name: 'nodenext-cjs',
+      entry: 'consumer.ts',
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+    },
+  ]
+  for (const variant of matrix) {
+    await writeFile(
+      join(consumerDir, `tsconfig.${variant.name}.json`),
+      JSON.stringify(
+        {
+          compilerOptions: {
+            lib: ['ES2017', 'DOM'],
+            module: variant.module,
+            moduleResolution: variant.moduleResolution,
+            noEmit: true,
+            strict: true,
+            target: 'ES2017',
+          },
+          files: [variant.entry, 'consumer-deep-import.ts'],
         },
-        files: ['consumer.ts'],
-      },
-      null,
-      2,
-    ),
-  )
-  await runTypeScript(['--project', 'tsconfig.json'], consumerDir)
+        null,
+        2,
+      ),
+    )
+    await runTypeScript(['--project', `tsconfig.${variant.name}.json`], consumerDir)
+  }
 }
 
 async function verifyRollupConsumer(consumerDir) {
@@ -219,48 +245,100 @@ async function verifyRollupConsumer(consumerDir) {
   }
 }
 
-async function verifyVite445Consumer(consumerDir) {
-  await runNpm(
-    [
-      'install',
-      '--ignore-scripts',
-      '--no-audit',
-      '--no-fund',
-      '--no-package-lock',
-      '--save-dev',
-      'vite@4.4.5',
-    ],
-    consumerDir,
-  )
-  await mkdir(join(consumerDir, 'src'))
+const viteConfigSource = [
+  'export default {',
+  "  build: { emptyOutDir: true, outDir: process.env.SVGA_VITE_OUT, target: 'es2017' },",
+  "  logLevel: 'warn',",
+  '}',
+  '',
+].join('\n')
+
+const viteAppSource = [
+  "import { Player, type PlayerConfigOptions } from 'svga'",
+  "const canvas = document.createElement('canvas')",
+  'const options: PlayerConfigOptions = { container: canvas, isDisableOffscreenCanvas: true }',
+  'const player = new Player(options)',
+  'player.onProcess = progress => { document.body.dataset.progress = String(progress) }',
+  'player.setConfig({ isDisableOffscreenCanvas: false })',
+  "document.querySelector('#app')?.append(canvas)",
+  'void player.progress',
+  'void player.state',
+  '',
+].join('\n')
+
+async function prepareViteConsumer(consumerDir) {
+  await mkdir(join(consumerDir, 'src'), { recursive: true })
   await writeFile(
     join(consumerDir, 'index.html'),
     '<!doctype html><div id="app"></div><script type="module" src="/src/main.ts"></script>\n',
   )
+  await writeFile(join(consumerDir, 'src/main.ts'), viteAppSource)
+  await writeFile(join(consumerDir, 'vite.config.mjs'), viteConfigSource)
+}
+
+async function verifyViteConsumer(consumerDir, label, cli) {
+  const outDir = `dist-${label}`
+  await execFileAsync(process.execPath, [cli, 'build', '--config', 'vite.config.mjs'], {
+    cwd: consumerDir,
+    env: { ...process.env, SVGA_VITE_OUT: outDir },
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  const assets = await listFiles(join(consumerDir, outDir))
+  assert(
+    assets.some((path) => path.endsWith('.js')),
+    `Vite ${label} consumer produced no JavaScript asset`,
+  )
+}
+
+async function verifyWebpackConsumer(consumerDir) {
+  const webpackCli = join(projectDir, 'node_modules/webpack-cli/bin/cli.js')
   await writeFile(
-    join(consumerDir, 'src/main.ts'),
+    join(consumerDir, 'webpack-entry.js'),
     [
-      "import { Player, type PlayerConfigOptions } from 'svga'",
-      "const canvas = document.createElement('canvas')",
-      'const options: PlayerConfigOptions = { container: canvas, isDisableOffscreenCanvas: true }',
-      'const player = new Player(options)',
-      'player.onProcess = progress => { document.body.dataset.progress = String(progress) }',
-      'player.setConfig({ isDisableOffscreenCanvas: false })',
-      "document.querySelector('#app')?.append(canvas)",
-      'void player.progress',
+      "import { Player } from 'svga'",
+      'export const createPlayer = canvas => new Player({ container: canvas, isDisableOffscreenCanvas: true })',
       '',
     ].join('\n'),
   )
-  const viteCli = join(consumerDir, 'node_modules/vite/bin/vite.js')
-  await execFileAsync(process.execPath, [viteCli, 'build'], {
+  await writeFile(
+    join(consumerDir, 'webpack.config.cjs'),
+    [
+      "const { resolve } = require('node:path')",
+      'module.exports = {',
+      "  mode: 'production',",
+      "  target: ['web', 'es2017'],",
+      "  entry: resolve(__dirname, 'webpack-entry.js'),",
+      "  output: { filename: 'bundle.js', path: resolve(__dirname, 'dist-webpack') },",
+      '}',
+      '',
+    ].join('\n'),
+  )
+  await execFileAsync(process.execPath, [webpackCli, '--config', 'webpack.config.cjs'], {
     cwd: consumerDir,
     maxBuffer: 20 * 1024 * 1024,
   })
-  const assets = await listFiles(join(consumerDir, 'dist'))
+  const assets = await listFiles(join(consumerDir, 'dist-webpack'))
   assert(
     assets.some((path) => path.endsWith('.js')),
-    'Vite 4.4.5 consumer produced no JavaScript asset',
+    'Webpack 5 consumer produced no JavaScript asset',
   )
+}
+
+async function verifyPackageLinters(archive) {
+  await execFileAsync(process.execPath, [
+    join(projectDir, 'node_modules/publint/src/cli.js'),
+    archive,
+    '--strict',
+  ])
+  const { stdout } = await execFileAsync(process.execPath, [
+    join(projectDir, 'node_modules/@arethetypeswrong/cli/dist/index.js'),
+    archive,
+    '--profile',
+    'strict',
+    '--no-emoji',
+    '--no-color',
+  ])
+  assert(stdout.includes('No problems found'), `Are the types wrong reported problems:\n${stdout}`)
 }
 
 async function verifyDeepImportsAreRejected(consumerDir) {
@@ -313,7 +391,10 @@ async function verifyPackedConsumer(archive, tempDir) {
   await verifyUmdConsumer(installedPackageDir)
   await verifyTypeScriptConsumer(consumerDir)
   await verifyRollupConsumer(consumerDir)
-  await verifyVite445Consumer(consumerDir)
+  await prepareViteConsumer(consumerDir)
+  await verifyViteConsumer(consumerDir, 'vite8', join(projectDir, 'node_modules/vite/bin/vite.js'))
+  await verifyViteConsumer(consumerDir, 'vite4', join(projectDir, 'node_modules/vite4/bin/vite.js'))
+  await verifyWebpackConsumer(consumerDir)
   await verifyDeepImportsAreRejected(consumerDir)
 }
 
@@ -350,6 +431,7 @@ async function main() {
     const archiveHash = createHash('sha256')
       .update(await readFile(archive))
       .digest('hex')
+    await verifyPackageLinters(archive)
     await verifyPackedConsumer(archive, tempDir)
     console.log(
       `Package verification passed: ${build.length} deterministic build files, ${packFiles.length} packed files`,
