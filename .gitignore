@@ -8,3 +8,6 @@ test-results
 .superpowers/
 docs/
 .playwright-cli/
+# Keep local-only (not published to the remote)
+.changeset/
+.github/workflows/
