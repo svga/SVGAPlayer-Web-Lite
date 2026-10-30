@@ -11,3 +11,4 @@ docs/
 # Keep local-only (not published to the remote)
 .changeset/
 .github/workflows/
+.spec-workflow/
